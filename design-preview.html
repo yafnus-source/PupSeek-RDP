@@ -357,12 +357,6 @@
             </div>
           </div>
 
-          <div class="console-tabs">
-            <span class="ctab active"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</span>
-            <span class="ctab"><svg class="ic"><use href="#ic-powershell"/></svg> PowerShell</span>
-            <span class="ctab"><svg class="ic"><use href="#ic-gear"/></svg> Комп. управление (MMC)</span>
-          </div>
-
           <div class="ab-filter">
             <div class="pills-row" id="groupPills">
               <span class="fpill active">Все</span>
@@ -487,16 +481,6 @@
     if (!p) return;
     groupPills.querySelectorAll('.fpill').forEach(x => x.classList.remove('active'));
     p.classList.add('active');
-  });
-
-  // ---- Console tabs ----
-  document.querySelectorAll('.console-tabs').forEach(strip => {
-    strip.addEventListener('click', (e) => {
-      const c = e.target.closest('.ctab');
-      if (!c) return;
-      strip.querySelectorAll('.ctab').forEach(x => x.classList.remove('active'));
-      c.classList.add('active');
-    });
   });
 
   // ---- Sidebar sessions: activate + collapse groups ----
