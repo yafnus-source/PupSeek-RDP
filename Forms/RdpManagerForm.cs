@@ -948,7 +948,7 @@ namespace ShadowRDP.Forms
             {
                 Text = "",
                 AutoSize = false,
-                Size = new Size(toolsSize.Width + 24, 24),
+                Size = new Size(toolsSize.Width + 46, 24),
                 Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 Font = toolsFont,
                 Cursor = Cursors.Hand,
@@ -958,6 +958,7 @@ namespace ShadowRDP.Forms
             Color toolsHover = ControlPaint.Light(toolsColor, 0.25f);
             var toolsBorder = ShadowRDP.Helpers.UiTheme.OutlineBorder;
             var toolsBg = Color.White;
+            var toolsIcon = ShadowRDP.Helpers.MenuIcons.Get("gear");
             toolsBtn.Paint += (s, e) =>
             {
                 var g = e.Graphics;
@@ -969,9 +970,14 @@ namespace ShadowRDP.Forms
                 g.ResetClip();
                 using var bpen = new Pen(toolsBorder, 1);
                 g.DrawPath(bpen, path);
+                const int iconPad = 9;
+                int iconH = toolsBtn.Height - 12;
+                if (toolsIcon != null)
+                    g.DrawImage(toolsIcon, new Rectangle(iconPad, (toolsBtn.Height - iconH) / 2, iconH, iconH));
+                int textX = iconPad + iconH + 6;
                 TextRenderer.DrawText(g, toolsText, toolsBtn.Font,
-                    new Rectangle(0, 0, toolsBtn.Width, toolsBtn.Height),
-                    toolsColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                    new Rectangle(textX, 0, toolsBtn.Width - textX - 8, toolsBtn.Height),
+                    toolsColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
             };
             toolsBtn.MouseEnter += (s, e) => { toolsColor = toolsHover; toolsBtn.Invalidate(); };
             toolsBtn.MouseLeave += (s, e) => { toolsColor = ShadowRDP.Helpers.UiTheme.OutlineFg; toolsBtn.Invalidate(); };
