@@ -49,12 +49,12 @@ namespace ShadowRDP.Helpers
                 // shared RdpPasswordPrompt behaviour.
                 TopMost = true,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = Color.FromArgb(0xFA, 0xF7, 0xF4)
+                BackColor = UiTheme.Card
             };
 
             // === Blue header (matches KeePassVaultForm / report dialogs) ===
             var header = UiHeader.Create("Хранилище паролей", "KeePass (.kdbx) — зашифрованная база", "shield",
-                Color.FromArgb(0x62, 0x6F, 0x5E), Color.White);
+                UiTheme.HeaderBar, Color.White);
             dlg.Controls.Add(header);
 
             // Field rows: label (120) + input (340) + browse button (76).
