@@ -124,6 +124,7 @@ namespace ShadowRDP.Forms
         private readonly List<EmbeddedProgramSession> _embeddedSessions = new();
         private EmbeddedProgramSession? _activeEmbedded;
         private Label _mmcBtn = null!;
+        private Label _toolsBtn = null!;
         private Panel _headerPanel = null!;
         private ToolTip _toolTip = null!;
         private string? _lastEmbedDir;
@@ -552,7 +553,7 @@ namespace ShadowRDP.Forms
             changePwdBtn.Location = new Point(header.Width - changePwdBtn.Width - 12, 7);
             changePwdBtn.MouseEnter += (s, e) => changePwdBtn.ForeColor = changePwdHoverColor;
             changePwdBtn.MouseLeave += (s, e) => changePwdBtn.ForeColor = changePwdColor;
-            changePwdBtn.Click += (s, e) =>
+            Action changePwd = () =>
             {
                 RdpCredentialStore.Clear();
                 Logger.Info("RDP Manager: user clicked 'Сменить пароль' — cache cleared");
@@ -563,6 +564,7 @@ namespace ShadowRDP.Forms
                     RdpPasswordPrompt.Show(this);
                 }
             };
+            changePwdBtn.Click += (s, e) => changePwd();
             header.Controls.Add(changePwdBtn);
 
             // v3.8.2 — theme switcher ("🎨 Тема"): toggles Light ⇄ Olive and
@@ -610,13 +612,14 @@ namespace ShadowRDP.Forms
             };
             themeBtn.MouseEnter += (s, e) => { themeBtnColor = themeBtnHover; themeBtn.Invalidate(); };
             themeBtn.MouseLeave += (s, e) => { themeBtnColor = themeBtnBg; themeBtn.Invalidate(); };
-            themeBtn.Click += (s, e) =>
+            Action switchTheme = () =>
             {
                 var next = ShadowRDP.Helpers.UiTheme.CurrentName == "Olive" ? "Light" : "Olive";
                 ShadowRDP.Helpers.UiTheme.SetTheme(next);
                 Logger.Info($"RDP Manager: theme switched to {next} — restarting");
                 Application.Restart();
             };
+            themeBtn.Click += (s, e) => switchTheme();
             header.Controls.Add(themeBtn);
 
             // v2.1.83: "+" button — opens CustomSessionEditForm to add an
@@ -666,7 +669,7 @@ namespace ShadowRDP.Forms
             };
             addSessionBtn.MouseEnter += (s, e) => { addBtnColor = addBtnHover; addSessionBtn.Invalidate(); };
             addSessionBtn.MouseLeave += (s, e) => { addBtnColor = ShadowRDP.Helpers.UiTheme.OutlineFg; addSessionBtn.Invalidate(); };
-            addSessionBtn.Click += (s, e) =>
+            Action addSession = () =>
             {
                 var knownGroups = _sessions
                     .Select(x => x.Group ?? "")
@@ -681,6 +684,7 @@ namespace ShadowRDP.Forms
                 RenderSidebar();
                 Logger.Info($"RDP Manager: added custom session '{edited.Name}' ({edited.Kind}, {edited.Target})");
             };
+            addSessionBtn.Click += (s, e) => addSession();
             header.Controls.Add(addSessionBtn);
 
             // v2.2.10: "+ В книгу" button — opens EditEntryForm in add-mode
@@ -723,7 +727,7 @@ namespace ShadowRDP.Forms
             };
             addToBookBtn.MouseEnter += (s, e) => { bookColor = bookHover; addToBookBtn.Invalidate(); };
             addToBookBtn.MouseLeave += (s, e) => { bookColor = ShadowRDP.Helpers.UiTheme.OutlineFg; addToBookBtn.Invalidate(); };
-            addToBookBtn.Click += (s, e) =>
+            Action addToBook = () =>
             {
                 var added = Forms.EditEntryForm.ShowAddDialog(this);
                 if (added == null) return;
@@ -731,6 +735,7 @@ namespace ShadowRDP.Forms
                 if (Forms.AddressBookForm.IsOpen) Forms.AddressBookForm.Instance.ReloadFromStore();
                 Logger.Info($"RDP Manager: added new address book entry '{added.Computer}' / '{added.User}'");
             };
+            addToBookBtn.Click += (s, e) => addToBook();
             header.Controls.Add(addToBookBtn);
 
             // v3.8.x: "Экспорт/Импорт" button — dropdown menu:
@@ -824,7 +829,7 @@ namespace ShadowRDP.Forms
             };
             psBtn.MouseEnter += (s, e) => { psColor = psHover; psBtn.Invalidate(); };
             psBtn.MouseLeave += (s, e) => { psColor = psBg; psBtn.Invalidate(); };
-            psBtn.Click += (s, e) =>
+            Action launchPs = () =>
             {
                 string psVer = "5.1";
                 try
@@ -838,6 +843,7 @@ namespace ShadowRDP.Forms
                 var psBanner = $"Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nПопробуйте новую кроссплатформенную PowerShell https://aka.ms/pscore6\n";
                 _psSession = ShowOrCreateConsoleSession(_psSession, "powershell.exe", "-NoLogo", "PowerShell", Encoding.GetEncoding(866), psBanner, ShadowRDP.Helpers.UiTheme.HeaderBar);
             };
+            psBtn.Click += (s, e) => launchPs();
             header.Controls.Add(psBtn);
 
             // CMD button — launches CMD as admin.
@@ -876,7 +882,8 @@ namespace ShadowRDP.Forms
             };
             cmdBtn.MouseEnter += (s, e) => { cmdColor = cmdHover; cmdBtn.Invalidate(); };
             cmdBtn.MouseLeave += (s, e) => { cmdColor = cmdBg; cmdBtn.Invalidate(); };
-            cmdBtn.Click += (s, e) => _cmdSession = ShowOrCreateConsoleSession(_cmdSession, "cmd.exe", "/Q", "CMD", Encoding.GetEncoding(866), accentColor: Color.FromArgb(0x6E, 0x6E, 0x6E));
+            Action launchCmd = () => _cmdSession = ShowOrCreateConsoleSession(_cmdSession, "cmd.exe", "/Q", "CMD", Encoding.GetEncoding(866), accentColor: Color.FromArgb(0x6E, 0x6E, 0x6E));
+            cmdBtn.Click += (s, e) => launchCmd();
             header.Controls.Add(cmdBtn);
 
             // v3.6.8 — "Встроить ММС". Opens an MMC console (app-owned via
@@ -926,22 +933,73 @@ namespace ShadowRDP.Forms
             embedBtn.Click += (s, e) => embedMenu.Show(embedBtn, new Point(0, embedBtn.Height));
             header.Controls.Add(embedBtn);
 
+            // v3.9 — collapse the 7 header action buttons + "Встроить ММС"
+            // into a single "Инструменты" dropdown (design-preview parity).
+            // The original buttons are kept (Visible=false) so their existing
+            // handlers stay wired; the dropdown triggers them — no logic dup.
+            foreach (var b in new Control[] { changePwdBtn, themeBtn, addSessionBtn, addToBookBtn, exportBtn, psBtn, cmdBtn, embedBtn })
+                b.Visible = false;
+
+            var toolsFont = new Font("Segoe UI Semibold", 9F);
+            var toolsText = "Инструменты  ▾";
+            var toolsSize = TextRenderer.MeasureText(toolsText, toolsFont);
+            var toolsBtn = new Label
+            {
+                Text = "",
+                AutoSize = false,
+                Size = new Size(toolsSize.Width + 24, 24),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Font = toolsFont,
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty
+            };
+            Color toolsColor = ShadowRDP.Helpers.UiTheme.OutlineFg;
+            Color toolsHover = ControlPaint.Light(toolsColor, 0.25f);
+            var toolsBorder = ShadowRDP.Helpers.UiTheme.OutlineBorder;
+            var toolsBg = Color.White;
+            toolsBtn.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var rb = new Rectangle(0, 0, toolsBtn.Width - 1, toolsBtn.Height - 1);
+                using var path = Helpers.UiButtons.RoundedRect(rb, 4);
+                g.SetClip(path);
+                g.FillRectangle(new SolidBrush(toolsBg), 0, 0, toolsBtn.Width, toolsBtn.Height);
+                g.ResetClip();
+                using var bpen = new Pen(toolsBorder, 1);
+                g.DrawPath(bpen, path);
+                TextRenderer.DrawText(g, toolsText, toolsBtn.Font,
+                    new Rectangle(0, 0, toolsBtn.Width, toolsBtn.Height),
+                    toolsColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            };
+            toolsBtn.MouseEnter += (s, e) => { toolsColor = toolsHover; toolsBtn.Invalidate(); };
+            toolsBtn.MouseLeave += (s, e) => { toolsColor = ShadowRDP.Helpers.UiTheme.OutlineFg; toolsBtn.Invalidate(); };
+
+            var toolsMenu = new Helpers.ThemedContextMenu();
+            toolsMenu.AddHeader("Инструменты");
+            toolsMenu.AddItem("CMD", "terminal", () => launchCmd());
+            toolsMenu.AddItem("PowerShell (PS)", "powershell", () => launchPs());
+            toolsMenu.AddItem("Встроить ММС", "gear", () => embedMenu.Show(toolsBtn, new Point(0, toolsBtn.Height)));
+            toolsMenu.AddSeparator();
+            toolsMenu.AddItem("Экспорт/Импорт", "exchange", () => exportMenu.Show(this, toolsBtn.PointToScreen(new Point(0, toolsBtn.Height))));
+            toolsMenu.AddItem("Сессия", "add", () => addSession());
+            toolsMenu.AddItem("В книгу", "book", () => addToBook());
+            toolsMenu.AddSeparator();
+            toolsMenu.AddItem("Сменить пароль", "key", () => changePwd());
+            toolsMenu.AddItem("Тема", "sun", () => switchTheme());
+            toolsBtn.Click += (s, e) => toolsMenu.Show(this, toolsBtn.PointToScreen(new Point(0, toolsBtn.Height)));
+            header.Controls.Add(toolsBtn);
+            _toolsBtn = toolsBtn;
+
             // Recompute X position — right-anchored buttons.
             // Layout right-to-left: changePwdBtn (rightmost), addSessionBtn,
             // addToBookBtn, exportBtn (leftmost).
             header.Layout += (s, e) =>
             {
-                changePwdBtn.Location = new Point(header.Width - changePwdBtn.Width - 12, 7);
-                int themeTop = 7 + (changePwdBtn.Height - themeBtn.Height) / 2;
-                themeBtn.Location = new Point(changePwdBtn.Left - themeBtn.Width - 8, themeTop);
-                addSessionBtn.Location = new Point(themeBtn.Left - addSessionBtn.Width - 8, 7);
-                addToBookBtn.Location = new Point(addSessionBtn.Left - addToBookBtn.Width - 8, 7);
-                exportBtn.Location = new Point(addToBookBtn.Left - exportBtn.Width - 8, 7);
-                psBtn.Location = new Point(exportBtn.Left - psBtn.Width - 8, 7);
-                cmdBtn.Location = new Point(psBtn.Left - cmdBtn.Width - 8, 7);
+                toolsBtn.Location = new Point(header.Width - toolsBtn.Width - 12, 7);
 
                 // Left block, left→right: logo → title → status badge →
-                // session pills → "Встроить ММС" → running pills.
+                // session pills → running-console pills.
                 icon.Location = new Point(20, 6);
                 title.Location = new Point(icon.Right + 8, 10);
                 _statusBadge.Location = new Point(Math.Max(170, title.Right + 16), 10);
@@ -1891,12 +1949,10 @@ namespace ShadowRDP.Forms
                 _terminalLbl.Location = new Point(x, 10);
                 x = _terminalLbl.Right + 6;
             }
-            _mmcBtn.Location = new Point(x + 2, 7);
-
-            // Running-console tabs grow right of the button, full header
-            // height (36px) with the active one touching the bottom edge.
-            // Tabs sit flush against each other (v3.6.8).
-            int px = _mmcBtn.Right + 8;
+            // v3.9 — "Встроить ММС" moved into the Инструменты dropdown, so
+            // running-console tabs now grow directly right of the session
+            // pills (full header height, active one touching the bottom edge).
+            int px = x + 8;
             foreach (var es in _embeddedSessions)
             {
                 if (es.PillButton == null) continue;

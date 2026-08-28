@@ -108,6 +108,12 @@ namespace ShadowRDP.Helpers
             "shield"   => DrawShield(),
             "person"   => DrawPerson(),
             "search"   => DrawSearch(),
+            "terminal" => DrawTerminal(),
+            "powershell" => DrawPowerShell(),
+            "exchange" => DrawExchange(),
+            "sun"      => DrawSun(),
+            "key"      => DrawKey(),
+            "book"     => DrawBook(),
             _          => DrawTriangle(_dark)
         };
 
@@ -210,6 +216,82 @@ namespace ShadowRDP.Helpers
             g.DrawRectangle(pen, 2, 3, 12, 8);   // monitor
             g.FillRectangle(new SolidBrush(_dark), 7, 12, 2, 2); // stand
             g.DrawLine(pen, 5, 14, 11, 14);     // base
+            return bmp;
+        }
+
+        // v3.9 — flat icons matching the design preview.
+        private static Bitmap DrawTerminal()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            using var brush = new SolidBrush(_dark);
+            g.DrawRectangle(pen, 2, 3, 12, 10);
+            g.FillPolygon(brush, new[] { new Point(4, 6), new Point(7, 9), new Point(4, 12) });
+            g.DrawLine(pen, 7, 12, 11, 12);
+            return bmp;
+        }
+
+        private static Bitmap DrawPowerShell()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            using var brush = new SolidBrush(_dark);
+            g.DrawRectangle(pen, 2, 3, 12, 10);
+            g.FillRectangle(brush, 2, 3, 12, 2);
+            g.FillPolygon(brush, new[] { new Point(4, 8), new Point(7, 11), new Point(4, 14) });
+            g.DrawLine(pen, 7, 14, 11, 14);
+            return bmp;
+        }
+
+        private static Bitmap DrawExchange()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            g.DrawLine(pen, 8, 3, 8, 13);
+            g.DrawLine(pen, 5, 6, 8, 3);
+            g.DrawLine(pen, 8, 3, 11, 6);
+            g.DrawLine(pen, 5, 10, 8, 13);
+            g.DrawLine(pen, 8, 13, 11, 10);
+            return bmp;
+        }
+
+        private static Bitmap DrawSun()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            g.DrawEllipse(pen, 5, 5, 6, 6);
+            for (int a = 0; a < 8; a++)
+            {
+                double ang = a * Math.PI / 4;
+                int x1 = 8 + (int)(Math.Cos(ang) * 5), y1 = 8 + (int)(Math.Sin(ang) * 5);
+                int x2 = 8 + (int)(Math.Cos(ang) * 7), y2 = 8 + (int)(Math.Sin(ang) * 7);
+                g.DrawLine(pen, x1, y1, x2, y2);
+            }
+            return bmp;
+        }
+
+        private static Bitmap DrawKey()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            g.DrawEllipse(pen, 3, 4, 6, 6);
+            g.DrawLine(pen, 8, 9, 13, 14);
+            g.DrawLine(pen, 11, 12, 13, 10);
+            return bmp;
+        }
+
+        private static Bitmap DrawBook()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            g.DrawRectangle(pen, 3, 3, 10, 10);
+            g.DrawLine(pen, 8, 3, 8, 13);
             return bmp;
         }
 
