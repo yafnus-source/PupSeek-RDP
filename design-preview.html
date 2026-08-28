@@ -177,6 +177,8 @@
   .hbtn.text:hover { color: var(--link-hover); }
   .hbtn.theme { background: var(--sidebar); color: #fff; border: 0; }
   .hbtn.theme:hover { filter: brightness(1.15); }
+  .tools-wrap { position: relative; }
+  .tools-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 218px; }
 
   .console-tabs { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--card); flex-wrap: wrap; }
   .ctab { padding: 5px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); cursor: pointer; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
@@ -346,14 +348,21 @@
               <span class="chip chip-term"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</span>
             </div>
             <div class="ah-right">
-              <button class="hbtn dark cmd"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</button>
-              <button class="hbtn dark ps"><svg class="ic"><use href="#ic-powershell"/></svg> PS</button>
-              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> Встроить ММС</button>
-              <button class="hbtn outline"><svg class="ic"><use href="#ic-exchange"/></svg> Экспорт/Импорт</button>
-              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> Сессия</button>
-              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> В книгу</button>
-              <button class="hbtn text"><svg class="ic"><use href="#ic-key"/></svg> Сменить пароль</button>
-              <button class="hbtn theme"><svg class="ic"><use href="#ic-sun"/></svg> Тема</button>
+              <div class="tools-wrap">
+                <button class="hbtn outline" id="toolsBtn"><svg class="ic"><use href="#ic-gear"/></svg> Инструменты ▾</button>
+                <div class="tools-menu ctx-menu" id="toolsMenu" style="display:none">
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-powershell"/></svg> PowerShell (PS)</div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-plus"/></svg> Встроить ММС</div>
+                  <div class="ctx-sep"></div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-exchange"/></svg> Экспорт/Импорт</div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-plus"/></svg> Сессия</div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-plus"/></svg> В книгу</div>
+                  <div class="ctx-sep"></div>
+                  <div class="ctx-item"><svg class="ic"><use href="#ic-key"/></svg> Сменить пароль</div>
+                  <div class="ctx-item" data-act="theme"><svg class="ic"><use href="#ic-sun"/></svg> Тема</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -481,6 +490,23 @@
     if (!p) return;
     groupPills.querySelectorAll('.fpill').forEach(x => x.classList.remove('active'));
     p.classList.add('active');
+  });
+
+  // ---- Tools dropdown ----
+  const toolsBtn = document.getElementById('toolsBtn');
+  const toolsMenu = document.getElementById('toolsMenu');
+  toolsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toolsMenu.style.display = toolsMenu.style.display === 'block' ? 'none' : 'block';
+  });
+  toolsMenu.addEventListener('click', (e) => {
+    const item = e.target.closest('.ctx-item');
+    if (!item) return;
+    if (item.dataset.act === 'theme') applyTheme(document.documentElement.dataset.theme === 'olive' ? 'light' : 'olive');
+    toolsMenu.style.display = 'none';
+  });
+  document.addEventListener('click', (e) => {
+    if (toolsMenu.style.display === 'block' && !toolsMenu.contains(e.target) && e.target !== toolsBtn) toolsMenu.style.display = 'none';
   });
 
   // ---- Sidebar sessions: activate + collapse groups ----
