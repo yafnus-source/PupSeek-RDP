@@ -1,0 +1,84 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>PupSeekRDP</AssemblyName>
+    <RootNamespace>ShadowRDP</RootNamespace>
+    <Version>3.8.0.0</Version>
+    <AssemblyVersion>3.8.0.0</AssemblyVersion>
+    <FileVersion>3.8.0.0</FileVersion>
+    <Company>M.A.D.</Company>
+    <Product>Pup Seek RDP — управление RDP shadow-сессиями</Product>
+    <Title>Pup Seek RDP</Title>
+    <Description>WinForms-приложение для управления RDP shadow-сессиями в домене: qwinsta, mstsc /shadow, адресная книга с автоопределением ПК, асинхронный сбор информации, WMI, AD-импорт. Переписано с PowerShell на C# / .NET 8 с помощью Claude (Anthropic, модель Sonnet 4.6).</Description>
+    <Copyright>© 2026 M.A.D. Pup Seek RDP. Все права защищены. AI-coauthor: Claude (Anthropic), model glm-5.1 / claude-sonnet-4-6</Copyright>
+    <Authors>M.A.D. + Claude (Anthropic, glm-5.1)</Authors>
+    <!-- ApplicationIcon — baked into the .exe's PE header. Shows in Start
+         Menu, Explorer thumbnail, taskbar, alt-tab. The icon itself is a
+         rounded blue square with a white monitor + play triangle. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- Single-file self-contained publish settings.
+         dotnet publish -c Release produces ONE .exe (~70-150MB) that runs on
+         any Windows 10/11 x64 without requiring .NET to be installed.
+         Compression trims ~30% off the file size. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- .NET 8 ships only ASCII/UTF-7/8/16/32 by default. qwinsta.exe outputs
+         in the system OEM code page (866 on Russian Windows). This package
+         re-enables legacy code pages — registered at startup via
+         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+    <PackageReference Include="pt.KeePassLibStd" Version="2.50.0.4849" />
+    <PackageReference Include="SSH.NET" Version="2025.0.0" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+    <!-- WMI access via ManagementObjectSearcher / ManagementScope. Native in
+         .NET Framework, NuGet-only in .NET Core / .NET 8. -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Logo embedded for splash + sidebar branding. LogicalName sets the
+         manifest resource ID used by GetManifestResourceStream. -->
+    <EmbeddedResource Include="Assets\logo.png">
+      <LogicalName>SessionSpy.logo.png</LogicalName>
+    </EmbeddedResource>
+    <!-- v3.6.8 — empty author-mode MMC console (saved via the MMC 2.0 COM
+         automation API). Written to %PROGRAMDATA%\PupSeekRDP\mmc\MMC.msc on
+         first "Добавить MMC" so snap-ins the user adds persist across runs. -->
+    <EmbeddedResource Include="Assets\mmc_empty.msc">
+      <LogicalName>SessionSpy.mmc.empty.msc</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- v3.2.3 — xterm.js terminal emulator for SSH sessions. Embedded as
+         resources, extracted to %LOCALAPPDATA%\PupSeekRDP\xterm\ on first
+         use, then loaded via file:// in WebView2 (NavigateToString can't
+         resolve relative <script src=...>). -->
+    <EmbeddedResource Include="Assets\xterm\terminal.html">
+      <LogicalName>xterm.terminal.html</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\xterm\xterm.js">
+      <LogicalName>xterm.xterm.js</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\xterm\xterm.css">
+      <LogicalName>xterm.xterm.css</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\xterm\addon-fit.js">
+      <LogicalName>xterm.addon-fit.js</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
+
