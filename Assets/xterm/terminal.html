@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+  #term { position: absolute; inset: 4px; }
+</style>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+</head>
+<body>
+<div id="term"></div>
+<script>
+(function () {
+    const term = new Terminal({
+        fontFamily: 'Consolas, "Cascadia Mono", monospace',
+        fontSize: 14,
+        cursorBlink: true,
+        theme: {
+            background: '#1e1e1e',
+            foreground: '#e8e8e8',
+            cursor: '#e8e8e8',
+            selection: 'rgba(255, 255, 255, 0.25)',
+            // Standard 16-colour ANSI palette (gnome-terminal default).
+            // Without these, xterm.js falls back to its built-in palette
+            // which clashes with the dark background (e.g. black text on
+            // dark bg becomes invisible).
+            black: '#000000',
+            red: '#cc0000',
+            green: '#4e9a06',
+            yellow: '#c4a000',
+            blue: '#729fcf',
+            magenta: '#75507b',
+            cyan: '#06989a',
+            white: '#d3d7cf',
+            brightBlack: '#555753',
+            brightRed: '#ef2929',
+            brightGreen: '#8ae234',
+            brightYellow: '#fce94f',
+            brightBlue: '#64a0d8',
+            brightMagenta: '#ad7fa8',
+            brightCyan: '#34e2e2',
+            brightWhite: '#eeeeec'
+        }
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
+    fit.fit();
+
+    // JS → C#: send user input + size changes.
+    term.onData(function (d) {
+        window.chrome.webview.postMessage({ type: 'input', data: d });
+    });
+
+    function sendSize() {
+        window.chrome.webview.postMessage({
+            type: 'size',
+            cols: term.cols,
+            rows: term.rows
+        });
+    }
+    sendSize();
+    window.addEventListener('resize', function () { fit.fit(); sendSize(); });
+
+    // C# → JS: write output / resize.
+    window.chrome.webview.addEventListener('message', function (e) {
+        const msg = e.data;
+        if (!msg) return;
+        if (msg.type === 'output') {
+            try { term.write(msg.data); } catch (err) { console.error('write', err); }
+        } else if (msg.type === 'resize') {
+            fit.fit();
+        }
+    });
+
+    // Tell the host we're ready to receive output.
+    window.chrome.webview.postMessage({ type: 'ready' });
+    console.log('xterm ready');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PupSeekRDP — дизайн-превью</title>
+<style>
+  :root {
+    --radius: 4px;
+    --radius-flat: 1px;
+    --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  /* ===== Light theme (UiTheme.Light) ===== */
+  html[data-theme="light"] {
+    --background: #F5F0EB;
+    --card: #FAF7F4;
+    --muted: #EDE8E2;
+    --header-bar: #296AA0;
+    --accent: #5B5FF0;
+    --accent-hover: #818CF8;
+    --accent-soft: #E9EAFC;
+    --accent-soft-border: #C7C9F8;
+    --foreground: #1C1917;
+    --muted-foreground: #78716C;
+    --border: #E1DCD7;
+    --border-subtle: #EBE6E1;
+    --sidebar: #1E3A5F;
+    --sidebar-item-hover: #2A4F7A;
+    --sidebar-group-bg: #0A1A2E;
+    --sidebar-sub-fg: #B0C4DE;
+    --row-base: #F5F0EB;
+    --row-alt: #FAF7F4;
+    --hover-row: #F0ECE6;
+    --menu-bg: #FAF7F4;
+    --pill-bg: #E9EAFC;
+    --pill-fg: #5B5FF0;
+    --pill-border: #5B5FF0;
+    --grid-header-bg: #EDE8E2;
+    --grid-header-fg: #78716C;
+    --outline-border: #416AA0;
+    --outline-fg: #296AA0;
+    --button-bg: #F6F8FC;
+    --header-secondary: #626F5E;
+    --table-bg: #FFFFFF;
+    --header-subtitle: #DCE6EF;
+    --disabled-bg: #E2E4E8;
+    --disabled-fg: #8A8E94;
+    --link-hover: #2A5A8E;
+    --danger: #DC2626;
+    --danger-soft: #FEE2E2;
+    --danger-border: #FECACA;
+    --status-online: #10B981;
+    --status-active: #6366F1;
+    --status-offline: #D6D3D1;
+    --status-text: #059669;
+    --status-bg: #ECFDF5;
+    --pill-session-fg: #6371F1;
+    --pill-session-bg: #EEF2FF;
+    --cmd-bg: #3C3C3C;
+    --ps-bg: #012456;
+    --terminal-bg: #3C3C3C;
+    --shadow: 0 8px 28px rgba(28,25,23,.18);
+  }
+
+  /* ===== Olive theme (UiTheme.Olive) ===== */
+  html[data-theme="olive"] {
+    --background: #E8E4D2;
+    --card: #F2EFE0;
+    --muted: #DBD6C0;
+    --header-bar: #A2AD9E;
+    --accent: #A2AD9E;
+    --accent-hover: #8E9A8A;
+    --accent-soft: #E8ECE8;
+    --accent-soft-border: #CDD3CC;
+    --foreground: #2B2A20;
+    --muted-foreground: #7E7A5E;
+    --border: #D4CFBB;
+    --border-subtle: #E2DDC9;
+    --sidebar: #100E0C;
+    --sidebar-item-hover: #4A453E;
+    --sidebar-group-bg: #0B0A08;
+    --sidebar-sub-fg: #C8BCA8;
+    --row-base: #FBF7EE;
+    --row-alt: #FFFBF8;
+    --hover-row: #E2DDC9;
+    --menu-bg: #FFFFFF;
+    --pill-bg: #EAE4F0;
+    --pill-fg: #7B6FA8;
+    --pill-border: #7B6FA8;
+    --grid-header-bg: #D7DCD5;
+    --grid-header-fg: #3A3A39;
+    --outline-border: #726D61;
+    --outline-fg: #726D61;
+    --button-bg: #E8ECE8;
+    --header-secondary: #626F5E;
+    --table-bg: #FFFFFF;
+    --header-subtitle: #E4E8E0;
+    --disabled-bg: #E2E4E8;
+    --disabled-fg: #8A8E94;
+    --link-hover: #2A5A8E;
+    --danger: #A85A4A;
+    --danger-soft: #EFDCDE;
+    --danger-border: #E0C2B8;
+    --status-online: #5F9E6E;
+    --status-active: #A2AD9E;
+    --status-offline: #C9C3AE;
+    --status-text: #4E8C5E;
+    --status-bg: #EAF2EC;
+    --pill-session-fg: #5B7FA8;
+    --pill-session-bg: #E8EDF2;
+    --cmd-bg: #3C3C3C;
+    --ps-bg: #012456;
+    --terminal-bg: #3C3C3C;
+    --shadow: 0 8px 28px rgba(43,42,32,.22);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: var(--font); background: var(--background);
+    color: var(--foreground); font-size: 13px;
+  }
+
+  /* ===== Flat icons ===== */
+  .ic {
+    width: 16px; height: 16px; flex: 0 0 auto;
+    stroke: currentColor; fill: none; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .ic.lg { width: 18px; height: 18px; }
+
+  /* ===== Top toolbar ===== */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px; background: var(--card); border-bottom: 1px solid var(--border);
+  }
+  .topbar .brand { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
+  .topbar .brand .dot { color: var(--accent); }
+  .tabs { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+  .tab {
+    border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground);
+    padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
+  }
+  .tab:hover { background: var(--muted); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .theme-toggle {
+    border: 1px solid var(--outline-border); background: var(--button-bg); color: var(--outline-fg);
+    padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
+  }
+  .theme-toggle:hover { background: var(--muted); }
+
+  /* ===== Stage ===== */
+  .stage { max-width: 1280px; margin: 0 auto; padding: 18px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .window {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 70vh;
+  }
+
+  /* ===== RDP Manager ===== */
+  .rdp { display: flex; min-height: 70vh; }
+  .sidebar {
+    width: 232px; background: var(--sidebar); color: #fff;
+    display: flex; flex-direction: column; padding: 14px 10px; gap: 6px;
+  }
+  .sidebar .s-title { font-weight: 700; font-size: 15px; padding: 6px 8px 12px; }
+  .sidebar .s-search {
+    display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08);
+    border: 0; color: #fff; padding: 8px 10px; border-radius: var(--radius); font: inherit; margin-bottom: 8px;
+  }
+  .sidebar .s-search input {
+    border: 0; background: transparent; color: #fff; outline: none; font: inherit; width: 100%;
+  }
+  .sidebar .s-search input::placeholder { color: rgba(255,255,255,.5); }
+  .s-nav { display: flex; flex-direction: column; gap: 2px; }
+  .s-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+    border-radius: var(--radius); cursor: pointer; color: #fff;
+  }
+  .s-item:hover { background: var(--sidebar-item-hover); }
+  .s-item.active { background: var(--sidebar-item-hover); font-weight: 600; }
+  .s-group { margin-top: auto; font-size: 11px; color: var(--sidebar-sub-fg); padding: 8px; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .app-header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background);
+  }
+  .ah-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ah-title { font-weight: 700; font-size: 16px; margin-right: 4px; }
+  .ah-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .chip-status { color: var(--status-text); background: var(--status-bg); }
+  .chip-session { color: var(--pill-session-fg); background: var(--pill-session-bg); }
+  .chip-ip { color: #fff; background: var(--header-bar); }
+  .chip-term { color: #fff; background: var(--terminal-bg); }
+
+  .hbtn {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+    border-radius: var(--radius); font: inherit; font-weight: 600; font-size: 12px; cursor: pointer;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .hbtn.dark.cmd { background: var(--cmd-bg); color: #fff; }
+  .hbtn.dark.ps { background: var(--ps-bg); color: #fff; }
+  .hbtn.outline { background: #fff; color: var(--outline-fg); border-color: var(--outline-border); }
+  .hbtn.outline:hover { background: var(--muted); }
+  .hbtn.text { background: transparent; color: var(--sidebar); border: 0; }
+  .hbtn.text:hover { color: var(--link-hover); }
+  .hbtn.theme { background: var(--sidebar); color: #fff; border: 0; }
+  .hbtn.theme:hover { filter: brightness(1.15); }
+
+  .console-tabs {
+    display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border);
+    background: var(--card); flex-wrap: wrap;
+  }
+  .ctab {
+    padding: 5px 13px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--background); color: var(--muted-foreground); cursor: pointer;
+    font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .ctab.active { background: var(--accent-soft); border-color: var(--accent-soft-border); color: var(--accent); }
+
+  .grid { flex: 1; overflow: auto; }
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tbl thead th {
+    text-align: left; background: var(--grid-header-bg); color: var(--grid-header-fg);
+    font-weight: 600; padding: 9px 14px; position: sticky; top: 0; border-bottom: 1px solid var(--border);
+  }
+  table.tbl td { padding: 9px 14px; border-bottom: 1px solid var(--border-subtle); }
+  table.tbl tbody tr:nth-child(even) { background: var(--row-alt); }
+  table.tbl tbody tr:hover { background: var(--hover-row); }
+  .status { display: inline-flex; align-items: center; gap: 7px; }
+  .status .sd { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .sd.online { background: var(--status-online); }
+  .sd.active { background: var(--status-active); }
+  .sd.offline { background: var(--status-offline); }
+  .btn-white {
+    background: #fff; color: #333; border: 1px solid var(--border); padding: 8px 12px;
+    border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
+  }
+  .btn-white:hover { background: var(--muted); }
+  .btn-white:disabled { background: var(--disabled-bg); color: var(--disabled-fg); cursor: default; }
+
+  /* ===== Address book ===== */
+  .ab-filter {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background);
+  }
+  .pills-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fpill {
+    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--background); color: var(--muted-foreground); cursor: pointer;
+    font-size: 12px; font-weight: 600;
+  }
+  .fpill:hover { background: var(--muted); }
+  .fpill.active { background: var(--pill-bg); color: var(--pill-fg); border-color: var(--pill-border); }
+  .ab-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .ab-act {
+    background: var(--accent); color: #fff; border: 0; padding: 6px 12px;
+    border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; font-size: 12px;
+  }
+  .ab-act:hover { background: var(--accent-hover); }
+  .ab-hint { padding: 8px 16px; color: var(--muted-foreground); font-size: 12px; }
+
+  /* ===== Section header (#626F5E / themed) ===== */
+  .sec-win { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+  .panel { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); box-shadow: var(--shadow); }
+  .panel-head { background: var(--header-bar); color: #fff; padding: 16px 20px; display: flex; align-items: center; gap: 10px; }
+  .panel-head .ph-title { font-weight: 700; font-size: 16px; }
+  .panel-head .ph-sub { font-size: 12px; opacity: .85; margin-top: 3px; }
+  .panel-body { padding: 0; overflow: auto; max-height: 52vh; }
+
+  /* ===== Context menu (ThemedContextMenu) ===== */
+  .ctx-wrap { display: flex; justify-content: center; padding: 30px 16px; }
+  .ctx-note { text-align: center; color: var(--muted-foreground); margin: 0 0 10px; }
+  .ctx-menu {
+    background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius);
+    box-shadow: var(--shadow); min-width: 256px; padding: 4px; overflow: hidden; position: relative;
+  }
+  .ctx-menu.floating { position: fixed; z-index: 100; }
+  .ctx-header { background: var(--header-bar); color: #fff; padding: 10px 14px 12px; }
+  .ctx-title { font-weight: 700; font-size: 13px; letter-spacing: .4px; text-transform: uppercase; }
+  .ctx-sub { font-size: 12px; opacity: .9; margin-top: 3px; color: var(--header-subtitle); }
+  .ctx-item {
+    display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: var(--radius-flat);
+    cursor: pointer; position: relative; color: var(--foreground);
+  }
+  .ctx-item .ic { width: 18px; height: 18px; }
+  .ctx-item .meta { margin-left: auto; color: var(--muted-foreground); font-size: 11px; }
+  .ctx-item .ar { margin-left: auto; color: var(--muted-foreground); }
+  .ctx-item:hover { background: var(--accent-soft); }
+  .ctx-item.ctx-danger { color: var(--danger); }
+  .ctx-item.ctx-danger:hover { background: var(--danger-soft); }
+  .ctx-item.ctx-new { color: var(--accent); }
+  .ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 6px; }
+  .ctx-submenu {
+    display: none; position: absolute; left: 100%; top: 0; margin-left: 2px;
+    background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius);
+    box-shadow: var(--shadow); min-width: 170px; padding: 4px; z-index: 2;
+  }
+  .ctx-submenu.open { display: block; }
+
+  .legend { margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
+  .sw { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
+  .sw .box { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border); }
+  .foot { color: var(--muted-foreground); font-size: 12px; padding: 16px 0 4; }
+</style>
+</head>
+<body>
+
+<!-- ===== Flat icon sprite ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-computer" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="11" rx="2"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></symbol>
+  <symbol id="ic-book" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><line x1="9" y1="3" x2="9" y2="20"/></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="ic-tag" viewBox="0 0 24 24"><path d="M3 12l8-8h7a2 2 0 0 1 2 2v7l-8 8z"/><circle cx="15.5" cy="8.5" r="1.3"/></symbol>
+  <symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="ic-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></symbol>
+  <symbol id="ic-key" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><line x1="11" y1="11" x2="20" y2="20"/><line x1="16" y1="16" x2="19" y2="13"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></symbol>
+  <symbol id="ic-ping" viewBox="0 0 24 24"><path d="M3 12h3l2-6 4 12 3-9 2 3h4"/></symbol>
+  <symbol id="ic-terminal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2"/><line x1="12" y1="15" x2="16" y2="15"/></symbol>
+  <symbol id="ic-powershell" viewBox="0 0 24 24"><path d="M6 9l3 3-3 3"/><path d="M11 15h6"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l2.1 2.1M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></symbol>
+  <symbol id="ic-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/></symbol>
+  <symbol id="ic-disk" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/><line x1="9" y1="9" x2="9" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/></symbol>
+  <symbol id="ic-event" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><line x1="10" y1="20" x2="14" y2="20"/></symbol>
+  <symbol id="ic-exchange" viewBox="0 0 24 24"><path d="M7 8h12l-3-3M17 16H5l3 3"/></symbol>
+</svg>
+
+<div class="topbar">
+  <div class="brand">PupSeekRDP<span class="dot"> •</span> дизайн-превью</div>
+  <div class="tabs">
+    <button class="tab active" data-tab="rdp">Главное окно (RDP Manager)</button>
+    <button class="tab" data-tab="book">Адресная книга</button>
+    <button class="tab" data-tab="menu">Контекстное меню</button>
+    <button class="tab" data-tab="reports">Отчёты</button>
+  </div>
+  <button class="theme-toggle" id="themeBtn">Тема: Светлая</button>
+</div>
+
+<div class="stage">
+  <!-- ============ RDP Manager ============ -->
+  <div class="section active" id="sec-rdp">
+    <div class="window">
+      <div class="rdp">
+        <aside class="sidebar">
+          <div class="s-title">PupSeekRDP</div>
+          <label class="s-search"><svg class="ic"><use href="#ic-search"/></svg><input placeholder="Поиск компьютера…" /></label>
+          <nav class="s-nav">
+            <div class="s-item active"><svg class="ic lg"><use href="#ic-computer"/></svg> Компьютеры</div>
+            <div class="s-item"><svg class="ic lg"><use href="#ic-book"/></svg> Адресная книга</div>
+            <div class="s-item"><svg class="ic lg"><use href="#ic-lock"/></svg> Пароли (KeePass)</div>
+            <div class="s-item"><svg class="ic lg"><use href="#ic-eye"/></svg> Активные сессии</div>
+            <div class="s-item"><svg class="ic lg"><use href="#ic-tag"/></svg> Группы</div>
+          </nav>
+          <div class="s-group">Подключено к домену<br/>contoso.local</div>
+        </aside>
+        <main class="main">
+          <div class="app-header">
+            <div class="ah-left">
+              <div class="ah-title">RDP Менеджер</div>
+              <span class="chip chip-status"><svg class="ic"><use href="#ic-ping"/></svg> Подключено</span>
+              <span class="chip chip-session">ENM9GKHV</span>
+              <span class="chip chip-ip">10.20.4.11</span>
+              <span class="chip chip-term"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</span>
+            </div>
+            <div class="ah-right">
+              <button class="hbtn dark cmd"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</button>
+              <button class="hbtn dark ps"><svg class="ic"><use href="#ic-powershell"/></svg> PS</button>
+              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> Встроить ММС</button>
+              <button class="hbtn outline"><svg class="ic"><use href="#ic-exchange"/></svg> Экспорт/Импорт</button>
+              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> Сессия</button>
+              <button class="hbtn outline"><svg class="ic"><use href="#ic-plus"/></svg> В книгу</button>
+              <button class="hbtn text"><svg class="ic"><use href="#ic-key"/></svg> Сменить пароль</button>
+              <button class="hbtn theme"><svg class="ic"><use href="#ic-sun"/></svg> Тема</button>
+            </div>
+          </div>
+          <div class="console-tabs">
+            <span class="ctab active"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</span>
+            <span class="ctab"><svg class="ic"><use href="#ic-powershell"/></svg> PowerShell</span>
+            <span class="ctab"><svg class="ic"><use href="#ic-gear"/></svg> Комп. управление (MMC)</span>
+          </div>
+          <div class="grid">
+            <table class="tbl">
+              <thead>
+                <tr><th>Компьютер</th><th>Пользователь</th><th>IP-адрес</th><th>Статус</th><th>Действие</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>ENM9GKHV</td><td>ivanov.a</td><td>10.20.4.11</td><td><span class="status"><span class="sd online"></span>Онлайн</span></td><td><button class="btn-white">Подключить</button></td></tr>
+                <tr><td>SRV-DB-01</td><td>—</td><td>10.20.8.5</td><td><span class="status"><span class="sd active"></span>Сессия</span></td><td><button class="btn-white">Подключить</button></td></tr>
+                <tr><td>WS-MARKET-22</td><td>petrova.e</td><td>10.20.4.47</td><td><span class="status"><span class="sd offline"></span>Выключен</span></td><td><button class="btn-white" disabled>Подключить</button></td></tr>
+                <tr><td>FILESRV</td><td>—</td><td>10.20.8.9</td><td><span class="status"><span class="sd online"></span>Онлайн</span></td><td><button class="btn-white">Подключить</button></td></tr>
+                <tr><td>WS-IT-07</td><td>sidorov.p</td><td>10.20.4.91</td><td><span class="status"><span class="sd active"></span>Сессия</span></td><td><button class="btn-white">Подключить</button></td></tr>
+                <tr><td>PRN-HR-02</td><td>—</td><td>10.20.6.2</td><td><span class="status"><span class="sd offline"></span>Выключен</span></td><td><button class="btn-white" disabled>Подключить</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="foot">Главное окно: тёмный сайдбар, шапка (поля «Подключено»/имя/IP/терминал + кнопки CMD, PS, Встроить ММС, Экспорт/Импорт, +Сессия, +В книгу, Сменить пароль, Тема), пилы-вкладки встроенных консолей, таблица компьютеров.</div>
+  </div>
+
+  <!-- ============ Address book ============ -->
+  <div class="section" id="sec-book">
+    <div class="window">
+      <div class="ab-filter">
+        <div class="pills-row" id="groupPills">
+          <span class="fpill active">Все</span>
+          <span class="fpill">Отдел ИТ</span>
+          <span class="fpill">Бухгалтерия</span>
+          <span class="fpill">Маркетинг</span>
+          <span class="fpill">Склад</span>
+          <span class="fpill">Серверы</span>
+          <span class="fpill">Без группы</span>
+        </div>
+        <div class="ab-actions">
+          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-folder"/></svg> Открытые файлы</button>
+          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-list"/></svg> Инвентаризация ПО</button>
+          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-computer"/></svg> Сообщение всем</button>
+        </div>
+      </div>
+      <div class="ab-hint">Правый клик по строке — контекстное меню компьютера. Клик по пиле группы — фильтр.</div>
+      <div class="grid">
+        <table class="tbl" id="bookTbl">
+          <thead>
+            <tr><th>Компьютер</th><th>Пользователь</th><th>Группа</th><th>ОС</th><th>Статус</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>ENM9GKHV</td><td>ivanov.a</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd online"></span></span></td></tr>
+            <tr><td>WS-MARKET-22</td><td>petrova.e</td><td>Маркетинг</td><td>Windows 10</td><td><span class="status"><span class="sd offline"></span></span></td></tr>
+            <tr><td>SRV-DB-01</td><td>—</td><td>Серверы</td><td>Windows Server 2022</td><td><span class="status"><span class="sd active"></span></span></td></tr>
+            <tr><td>WS-IT-07</td><td>sidorov.p</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd active"></span></span></td></tr>
+            <tr><td>FILESRV</td><td>—</td><td>Серверы</td><td>Windows Server 2019</td><td><span class="status"><span class="sd online"></span></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="foot">Адресная книга: реальные фильтр-пилюли групп (Все / группы / Без группы), активная — PillActive-токены; action-кнопки (Открытые файлы, Инвентаризация ПО, Сообщение всем).</div>
+  </div>
+
+  <!-- ============ Context menu ============ -->
+  <div class="section" id="sec-menu">
+    <p class="ctx-note">Компонент <b>ThemedContextMenu</b> (header = имя ПК, скругление 4px, hover = accent-soft). Клик по «Назначить группу» раскрывает подменю. Здесь меню показано статично для ревью.</p>
+    <div class="ctx-wrap" id="staticMenu"></div>
+    <div class="foot">Тот же компонент используется по правому клику в Адресной книге и в дереве компьютеров. Цвет header берётся из <code>UiTheme.HeaderBar</code> (синий в Light, оливковый в Olive).</div>
+  </div>
+
+  <!-- ============ Reports ============ -->
+  <div class="section" id="sec-reports">
+    <div class="sec-win">
+      <div class="panel">
+        <div class="panel-head"><svg class="ic lg"><use href="#ic-lock"/></svg><div><div class="ph-title">Пароли</div><div class="ph-sub">хранилище KeePass (.kdbx)</div></div></div></div>
+        <div class="panel-body">
+          <table class="tbl">
+            <thead><tr><th>Запись</th><th>Пользователь</th><th>Логин</th><th>URL</th></tr></thead>
+            <tbody style="background:var(--table-bg)">
+              <tr><td>vCenter</td><td>admin</td><td>vc-admin</td><td>https://vc</td></tr>
+              <tr><td>WiFi Corp</td><td>—</td><td>corp-wifi</td><td>—</td></tr>
+              <tr><td>SQL sa</td><td>sa</td><td>sa</td><td>sql://</td></tr>
+              <tr><td>Домен</td><td>admin</td><td>contoso\a</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><svg class="ic lg"><use href="#ic-list"/></svg><div><div class="ph-title">Инвентаризация ПО</div><div class="ph-sub">по установленному ПО на компьютерах</div></div></div></div>
+        <div class="panel-body">
+          <table class="tbl">
+            <thead><tr><th>ПО</th><th>Версия</th><th>Компьютеры</th></tr></thead>
+            <tbody>
+              <tr><td>7-Zip</td><td>23.01</td><td>142</td></tr>
+              <tr><td>Adobe Reader</td><td>2023.03</td><td>98</td></tr>
+              <tr><td>1C:Предприятие</td><td>8.3.22</td><td>31</td></tr>
+              <tr><td>Notepad++</td><td>8.5</td><td>120</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><svg class="ic lg"><use href="#ic-folder"/></svg><div><div class="ph-title">Открытые файлы</div><div class="ph-sub">файлы, заблокированные удалённо</div></div></div></div>
+        <div class="panel-body">
+          <table class="tbl">
+            <thead><tr><th>Файл</th><th>Сервер</th><th>Пользователь</th><th>Время</th></tr></thead>
+            <tbody>
+              <tr><td>budget.xlsx</td><td>FILESRV</td><td>petrova.e</td><td>10:42</td></tr>
+              <tr><td>otchet.docx</td><td>FILESRV</td><td>ivanov.a</td><td>09:17</td></tr>
+              <tr><td>1c_base</td><td>SRV-DB-01</td><td>sidorov.p</td><td>11:05</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="foot">Окна отчётов: header = <b>UiTheme.HeaderBar</b> (синий #296AA0 в Light, оливковый #A2AD9E в Olive) — тема-зависимый. Таблица KeePass — белый фон (TableBackground), остальные — Card.</div>
+  </div>
+</div>
+
+<script>
+  // ---- Tabs ----
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById('sec-' + t.dataset.tab).classList.add('active');
+  }));
+
+  // ---- Theme toggle ----
+  const themeBtn = document.getElementById('themeBtn');
+  function applyTheme(name) {
+    document.documentElement.dataset.theme = name;
+    themeBtn.textContent = name === 'olive' ? 'Тема: Оливковая' : 'Тема: Светлая';
+    try { localStorage.setItem('preview-theme', name); } catch(e){}
+  }
+  themeBtn.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'olive' ? 'light' : 'olive');
+  });
+  try { const saved = localStorage.getItem('preview-theme'); if (saved) applyTheme(saved); } catch(e){}
+
+  // ---- Group filter pills (Address book) ----
+  const groupPills = document.getElementById('groupPills');
+  groupPills.addEventListener('click', (e) => {
+    const p = e.target.closest('.fpill');
+    if (!p) return;
+    groupPills.querySelectorAll('.fpill').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+  });
+
+  // ---- Console tabs ----
+  document.querySelectorAll('.console-tabs').forEach(strip => {
+    strip.addEventListener('click', (e) => {
+      const c = e.target.closest('.ctab');
+      if (!c) return;
+      strip.querySelectorAll('.ctab').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+    });
+  });
+
+  // ---- Context menu builder ----
+  function buildMenu() {
+    const m = document.createElement('div');
+    m.className = 'ctx-menu';
+    m.innerHTML = `
+      <div class="ctx-header">
+        <div class="ctx-title">ENM9GKHV</div>
+        <div class="ctx-sub">хост • контекстное меню</div>
+      </div>
+      <div class="ctx-item"><svg class="ic"><use href="#ic-computer"/></svg>Подключиться (RDP)<span class="meta">Ctrl+R</span></div>
+      <div class="ctx-item"><svg class="ic"><use href="#ic-eye"/></svg>Удалённое управление (Shadow)</div>
+      <div class="ctx-item"><svg class="ic"><use href="#ic-folder"/></svg>Открыть \\\\ENM9GKHV</div>
+      <div class="ctx-item"><svg class="ic"><use href="#ic-copy"/></svg>Копировать имя</div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item ctx-has-sub" id="subTrigger"><svg class="ic"><use href="#ic-tag"/></svg>Назначить группу<span class="ar">▸</span>
+        <div class="ctx-submenu" id="subMenu">
+          <div class="ctx-item">Отдел ИТ</div>
+          <div class="ctx-item">Бухгалтерия</div>
+          <div class="ctx-item">Склад</div>
+          <div class="ctx-item">Маркетинг</div>
+          <div class="ctx-sep"></div>
+          <div class="ctx-item ctx-new"><svg class="ic"><use href="#ic-plus"/></svg>Новая группа…</div>
+        </div>
+      </div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item"><svg class="ic"><use href="#ic-gear"/></svg>Редактировать</div>
+      <div class="ctx-item ctx-danger"><svg class="ic"><use href="#ic-trash"/></svg>Удалить</div>
+    `;
+    const trigger = m.querySelector('#subTrigger');
+    const sub = m.querySelector('#subMenu');
+    trigger.addEventListener('click', (e) => { e.stopPropagation(); sub.classList.toggle('open'); });
+    return m;
+  }
+
+  // Static menu in its section
+  document.getElementById('staticMenu').appendChild(buildMenu());
+
+  // Floating menu on right-click in Address book
+  const bookTbl = document.getElementById('bookTbl');
+  let floating = null;
+  function closeFloating() {
+    if (floating) { floating.remove(); floating = null; }
+    document.removeEventListener('click', closeFloating);
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) { if (e.key === 'Escape') closeFloating(); }
+  bookTbl.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    closeFloating();
+    floating = buildMenu();
+    floating.classList.add('floating');
+    document.body.appendChild(floating);
+    const w = floating.offsetWidth, h = floating.offsetHeight;
+    let x = e.clientX, y = e.clientY;
+    if (x + w > window.innerWidth) x = window.innerWidth - w - 8;
+    if (y + h > window.innerHeight) y = window.innerHeight - h - 8;
+    floating.style.left = x + 'px';
+    floating.style.top = y + 'px';
+    setTimeout(() => { document.addEventListener('click', closeFloating); document.addEventListener('keydown', onKey); }, 0);
+  });
+
+  // ---- Legend (active theme tokens) ----
+  const legend = document.getElementById('legend');
+  function renderLegend() {
+    const cs = getComputedStyle(document.documentElement);
+    const items = [
+      ['HeaderBar', '--header-bar'],
+      ['Accent', '--accent'],
+      ['Card', '--card'],
+      ['Muted', '--muted'],
+      ['PillActive', '--pill-bg'],
+      ['TableBackground', '--table-bg'],
+      ['Border', '--border'],
+      ['StatusOnline', '--status-online'],
+    ];
+    legend.innerHTML = items.map(([name, v]) => {
+      const c = cs.getPropertyValue(v).trim();
+      return `<span class="sw"><span class="box" style="background:${c}"></span>${name} ${c}</span>`;
+    }).join('');
+  }
+  renderLegend();
+  const obs = new MutationObserver(renderLegend);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

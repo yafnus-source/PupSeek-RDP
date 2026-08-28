@@ -1,0 +1,466 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Windows.Forms;
+
+namespace ShadowRDP.Controls
+{
+    // Embeds an mstsc.exe RDP session window inside a WinForms Panel via
+    // Win32 SetParent. Uses a Timer to poll for the RDP session window
+    // (class "TscShellContainerClass") because it appears AFTER the user
+    // enters credentials — MainWindowHandle doesn't point to it during
+    // the credential prompt phase.
+    //
+    // SMART SIZING is the key trick: mstsc only scales the remote desktop
+    // to fit the host window when "smart sizing:i:1" is in the .rdp file
+    // we launch it with. Without it, mstsc renders at the fixed /w:/h:
+    // resolution and centers inside whatever rect we give it — symptom:
+    // black border around the desktop, image drifts "down-right" on
+    // resize. With smart sizing on, mstsc scales the desktop to whatever
+    // size its window is, which is exactly what we want inside a panel.
+    public class RdpClient : Panel
+    {
+        private Process? _mstsc;
+        private IntPtr _mstscHandle = IntPtr.Zero;
+        private string _target = "";
+        private string? _rdpFilePath;
+        private bool _connected;
+        private System.Windows.Forms.Timer? _pollTimer;
+        private System.Windows.Forms.Timer? _resizeTimer;
+        private int _attempts;
+
+        [DllImport("user32.dll")] private static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+        [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr h);
+        [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr h, int n);
+        [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr h, int n, int v);
+        [DllImport("user32.dll")] private static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
+        [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr h, IntPtr rect, IntPtr region, uint flags);
+        [DllImport("gdi32.dll")] private static extern IntPtr CreateRectRgn(int x1, int y1, int x2, int y2);
+        [DllImport("user32.dll")] private static extern int SetWindowRgn(IntPtr h, IntPtr rgn, bool redraw);
+        [DllImport("user32.dll")] private static extern int PostMessage(IntPtr h, uint msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr h, EnumWindowsProc cb, IntPtr param);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr h);
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+        private const uint SWP_NOCOPYBITS = 0x0100;
+        private const uint RDW_INVALIDATE = 0x0001;
+        private const uint RDW_ALLCHILDREN = 0x0080;
+        private const uint RDW_UPDATENOW = 0x0100;
+        private const uint WM_SIZE = 0x0005;
+        private const int SIZE_RESTORED = 0;
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int c);
+        [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr param);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr h, StringBuilder s, int max);
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        private const int GWL_STYLE = -16;
+        private const int WS_CAPTION = 0x00C00000;
+        private const int WS_THICKFRAME = 0x00040000;
+        private const int WS_MINIMIZEBOX = 0x00020000;
+        private const int WS_MAXIMIZEBOX = 0x00010000;
+        private const int WS_SYSMENU = 0x00080000;
+        private const int WS_CHILD = 0x40000000;
+        private const int WS_VISIBLE = 0x10000000;
+        private const int WS_CLIPSIBLINGS = 0x04000000;
+        private const int WS_POPUP = unchecked((int)0x80000000);
+        private const int SW_SHOW = 5;
+        private const int SW_HIDE = 0;
+
+        public bool IsConnected => _connected;
+        public string Target => _target;
+
+        public RdpClient()
+        {
+            BackColor = System.Drawing.Color.Black;
+            Dock = DockStyle.Fill;
+            Padding = new Padding(0);
+        }
+
+        public void Connect(string target)
+        {
+            if (_connected) return;
+            _target = target;
+            Logger.Info($"RDP embed: Connect() called for target='{target}', panel size at call = {Width}x{Height}, ClientSize={ClientSize.Width}x{ClientSize.Height}, HandleCreated={IsHandleCreated}, Visible={Visible}");
+
+            try
+            {
+                // Write a temp .rdp file with smart sizing enabled. mstsc
+                // has no command-line flag for smart sizing — only the .rdp
+                // file form. The file is deleted in Disconnect().
+                _rdpFilePath = Path.Combine(Path.GetTempPath(),
+                    $"shadowrdp_{Environment.ProcessId}_{Math.Abs((target + DateTime.Now.Ticks).GetHashCode()):X}.rdp");
+                var rdp = new StringBuilder();
+                rdp.AppendLine($"full address:s:{target}");
+                rdp.AppendLine("smart sizing:i:1");          // scale desktop to fit window — key setting
+                rdp.AppendLine("desktopwidth:i:1024");        // initial desktop resolution
+                rdp.AppendLine("desktopheight:i:768");
+                rdp.AppendLine("session bpp:i:32");
+                rdp.AppendLine("prompt for credentials:i:1");
+                rdp.AppendLine("authentication level:i:0");   // suppress cert prompt for IP targets
+                rdp.AppendLine("enablecredsspsupport:i:1");   // NLA
+                rdp.AppendLine("negotiate security layer:i:1");
+                rdp.AppendLine("use multimon:i:0");
+                rdp.AppendLine("allow font smoothing:i:1");
+                rdp.AppendLine("disable themes:i:0");
+                rdp.AppendLine("disable wallpaper:i:0");
+                rdp.AppendLine("disable full window drag:i:0");
+                rdp.AppendLine("bitmapcachepersistenable:i:1");
+                File.WriteAllText(_rdpFilePath, rdp.ToString(), new UTF8Encoding(false));
+                Logger.Info($"RDP embed: wrote RDP config to {_rdpFilePath}");
+
+                _mstsc = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "mstsc.exe",
+                    Arguments = $"\"{_rdpFilePath}\"",
+                    UseShellExecute = true
+                });
+                _mstsc.EnableRaisingEvents = true;
+                _mstsc.Exited += (s, e) =>
+                {
+                    var exitCode = -1;
+                    try { exitCode = _mstsc.HasExited ? _mstsc.ExitCode : -1; } catch { }
+                    Logger.Warn($"RDP embed: mstsc.Exited event fired for {_target} (PID={_mstsc?.Id}, exit={exitCode}). HasEmbedded={_connected}, At attempts={_attempts}");
+                };
+
+                _attempts = 0;
+                _pollTimer = new System.Windows.Forms.Timer { Interval = 500 }; // 500ms for finer-grained diagnostics
+                _pollTimer.Tick += OnPollTick;
+                _pollTimer.Start();
+                Logger.Info($"RDP embed: started polling for {target} (PID={_mstsc.Id})");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"RDP embed: failed to start mstsc for {target}: {ex.Message}");
+            }
+        }
+
+        private void OnPollTick(object? sender, EventArgs e)
+        {
+            _attempts++;
+
+            if (_mstsc == null || _mstsc.HasExited)
+            {
+                _pollTimer?.Stop();
+                var exitCode = -1;
+                try { if (_mstsc != null) exitCode = _mstsc.ExitCode; } catch { }
+                Logger.Warn($"RDP embed: mstsc exited before window found ({_target}). ExitCode={exitCode}. Attempts={_attempts}");
+                return;
+            }
+
+            // Log every visible top-level window belonging to mstsc on the
+            // first 4 polls and every 5th after that. This shows us what
+            // mstsc is rendering (credential dialog vs session window).
+            if (_attempts <= 4 || _attempts % 5 == 0)
+            {
+                var classes = ListProcessWindowClasses(_mstsc.Id);
+                Logger.Info($"RDP embed: poll #{_attempts} for {_target} (PID={_mstsc.Id}). Visible top-level windows: [{classes}]");
+            }
+
+            // Search for the RDP session window by class name.
+            _mstscHandle = FindRdpSessionWindow(_mstsc.Id);
+
+            if (_mstscHandle != IntPtr.Zero)
+            {
+                _pollTimer?.Stop();
+                EmbedWindow();
+                _connected = true;
+                // Periodic resize guard — mstsc resizes itself internally
+                // (connection bar, resolution changes). Fire at 100ms so any
+                // drift is corrected before the user sees it.
+                _resizeTimer = new System.Windows.Forms.Timer { Interval = 100 };
+                _resizeTimer.Tick += (s2, e2) => RefreshSize();
+                _resizeTimer.Start();
+                Logger.Info($"RDP embed: window found and embedded for {_target} (attempt {_attempts}, hwnd=0x{_mstscHandle.ToInt64():X})");
+            }
+            else if (_attempts > 60) // 30 second timeout (60 * 500ms)
+            {
+                _pollTimer?.Stop();
+                Logger.Warn($"RDP embed: window not found after 30s for {_target}");
+            }
+        }
+
+        // Diagnostic helper: enumerates all top-level windows owned by the
+        // given PID and returns a comma-separated list of their class names.
+        // Used to figure out which mstsc windows actually exist at poll time.
+        private static string ListProcessWindowClasses(int processId)
+        {
+            var sb = new StringBuilder();
+            EnumWindows((hWnd, _) =>
+            {
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid != processId) return true;
+                var cls = new StringBuilder(256);
+                GetClassName(hWnd, cls, 256);
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append('\'').Append(cls).Append('\'');
+                return true;
+            }, IntPtr.Zero);
+            return sb.ToString();
+        }
+
+        // Enumerate all top-level windows and find the one belonging to the
+        // mstsc process with class name "TscShellContainerClass" (the actual
+        // RDP session window, NOT the credential prompt or connecting dialog).
+        private static IntPtr FindRdpSessionWindow(int processId)
+        {
+            IntPtr found = IntPtr.Zero;
+            EnumWindows((hWnd, _) =>
+            {
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid != processId) return true;
+
+                var sb = new StringBuilder(256);
+                GetClassName(hWnd, sb, 256);
+                var cls = sb.ToString();
+
+                // The RDP session window has class "TscShellContainerClass".
+                // The credential prompt has class "Credential Dialog Xaml Host"
+                // or "#32770" (dialog). We only want the session window.
+                if (cls == "TscShellContainerClass" || cls == "IHWindowClass")
+                {
+                    found = hWnd;
+                    return false; // Stop enumeration
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        private void EmbedWindow()
+        {
+            if (_mstscHandle == IntPtr.Zero) return;
+
+            // Ensure our own handle exists before we can parent mstsc to it.
+            if (!IsHandleCreated) CreateControl();
+            if (!Visible) Visible = true;
+
+            var rectBefore = new RECT();
+            GetWindowRect(_mstscHandle, ref rectBefore);
+
+            // Set WS_CHILD BEFORE SetParent. Also force WS_VISIBLE so mstsc's
+            // render surface is composited from the start — without it, mstsc
+            // may draw to an off-screen buffer and only appear when something
+            // else invalidates the parent (e.g. a resize).
+            int style = GetWindowLong(_mstscHandle, GWL_STYLE);
+            int origStyle = style;
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+            style &= ~WS_POPUP;
+            style |= WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
+            SetWindowLong(_mstscHandle, GWL_STYLE, style);
+            Logger.Info($"RDP embed: EmbedWindow hwnd=0x{_mstscHandle.ToInt64():X}, parent panel handle=0x{Handle.ToInt64():X}, panel ClientSize={ClientSize.Width}x{ClientSize.Height}");
+            Logger.Info($"RDP embed: style 0x{origStyle:X} → 0x{style:X}; rect before=({rectBefore.Left},{rectBefore.Top},{rectBefore.Right},{rectBefore.Bottom})");
+            LogLayoutHierarchy();
+
+            SetParent(_mstscHandle, Handle);
+
+            // Verify SetParent actually took effect — if GetParent returns
+            // something other than our panel handle, mstsc is still a
+            // top-level window and won't be auto-clipped to the panel rect.
+            var actualParent = GetParent(_mstscHandle);
+            Logger.Info($"RDP embed: GetParent(mstsc)=0x{actualParent.ToInt64():X}, expected panel handle=0x{Handle.ToInt64():X}, match={actualParent == Handle}");
+
+            // Enumerate mstsc's child windows — if the desktop is rendered in
+            // a child window, we need to clip each child separately.
+            var childInfo = new StringBuilder();
+            EnumChildWindows(_mstscHandle, (hChild, _) =>
+            {
+                var cls = new StringBuilder(256);
+                GetClassName(hChild, cls, 256);
+                var cr = new RECT();
+                GetWindowRect(hChild, ref cr);
+                if (childInfo.Length > 0) childInfo.Append(", ");
+                childInfo.Append($"[cls='{cls}',rect=({cr.Left},{cr.Top},{cr.Right},{cr.Bottom})={cr.Right - cr.Left}x{cr.Bottom - cr.Top},visible={IsWindowVisible(hChild)}]");
+                return true;
+            }, IntPtr.Zero);
+            Logger.Info($"RDP embed: child windows of mstsc: {childInfo}");
+
+            const uint SWP_FRAMECHANGED = 0x0020;
+            int w = Math.Max(100, ClientSize.Width);
+            int h = Math.Max(100, ClientSize.Height);
+            // SWP_NOCOPYBITS prevents stale framebuffer content from being
+            // copied when the window moves — eliminates the "image drifts
+            // down-right" effect on resize.
+            SetWindowPos(_mstscHandle, IntPtr.Zero, 0, 0, w, h,
+                SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            // Post WM_SIZE explicitly so mstsc's smart-sizing logic re-runs
+            // against the new size — without this, mstsc sees an external
+            // SetWindowPos and often reverts to its preferred desktop
+            // resolution on the next internal event.
+            PostMessage(_mstscHandle, WM_SIZE, (IntPtr)SIZE_RESTORED, (IntPtr)((h << 16) | (w & 0xFFFF)));
+            ApplyClipRegion(w, h);
+            // Also clip each child window we found above — covers the case
+            // where the actual desktop render target is a child of
+            // TscShellContainerClass.
+            EnumChildWindows(_mstscHandle, (hChild, _) =>
+            {
+                ApplyClipRegionToHandle(hChild, w, h);
+                return true;
+            }, IntPtr.Zero);
+
+            // Verify the SetWindowPos actually took effect.
+            var rectAfter = new RECT();
+            GetWindowRect(_mstscHandle, ref rectAfter);
+            Logger.Info($"RDP embed: mstsc rect AFTER SetWindowPos = ({rectAfter.Left},{rectAfter.Top},{rectAfter.Right},{rectAfter.Bottom}) [screen coords], requested {w}x{h}");
+
+            ShowWindow(_mstscHandle, SW_SHOW);
+
+            // Force mstsc to fully repaint into its new parent. Without this,
+            // mstsc keeps rendering to its old top-level surface and the panel
+            // stays black until something else invalidates it.
+            RedrawWindow(_mstscHandle, IntPtr.Zero, IntPtr.Zero,
+                RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero,
+                RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+
+            Logger.Info($"RDP embed: EmbedWindow done, SetWindowPos target size={w}x{h}, ShowWindow(SW_SHOW) + RedrawWindow called");
+        }
+
+        // Clips mstsc's visible area to the panel rect. mstsc fights our
+        // SetWindowPos and frequently snaps back to the desktop resolution
+        // (1920x1080); without this clip, the part of mstsc outside the panel
+        // spills onto the surrounding UI. With the clip, only the panel-sized
+        // portion is visible regardless of mstsc's actual window size.
+        private void ApplyClipRegion(int w, int h)
+        {
+            if (_mstscHandle == IntPtr.Zero) return;
+            ApplyClipRegionToHandle(_mstscHandle, w, h);
+        }
+
+        private void ApplyClipRegionToHandle(IntPtr hwnd, int w, int h)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                var rgn = CreateRectRgn(0, 0, w, h);
+                if (rgn != IntPtr.Zero)
+                {
+                    int result = SetWindowRgn(hwnd, rgn, true);
+                    if (_refreshCounter % 20 == 0)
+                        Logger.Info($"RDP embed: SetWindowRgn on 0x{hwnd.ToInt64():X} → {result}, size {w}x{h}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"RDP embed: ApplyClipRegion failed on 0x{hwnd.ToInt64():X}: {ex.Message}");
+            }
+        }
+
+        // Diagnostic helper: walks up the parent chain from this panel to the
+        // top-level Form and logs each level's Bounds + ClientSize. Used to
+        // diagnose docking / layout problems (e.g. panel reporting it's
+        // 1690x1008 when its visible area should be much smaller after sidebar
+        // + header are docked).
+        private void LogLayoutHierarchy()
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                Control? cur = this;
+                while (cur != null)
+                {
+                    sb.Append($"[{cur.GetType().Name}] bounds=({cur.Left},{cur.Top},{cur.Width}x{cur.Height}) client={cur.ClientSize.Width}x{cur.ClientSize.Height} dock={cur.Dock}");
+                    if (cur is Form f)
+                    {
+                        sb.Append($" state={f.WindowState} visible={f.Visible}");
+                        cur = null;
+                    }
+                    else
+                    {
+                        cur = cur.Parent;
+                        if (cur != null) sb.Append(" → ");
+                    }
+                }
+                Logger.Info($"RDP embed: layout chain: {sb}");
+            }
+            catch { }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, ref RECT r);
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            ResizeWindow();
+        }
+
+        private void ResizeWindow()
+        {
+            if (_mstscHandle == IntPtr.Zero) return;
+            if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+            int w = ClientSize.Width;
+            int h = ClientSize.Height;
+            const uint SWP_FRAMECHANGED = 0x0020;
+            SetWindowPos(_mstscHandle, IntPtr.Zero, 0, 0, w, h,
+                SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            PostMessage(_mstscHandle, WM_SIZE, (IntPtr)SIZE_RESTORED, (IntPtr)((h << 16) | (w & 0xFFFF)));
+            ApplyClipRegion(w, h);
+        }
+
+        // Public — called by RdpManagerForm on resize/tab-switch to keep
+        // the embedded mstsc window clamped to the panel size.
+        public void RefreshSize()
+        {
+            if (_mstscHandle == IntPtr.Zero) return;
+            int w = Math.Max(100, ClientSize.Width);
+            int h = Math.Max(100, ClientSize.Height);
+            const uint SWP_FRAMECHANGED = 0x0020;
+            SetWindowPos(_mstscHandle, IntPtr.Zero, 0, 0, w, h,
+                SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            PostMessage(_mstscHandle, WM_SIZE, (IntPtr)SIZE_RESTORED, (IntPtr)((h << 16) | (w & 0xFFFF)));
+            ApplyClipRegion(w, h);
+            // Re-clip children too — mstsc recreates child windows on internal
+            // events, so the regions we set in EmbedWindow get lost.
+            EnumChildWindows(_mstscHandle, (hChild, _) =>
+            {
+                ApplyClipRegionToHandle(hChild, w, h);
+                return true;
+            }, IntPtr.Zero);
+
+            // Periodically verify mstsc actually respected the resize — if it
+            // fought back, log the discrepancy. Logged every ~10th call to
+            // avoid spam (resize timer fires at 100ms → log every ~1s).
+            _refreshCounter++;
+            if (_refreshCounter % 10 == 0)
+            {
+                var r = new RECT();
+                GetWindowRect(_mstscHandle, ref r);
+                Logger.Info($"RDP embed: RefreshSize #{_refreshCounter} requested {w}x{h}, mstsc actual=({r.Left},{r.Top},{r.Right},{r.Bottom}) → {r.Right - r.Left}x{r.Bottom - r.Top}");
+            }
+        }
+        private int _refreshCounter;
+
+        public void Disconnect()
+        {
+            Logger.Info($"RDP embed: Disconnect() called for {_target}. WasConnected={_connected}, mstscPid={_mstsc?.Id}, mstscExited={_mstsc?.HasExited}");
+            _pollTimer?.Stop();
+            _resizeTimer?.Stop();
+            if (_mstsc != null && !_mstsc.HasExited)
+            {
+                try { _mstsc.Kill(); Logger.Info($"RDP embed: killed mstsc PID={_mstsc.Id}"); } catch (Exception ex) { Logger.Warn($"RDP embed: Kill failed: {ex.Message}"); }
+            }
+            _mstscHandle = IntPtr.Zero;
+            _connected = false;
+
+            // Clean up the temp .rdp file we wrote in Connect().
+            if (_rdpFilePath != null)
+            {
+                try { File.Delete(_rdpFilePath); } catch { /* best effort */ }
+                _rdpFilePath = null;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) Disconnect();
+            base.Dispose(disposing);
+        }
+    }
+}
