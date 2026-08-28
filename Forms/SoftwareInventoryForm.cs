@@ -54,7 +54,7 @@ namespace ShadowRDP.Forms
             BackColor = UiTheme.Background;
             FormBorderStyle = FormBorderStyle.Sizable;
 
-            var headerPanel = UiHeader.Create("Инвентаризация ПО", "все компьютеры из адресной книги", "list", Color.FromArgb(0x62, 0x6F, 0x5E));
+            var headerPanel = UiHeader.Create("Инвентаризация ПО", "все компьютеры из адресной книги", "list", ShadowRDP.Helpers.UiTheme.HeaderBar);
             headerPanel.Dock = DockStyle.Top;
             Controls.Add(headerPanel);
 

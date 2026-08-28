@@ -67,7 +67,7 @@ namespace ShadowRDP.Forms
             FormBorderStyle = FormBorderStyle.Sizable;
 
             // === Blue header bar (same as Open Files / Computer Info) ===
-            var header = UiHeader.Create("Пароли", "хранилище KeePass (.kdbx)", "shield", Color.FromArgb(0x62, 0x6F, 0x5E));
+            var header = UiHeader.Create("Пароли", "хранилище KeePass (.kdbx)", "shield", ShadowRDP.Helpers.UiTheme.HeaderBar);
             header.Dock = DockStyle.Top;
 
             // === Toolbar row: compact filled buttons ("+ Сессия" / "+ В книгу" look) ===
