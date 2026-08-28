@@ -122,6 +122,7 @@ namespace ShadowRDP.Forms
         }
 
         private readonly List<EmbeddedProgramSession> _embeddedSessions = new();
+        private readonly Dictionary<Controls.ConsoleSessionControl, Label> _consolePills = new();
         private EmbeddedProgramSession? _activeEmbedded;
         private Label _mmcBtn = null!;
         private Label _toolsBtn = null!;
@@ -1747,7 +1748,7 @@ namespace ShadowRDP.Forms
             foreach (var es in _embeddedSessions)
                 if (es.Control.IsEmbedded) es.Control.Visible = false;
             UpdateEmbedIcons();
-            HideTerminalIndicator();
+            ClearConsoleActive();
             foreach (var s in _sessions)
             {
                 if (s.Client == null) continue;
@@ -1786,6 +1787,7 @@ namespace ShadowRDP.Forms
         private Label _sessionNameLbl = null!;
         private Label _sessionIpLbl = null!;
         private Label _terminalLbl = null!;
+        private Controls.ConsoleSessionControl? _activeConsole;
 
         // === v2.1.49 — Sidebar rendering with groups ===
         // Replaces the old per-item AddSidebarItem. Clears _sidebarList
@@ -1944,10 +1946,13 @@ namespace ShadowRDP.Forms
                 _sessionIpLbl.Location = new Point(x, 10);
                 x = _sessionIpLbl.Right + 6;
             }
-            if (_terminalLbl.Visible)
+            // v3.9 — each open console (CMD/PS/MMC…) gets its own header pill,
+            // laid out left→right and persisting while the console is open
+            // (clicking a pill re-activates that console; ✕ closes it).
+            foreach (var pill in _consolePills.Values)
             {
-                _terminalLbl.Location = new Point(x, 10);
-                x = _terminalLbl.Right + 6;
+                pill.Location = new Point(x, 0);
+                x = pill.Right + 6;
             }
             // v3.9 — "Встроить ММС" moved into the Инструменты dropdown, so
             // running-console tabs now grow directly right of the session
@@ -3153,7 +3158,7 @@ namespace ShadowRDP.Forms
             foreach (var es in _embeddedSessions)
                 if (es.Control.IsEmbedded) es.Control.Visible = false;
             UpdateEmbedIcons();
-            HideTerminalIndicator();
+            ClearConsoleActive();
             // Show (or create) this one.
             var panel = GetOrCreateCustomPlaceholder(sess);
             panel.Visible = true;
@@ -3503,7 +3508,7 @@ namespace ShadowRDP.Forms
             _bookHost.Visible = false;
             _psSession?.Hide();
             _cmdSession?.Hide();
-            HideTerminalIndicator();
+            _activeConsole = null;
             es.Control.Visible = true;
             es.Control.BringToFront();
             es.Control.RestoreWindow();
@@ -3651,6 +3656,145 @@ namespace ShadowRDP.Forms
                 es.PillButton?.Invalidate();
         }
 
+        // v3.9 — header pill for an embedded CMD/PS console session. Mirrors
+        // the embedded-MMC tab style so all running consoles read as one row.
+        private void AddConsolePill(Controls.ConsoleSessionControl session, string title, Color accent)
+        {
+            var font = new Font("Segoe UI", 8.5F);
+            var nameWidth = TextRenderer.MeasureText(title, font).Width;
+            if (nameWidth > 160) nameWidth = 160;
+            const int iconW = 10;
+            const int tabH = 36;
+            int width = 8 + iconW + 5 + nameWidth + 6 + 18;
+
+            var pill = new Label
+            {
+                Text = "",
+                AutoSize = false,
+                Size = new Size(width, tabH),
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty,
+                BackColor = Color.Transparent
+            };
+            var normalBg = Color.FromArgb(0xFA, 0xF7, 0xF4);
+            var hoverBg = Color.FromArgb(0xF0, 0xEB, 0xE4);
+            var activeBg = Color.FromArgb(0xED, 0xE8, 0xE2);
+            var borderColor = Color.FromArgb(0xFA, 0xF7, 0xF4);
+            var textColor = Color.FromArgb(0x1C, 0x19, 0x17);
+            var closeColor = Color.FromArgb(0x78, 0x71, 0x6C);
+            var closeHoverColor = Color.FromArgb(0xDC, 0x26, 0x26);
+            var closeRect = new Rectangle(width - 6 - 14, (tabH - 14) / 2, 14, 14);
+            var isHovered = false;
+            var closeHovered = false;
+
+            pill.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, pill.Width, pill.Height);
+                using var path = Helpers.UiButtons.TabRect(r, 4);
+                bool isActive = ReferenceEquals(session, _activeConsole);
+                using var brush = new SolidBrush(isActive ? activeBg : (isHovered ? hoverBg : normalBg));
+                e.Graphics.FillPath(brush, path);
+                using var pen = new Pen(borderColor, 1);
+                e.Graphics.DrawPath(pen, path);
+                using var dotBrush = new SolidBrush(accent);
+                e.Graphics.FillEllipse(dotBrush, new Rectangle(8, (tabH - iconW) / 2, iconW, iconW));
+                var txtRect = new Rectangle(8 + iconW + 5, 0, closeRect.X - (8 + iconW + 5), tabH);
+                TextRenderer.DrawText(e.Graphics, title, font, txtRect, textColor,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                if (isHovered)
+                    TextRenderer.DrawText(e.Graphics, "✕", new Font("Segoe UI", 7F), closeRect,
+                        closeHovered ? closeHoverColor : closeColor,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            };
+            pill.MouseEnter += (s, e) => { isHovered = true; pill.Invalidate(); };
+            pill.MouseLeave += (s, e) => { isHovered = false; closeHovered = false; pill.Invalidate(); };
+            pill.MouseMove += (s, e) =>
+            {
+                bool over = closeRect.Contains(e.Location);
+                if (over != closeHovered) { closeHovered = over; pill.Invalidate(); }
+                pill.Cursor = over ? Cursors.Default : Cursors.Hand;
+            };
+            pill.MouseUp += (s, e) =>
+            {
+                if (session.IsDisposed) { RemoveConsolePill(session); return; }
+                if (e.Button == MouseButtons.Left && closeRect.Contains(e.Location))
+                {
+                    if (MessageBox.Show(this, $"Закрыть консоль «{title}»?", "Консоль",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        session.KillProcess();
+                    return;
+                }
+                if (e.Button == MouseButtons.Right)
+                {
+                    if (MessageBox.Show(this, $"Закрыть консоль «{title}»?", "Консоль",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        session.KillProcess();
+                    return;
+                }
+                ActivateConsoleSession(session);
+            };
+            _toolTip.SetToolTip(pill, title);
+            _headerPanel.Controls.Add(pill);
+            pill.BringToFront();
+            _consolePills[session] = pill;
+            LayoutHeaderLeftBlock();
+        }
+
+        private void EnsureConsolePill(Controls.ConsoleSessionControl session, string title, Color accent)
+        {
+            if (_consolePills.ContainsKey(session)) { LayoutHeaderLeftBlock(); return; }
+            AddConsolePill(session, title, accent);
+        }
+
+        private void RemoveConsolePill(Controls.ConsoleSessionControl session)
+        {
+            if (_consolePills.TryGetValue(session, out var pill))
+            {
+                _headerPanel.Controls.Remove(pill);
+                pill.Dispose();
+                _consolePills.Remove(session);
+            }
+            if (ReferenceEquals(_activeConsole, session)) _activeConsole = null;
+            LayoutHeaderLeftBlock();
+        }
+
+        // Shows a CMD/PS console panel, hiding every other panel — but NOT the
+        // console pills (they persist for the lifetime of the process).
+        private void ActivateConsoleSession(Controls.ConsoleSessionControl session)
+        {
+            _activeEmbedded = null;
+            _activeSession = null;
+            _activeCustomSessionId = null;
+            _activeConsole = session;
+            foreach (var s in _sessions)
+                if (s.Client != null) s.Client.Visible = false;
+            foreach (var c in _customPlaceholders.Values) c.Visible = false;
+            if (_activeSftpForm != null && !_activeSftpForm.IsDisposed) _activeSftpForm.Visible = false;
+            _bookHost.Visible = false;
+            if (_cmdSession != null && _cmdSession != session) _cmdSession.Hide();
+            if (_psSession != null && _psSession != session) _psSession.Hide();
+            foreach (var es in _embeddedSessions)
+                if (es.Control.IsEmbedded) es.Control.Visible = false;
+            session.Visible = true;
+            session.BringToFront();
+            session.Activate();
+            UpdateEmbedIcons();
+            foreach (var p in _consolePills.Values) p.Invalidate();
+            foreach (Control c in _sidebarList.Controls)
+            {
+                c.BackColor = SidebarBg;
+                UpdateItemLabelColors(c, active: false);
+                c.Invalidate();
+            }
+        }
+
+        private void ClearConsoleActive()
+        {
+            _activeConsole = null;
+            foreach (var p in _consolePills.Values) p.Invalidate();
+        }
+
         // v2.1.86: Web sessions no longer launch an external browser — the
         // embedded WebBrowser control (created in GetOrCreateCustomPlaceholder)
         // IS the in-app view. LaunchCustomSession now handles SSH only.
@@ -3713,11 +3857,8 @@ namespace ShadowRDP.Forms
             // If session exists and is alive — just show it.
             if (session != null && !session.IsDisposed)
             {
-                HideAllSessionPanels();
-                session.Visible = true;
-                session.BringToFront();
-                session.Activate();
-                ShowTerminalIndicator(title);
+                EnsureConsolePill(session, title, accentColor ?? (title.Contains("Power", StringComparison.OrdinalIgnoreCase) ? Color.FromArgb(0x01, 0x24, 0x56) : Color.FromArgb(0x3C, 0x3C, 0x3C)));
+                ActivateConsoleSession(session);
                 return session;
             }
 
@@ -3733,7 +3874,7 @@ namespace ShadowRDP.Forms
             {
                 newSession.KillProcess();
                 _mainArea.Controls.Remove(newSession);
-                HideTerminalIndicator();
+                RemoveConsolePill(newSession);
                 if (newSession == _psSession) _psSession = null;
                 if (newSession == _cmdSession) _cmdSession = null;
             };
@@ -3741,10 +3882,9 @@ namespace ShadowRDP.Forms
             _mainArea.Controls.Add(newSession);
             newSession.BringToFront();
 
-            HideAllSessionPanels();
-            newSession.Visible = true;
+            EnsureConsolePill(newSession, title, accentColor ?? (title.Contains("Power", StringComparison.OrdinalIgnoreCase) ? Color.FromArgb(0x01, 0x24, 0x56) : Color.FromArgb(0x3C, 0x3C, 0x3C)));
+            ActivateConsoleSession(newSession);
             newSession.StartProcess();
-            ShowTerminalIndicator(title);
             Logger.Info($"RDP Manager: opened embedded console session '{title}'");
             return newSession;
         }
@@ -3753,7 +3893,7 @@ namespace ShadowRDP.Forms
         {
             session.KillProcess();
             session.Dispose();
-            HideTerminalIndicator();
+            RemoveConsolePill(session);
         }
 
         private void HideAllSessionPanels()
@@ -3770,7 +3910,6 @@ namespace ShadowRDP.Forms
             foreach (var es in _embeddedSessions)
                 if (es.Control.IsEmbedded) es.Control.Visible = false;
             UpdateEmbedIcons();
-            HideTerminalIndicator();
         }
 
         // v3.2.2 — open SFTP exchange dialog for an SSH custom session.
