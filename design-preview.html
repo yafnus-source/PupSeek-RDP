@@ -116,97 +116,59 @@
   }
 
   * { box-sizing: border-box; }
-  body {
-    margin: 0; font-family: var(--font); background: var(--background);
-    color: var(--foreground); font-size: 13px;
-  }
+  body { margin: 0; font-family: var(--font); background: var(--background); color: var(--foreground); font-size: 13px; }
 
   /* ===== Flat icons ===== */
-  .ic {
-    width: 16px; height: 16px; flex: 0 0 auto;
-    stroke: currentColor; fill: none; stroke-width: 2;
-    stroke-linecap: round; stroke-linejoin: round;
-  }
+  .ic { width: 16px; height: 16px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ic.lg { width: 18px; height: 18px; }
 
   /* ===== Top toolbar ===== */
-  .topbar {
-    position: sticky; top: 0; z-index: 50;
-    display: flex; align-items: center; gap: 16px;
-    padding: 10px 18px; background: var(--card); border-bottom: 1px solid var(--border);
-  }
+  .topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px; padding: 10px 18px; background: var(--card); border-bottom: 1px solid var(--border); }
   .topbar .brand { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
   .topbar .brand .dot { color: var(--accent); }
   .tabs { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
-  .tab {
-    border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground);
-    padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
-  }
+  .tab { border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; }
   .tab:hover { background: var(--muted); }
   .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .theme-toggle {
-    border: 1px solid var(--outline-border); background: var(--button-bg); color: var(--outline-fg);
-    padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
-  }
+  .theme-toggle { border: 1px solid var(--outline-border); background: var(--button-bg); color: var(--outline-fg); padding: 7px 14px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; }
   .theme-toggle:hover { background: var(--muted); }
 
-  /* ===== Stage ===== */
   .stage { max-width: 1280px; margin: 0 auto; padding: 18px; }
   .section { display: none; }
   .section.active { display: block; }
+  .window { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 72vh; }
 
-  .window {
-    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 70vh;
-  }
-
-  /* ===== RDP Manager ===== */
-  .rdp { display: flex; min-height: 70vh; }
-  .sidebar {
-    width: 232px; background: var(--sidebar); color: #fff;
-    display: flex; flex-direction: column; padding: 14px 10px; gap: 6px;
-  }
-  .sidebar .s-title { font-weight: 700; font-size: 15px; padding: 6px 8px 12px; }
-  .sidebar .s-search {
-    display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08);
-    border: 0; color: #fff; padding: 8px 10px; border-radius: var(--radius); font: inherit; margin-bottom: 8px;
-  }
-  .sidebar .s-search input {
-    border: 0; background: transparent; color: #fff; outline: none; font: inherit; width: 100%;
-  }
-  .sidebar .s-search input::placeholder { color: rgba(255,255,255,.5); }
-  .s-nav { display: flex; flex-direction: column; gap: 2px; }
-  .s-item {
-    display: flex; align-items: center; gap: 10px; padding: 9px 10px;
-    border-radius: var(--radius); cursor: pointer; color: #fff;
-  }
-  .s-item:hover { background: var(--sidebar-item-hover); }
-  .s-item.active { background: var(--sidebar-item-hover); font-weight: 600; }
-  .s-group { margin-top: auto; font-size: 11px; color: var(--sidebar-sub-fg); padding: 8px; }
+  /* ===== Main window: sidebar (saved sessions) + Книга ===== */
+  .rdp { display: flex; min-height: 72vh; }
+  .sidebar { width: 236px; background: var(--sidebar); color: #fff; display: flex; flex-direction: column; overflow: auto; }
+  .sidebar .s-title { font-weight: 700; font-size: 14px; padding: 12px 12px 10px; }
+  .sgroup-head { background: var(--sidebar-group-bg); color: var(--sidebar-sub-fg); text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: .4px; padding: 7px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .sgroup-head .sg-arrow { font-size: 9px; }
+  .sgroup-items { display: block; }
+  .session { display: flex; align-items: center; gap: 10px; padding: 7px 12px 7px 14px; background: var(--sidebar); cursor: pointer; border-left: 3px solid transparent; }
+  .session:hover { background: var(--sidebar-item-hover); }
+  .session.active { background: var(--card); border-left-color: var(--accent); }
+  .session .s-icon { width: 16px; height: 16px; color: #fff; flex: 0 0 auto; }
+  .session.active .s-icon { color: var(--foreground); }
+  .s-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .s-name { font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session.active .s-name { color: var(--foreground); }
+  .s-sub { font-size: 11px; color: var(--sidebar-sub-fg); font-family: Consolas, "Courier New", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session.active .s-sub { color: var(--muted-foreground); }
+  .s-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--status-online); flex: 0 0 auto; }
 
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .app-header {
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background);
-  }
+
+  .app-header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); }
   .ah-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .ah-title { font-weight: 700; font-size: 16px; margin-right: 4px; }
   .ah-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
-
-  .chip {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap;
-  }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .chip-status { color: var(--status-text); background: var(--status-bg); }
   .chip-session { color: var(--pill-session-fg); background: var(--pill-session-bg); }
   .chip-ip { color: #fff; background: var(--header-bar); }
   .chip-term { color: #fff; background: var(--terminal-bg); }
-
-  .hbtn {
-    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
-    border-radius: var(--radius); font: inherit; font-weight: 600; font-size: 12px; cursor: pointer;
-    border: 1px solid transparent; white-space: nowrap;
-  }
+  .hbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: var(--radius); font: inherit; font-weight: 600; font-size: 12px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
   .hbtn.dark.cmd { background: var(--cmd-bg); color: #fff; }
   .hbtn.dark.ps { background: var(--ps-bg); color: #fff; }
   .hbtn.outline { background: #fff; color: var(--outline-fg); border-color: var(--outline-border); }
@@ -216,23 +178,23 @@
   .hbtn.theme { background: var(--sidebar); color: #fff; border: 0; }
   .hbtn.theme:hover { filter: brightness(1.15); }
 
-  .console-tabs {
-    display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border);
-    background: var(--card); flex-wrap: wrap;
-  }
-  .ctab {
-    padding: 5px 13px; border-radius: 999px; border: 1px solid var(--border);
-    background: var(--background); color: var(--muted-foreground); cursor: pointer;
-    font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;
-  }
+  .console-tabs { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--card); flex-wrap: wrap; }
+  .ctab { padding: 5px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); cursor: pointer; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .ctab.active { background: var(--accent-soft); border-color: var(--accent-soft-border); color: var(--accent); }
+
+  .ab-filter { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); }
+  .pills-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fpill { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); cursor: pointer; font-size: 12px; font-weight: 600; }
+  .fpill:hover { background: var(--muted); }
+  .fpill.active { background: var(--pill-bg); color: var(--pill-fg); border-color: var(--pill-border); }
+  .ab-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .ab-act { background: var(--accent); color: #fff; border: 0; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; font-size: 12px; }
+  .ab-act:hover { background: var(--accent-hover); }
+  .ab-hint { padding: 8px 16px; color: var(--muted-foreground); font-size: 12px; }
 
   .grid { flex: 1; overflow: auto; }
   table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.tbl thead th {
-    text-align: left; background: var(--grid-header-bg); color: var(--grid-header-fg);
-    font-weight: 600; padding: 9px 14px; position: sticky; top: 0; border-bottom: 1px solid var(--border);
-  }
+  table.tbl thead th { text-align: left; background: var(--grid-header-bg); color: var(--grid-header-fg); font-weight: 600; padding: 9px 14px; position: sticky; top: 0; border-bottom: 1px solid var(--border); }
   table.tbl td { padding: 9px 14px; border-bottom: 1px solid var(--border-subtle); }
   table.tbl tbody tr:nth-child(even) { background: var(--row-alt); }
   table.tbl tbody tr:hover { background: var(--hover-row); }
@@ -241,35 +203,11 @@
   .sd.online { background: var(--status-online); }
   .sd.active { background: var(--status-active); }
   .sd.offline { background: var(--status-offline); }
-  .btn-white {
-    background: #fff; color: #333; border: 1px solid var(--border); padding: 8px 12px;
-    border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600;
-  }
+  .btn-white { background: #fff; color: #333; border: 1px solid var(--border); padding: 8px 12px; border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; }
   .btn-white:hover { background: var(--muted); }
   .btn-white:disabled { background: var(--disabled-bg); color: var(--disabled-fg); cursor: default; }
 
-  /* ===== Address book ===== */
-  .ab-filter {
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background);
-  }
-  .pills-row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .fpill {
-    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
-    background: var(--background); color: var(--muted-foreground); cursor: pointer;
-    font-size: 12px; font-weight: 600;
-  }
-  .fpill:hover { background: var(--muted); }
-  .fpill.active { background: var(--pill-bg); color: var(--pill-fg); border-color: var(--pill-border); }
-  .ab-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  .ab-act {
-    background: var(--accent); color: #fff; border: 0; padding: 6px 12px;
-    border-radius: var(--radius); cursor: pointer; font: inherit; font-weight: 600; font-size: 12px;
-  }
-  .ab-act:hover { background: var(--accent-hover); }
-  .ab-hint { padding: 8px 16px; color: var(--muted-foreground); font-size: 12px; }
-
-  /* ===== Section header (#626F5E / themed) ===== */
+  /* ===== Reports ===== */
   .sec-win { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
   .panel { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); box-shadow: var(--shadow); }
   .panel-head { background: var(--header-bar); color: #fff; padding: 16px 20px; display: flex; align-items: center; gap: 10px; }
@@ -277,21 +215,15 @@
   .panel-head .ph-sub { font-size: 12px; opacity: .85; margin-top: 3px; }
   .panel-body { padding: 0; overflow: auto; max-height: 52vh; }
 
-  /* ===== Context menu (ThemedContextMenu) ===== */
+  /* ===== Context menu ===== */
   .ctx-wrap { display: flex; justify-content: center; padding: 30px 16px; }
   .ctx-note { text-align: center; color: var(--muted-foreground); margin: 0 0 10px; }
-  .ctx-menu {
-    background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius);
-    box-shadow: var(--shadow); min-width: 256px; padding: 4px; overflow: hidden; position: relative;
-  }
+  .ctx-menu { background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 256px; padding: 4px; overflow: hidden; position: relative; }
   .ctx-menu.floating { position: fixed; z-index: 100; }
   .ctx-header { background: var(--header-bar); color: #fff; padding: 10px 14px 12px; }
   .ctx-title { font-weight: 700; font-size: 13px; letter-spacing: .4px; text-transform: uppercase; }
   .ctx-sub { font-size: 12px; opacity: .9; margin-top: 3px; color: var(--header-subtitle); }
-  .ctx-item {
-    display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: var(--radius-flat);
-    cursor: pointer; position: relative; color: var(--foreground);
-  }
+  .ctx-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: var(--radius-flat); cursor: pointer; position: relative; color: var(--foreground); }
   .ctx-item .ic { width: 18px; height: 18px; }
   .ctx-item .meta { margin-left: auto; color: var(--muted-foreground); font-size: 11px; }
   .ctx-item .ar { margin-left: auto; color: var(--muted-foreground); }
@@ -300,11 +232,7 @@
   .ctx-item.ctx-danger:hover { background: var(--danger-soft); }
   .ctx-item.ctx-new { color: var(--accent); }
   .ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 6px; }
-  .ctx-submenu {
-    display: none; position: absolute; left: 100%; top: 0; margin-left: 2px;
-    background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius);
-    box-shadow: var(--shadow); min-width: 170px; padding: 4px; z-index: 2;
-  }
+  .ctx-submenu { display: none; position: absolute; left: 100%; top: 0; margin-left: 2px; background: var(--menu-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 170px; padding: 4px; z-index: 2; }
   .ctx-submenu.open { display: block; }
 
   .legend { margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
@@ -337,13 +265,13 @@
   <symbol id="ic-disk" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/><line x1="9" y1="9" x2="9" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/></symbol>
   <symbol id="ic-event" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><line x1="10" y1="20" x2="14" y2="20"/></symbol>
   <symbol id="ic-exchange" viewBox="0 0 24 24"><path d="M7 8h12l-3-3M17 16H5l3 3"/></symbol>
+  <symbol id="ic-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
 </svg>
 
 <div class="topbar">
   <div class="brand">PupSeekRDP<span class="dot"> •</span> дизайн-превью</div>
   <div class="tabs">
-    <button class="tab active" data-tab="rdp">Главное окно (RDP Manager)</button>
-    <button class="tab" data-tab="book">Адресная книга</button>
+    <button class="tab active" data-tab="rdp">Главное окно (Книга + сессии)</button>
     <button class="tab" data-tab="menu">Контекстное меню</button>
     <button class="tab" data-tab="reports">Отчёты</button>
   </div>
@@ -351,22 +279,63 @@
 </div>
 
 <div class="stage">
-  <!-- ============ RDP Manager ============ -->
+  <!-- ============ Main window: sidebar = saved sessions, main = Книга ============ -->
   <div class="section active" id="sec-rdp">
     <div class="window">
       <div class="rdp">
         <aside class="sidebar">
           <div class="s-title">PupSeekRDP</div>
-          <label class="s-search"><svg class="ic"><use href="#ic-search"/></svg><input placeholder="Поиск компьютера…" /></label>
-          <nav class="s-nav">
-            <div class="s-item active"><svg class="ic lg"><use href="#ic-computer"/></svg> Компьютеры</div>
-            <div class="s-item"><svg class="ic lg"><use href="#ic-book"/></svg> Адресная книга</div>
-            <div class="s-item"><svg class="ic lg"><use href="#ic-lock"/></svg> Пароли (KeePass)</div>
-            <div class="s-item"><svg class="ic lg"><use href="#ic-eye"/></svg> Активные сессии</div>
-            <div class="s-item"><svg class="ic lg"><use href="#ic-tag"/></svg> Группы</div>
-          </nav>
-          <div class="s-group">Подключено к домену<br/>contoso.local</div>
+
+          <div class="sgroup">
+            <div class="sgroup-head"><span class="sg-arrow">▼</span> ОТДЕЛ ИТ (2)</div>
+            <div class="sgroup-items">
+              <div class="session active">
+                <svg class="ic s-icon"><use href="#ic-computer"/></svg>
+                <div class="s-text"><div class="s-name">ENM9GKHV</div><div class="s-sub">10.20.4.11</div></div>
+                <span class="s-dot"></span>
+              </div>
+              <div class="session">
+                <svg class="ic s-icon"><use href="#ic-computer"/></svg>
+                <div class="s-text"><div class="s-name">WS-IT-07</div><div class="s-sub">10.20.4.91</div></div>
+                <span class="s-dot"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sgroup">
+            <div class="sgroup-head"><span class="sg-arrow">▼</span> СЕРВЕРЫ (1)</div>
+            <div class="sgroup-items">
+              <div class="session">
+                <svg class="ic s-icon"><use href="#ic-computer"/></svg>
+                <div class="s-text"><div class="s-name">FILESRV</div><div class="s-sub">10.20.8.9</div></div>
+                <span class="s-dot"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sgroup">
+            <div class="sgroup-head"><span class="sg-arrow">▼</span> WEB (1)</div>
+            <div class="sgroup-items">
+              <div class="session">
+                <svg class="ic s-icon"><use href="#ic-globe"/></svg>
+                <div class="s-text"><div class="s-name">Wiki</div><div class="s-sub">https://wiki.contoso.local</div></div>
+                <span class="s-dot"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sgroup">
+            <div class="sgroup-head"><span class="sg-arrow">▼</span> БЕЗ ГРУППЫ (1)</div>
+            <div class="sgroup-items">
+              <div class="session">
+                <svg class="ic s-icon"><use href="#ic-computer"/></svg>
+                <div class="s-text"><div class="s-name">WS-MARKET-22</div><div class="s-sub">10.20.4.47</div></div>
+                <span class="s-dot"></span>
+              </div>
+            </div>
+          </div>
         </aside>
+
         <main class="main">
           <div class="app-header">
             <div class="ah-left">
@@ -387,23 +356,42 @@
               <button class="hbtn theme"><svg class="ic"><use href="#ic-sun"/></svg> Тема</button>
             </div>
           </div>
+
           <div class="console-tabs">
             <span class="ctab active"><svg class="ic"><use href="#ic-terminal"/></svg> CMD</span>
             <span class="ctab"><svg class="ic"><use href="#ic-powershell"/></svg> PowerShell</span>
             <span class="ctab"><svg class="ic"><use href="#ic-gear"/></svg> Комп. управление (MMC)</span>
           </div>
+
+          <div class="ab-filter">
+            <div class="pills-row" id="groupPills">
+              <span class="fpill active">Все</span>
+              <span class="fpill">Отдел ИТ</span>
+              <span class="fpill">Бухгалтерия</span>
+              <span class="fpill">Маркетинг</span>
+              <span class="fpill">Склад</span>
+              <span class="fpill">Серверы</span>
+              <span class="fpill">Без группы</span>
+            </div>
+            <div class="ab-actions">
+              <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-folder"/></svg> Открытые файлы</button>
+              <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-list"/></svg> Инвентаризация ПО</button>
+              <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-computer"/></svg> Сообщение всем</button>
+            </div>
+          </div>
+          <div class="ab-hint">Правый клик по строке — контекстное меню компьютера. Клик по пиле группы — фильтр. Клик по сессии в сайдбаре — активация.</div>
+
           <div class="grid">
-            <table class="tbl">
+            <table class="tbl" id="bookTbl">
               <thead>
-                <tr><th>Компьютер</th><th>Пользователь</th><th>IP-адрес</th><th>Статус</th><th>Действие</th></tr>
+                <tr><th>Компьютер</th><th>Пользователь</th><th>Группа</th><th>ОС</th><th>Статус</th></tr>
               </thead>
               <tbody>
-                <tr><td>ENM9GKHV</td><td>ivanov.a</td><td>10.20.4.11</td><td><span class="status"><span class="sd online"></span>Онлайн</span></td><td><button class="btn-white">Подключить</button></td></tr>
-                <tr><td>SRV-DB-01</td><td>—</td><td>10.20.8.5</td><td><span class="status"><span class="sd active"></span>Сессия</span></td><td><button class="btn-white">Подключить</button></td></tr>
-                <tr><td>WS-MARKET-22</td><td>petrova.e</td><td>10.20.4.47</td><td><span class="status"><span class="sd offline"></span>Выключен</span></td><td><button class="btn-white" disabled>Подключить</button></td></tr>
-                <tr><td>FILESRV</td><td>—</td><td>10.20.8.9</td><td><span class="status"><span class="sd online"></span>Онлайн</span></td><td><button class="btn-white">Подключить</button></td></tr>
-                <tr><td>WS-IT-07</td><td>sidorov.p</td><td>10.20.4.91</td><td><span class="status"><span class="sd active"></span>Сессия</span></td><td><button class="btn-white">Подключить</button></td></tr>
-                <tr><td>PRN-HR-02</td><td>—</td><td>10.20.6.2</td><td><span class="status"><span class="sd offline"></span>Выключен</span></td><td><button class="btn-white" disabled>Подключить</button></td></tr>
+                <tr><td>ENM9GKHV</td><td>ivanov.a</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd online"></span></span></td></tr>
+                <tr><td>WS-MARKET-22</td><td>petrova.e</td><td>Маркетинг</td><td>Windows 10</td><td><span class="status"><span class="sd offline"></span></span></td></tr>
+                <tr><td>SRV-DB-01</td><td>—</td><td>Серверы</td><td>Windows Server 2022</td><td><span class="status"><span class="sd active"></span></span></td></tr>
+                <tr><td>WS-IT-07</td><td>sidorov.p</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd active"></span></span></td></tr>
+                <tr><td>FILESRV</td><td>—</td><td>Серверы</td><td>Windows Server 2019</td><td><span class="status"><span class="sd online"></span></span></td></tr>
               </tbody>
             </table>
           </div>
@@ -411,52 +399,14 @@
       </div>
     </div>
     <div class="legend" id="legend"></div>
-    <div class="foot">Главное окно: тёмный сайдбар, шапка (поля «Подключено»/имя/IP/терминал + кнопки CMD, PS, Встроить ММС, Экспорт/Импорт, +Сессия, +В книгу, Сменить пароль, Тема), пилы-вкладки встроенных консолей, таблица компьютеров.</div>
-  </div>
-
-  <!-- ============ Address book ============ -->
-  <div class="section" id="sec-book">
-    <div class="window">
-      <div class="ab-filter">
-        <div class="pills-row" id="groupPills">
-          <span class="fpill active">Все</span>
-          <span class="fpill">Отдел ИТ</span>
-          <span class="fpill">Бухгалтерия</span>
-          <span class="fpill">Маркетинг</span>
-          <span class="fpill">Склад</span>
-          <span class="fpill">Серверы</span>
-          <span class="fpill">Без группы</span>
-        </div>
-        <div class="ab-actions">
-          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-folder"/></svg> Открытые файлы</button>
-          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-list"/></svg> Инвентаризация ПО</button>
-          <button class="ab-act"><svg class="ic" style="width:14px;height:14px"><use href="#ic-computer"/></svg> Сообщение всем</button>
-        </div>
-      </div>
-      <div class="ab-hint">Правый клик по строке — контекстное меню компьютера. Клик по пиле группы — фильтр.</div>
-      <div class="grid">
-        <table class="tbl" id="bookTbl">
-          <thead>
-            <tr><th>Компьютер</th><th>Пользователь</th><th>Группа</th><th>ОС</th><th>Статус</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>ENM9GKHV</td><td>ivanov.a</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd online"></span></span></td></tr>
-            <tr><td>WS-MARKET-22</td><td>petrova.e</td><td>Маркетинг</td><td>Windows 10</td><td><span class="status"><span class="sd offline"></span></span></td></tr>
-            <tr><td>SRV-DB-01</td><td>—</td><td>Серверы</td><td>Windows Server 2022</td><td><span class="status"><span class="sd active"></span></span></td></tr>
-            <tr><td>WS-IT-07</td><td>sidorov.p</td><td>Отдел ИТ</td><td>Windows 11</td><td><span class="status"><span class="sd active"></span></span></td></tr>
-            <tr><td>FILESRV</td><td>—</td><td>Серверы</td><td>Windows Server 2019</td><td><span class="status"><span class="sd online"></span></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="foot">Адресная книга: реальные фильтр-пилюли групп (Все / группы / Без группы), активная — PillActive-токены; action-кнопки (Открытые файлы, Инвентаризация ПО, Сообщение всем).</div>
+    <div class="foot">Главное окно = Книга. Слева — сайдбар <b>сохранённых сессий</b> (сгруппированы по Group, активная подсвечена Card, клик по заголовку группы — свернуть). Шапка: поля Подключено/имя/IP/терминал + кнопки CMD, PS, Встроить ММС, Экспорт/Импорт, +Сессия, +В книгу, Сменить пароль, Тема; пилы-вкладки встроенных консолей; фильтр-пилюли групп книги + таблица.</div>
   </div>
 
   <!-- ============ Context menu ============ -->
   <div class="section" id="sec-menu">
     <p class="ctx-note">Компонент <b>ThemedContextMenu</b> (header = имя ПК, скругление 4px, hover = accent-soft). Клик по «Назначить группу» раскрывает подменю. Здесь меню показано статично для ревью.</p>
     <div class="ctx-wrap" id="staticMenu"></div>
-    <div class="foot">Тот же компонент используется по правому клику в Адресной книге и в дереве компьютеров. Цвет header берётся из <code>UiTheme.HeaderBar</code> (синий в Light, оливковый в Olive).</div>
+    <div class="foot">Тот же компонент используется по правому клику в Книге и в дереве компьютеров. Цвет header берётся из <code>UiTheme.HeaderBar</code> (синий в Light, оливковый в Olive).</div>
   </div>
 
   <!-- ============ Reports ============ -->
@@ -527,12 +477,10 @@
     themeBtn.textContent = name === 'olive' ? 'Тема: Оливковая' : 'Тема: Светлая';
     try { localStorage.setItem('preview-theme', name); } catch(e){}
   }
-  themeBtn.addEventListener('click', () => {
-    applyTheme(document.documentElement.dataset.theme === 'olive' ? 'light' : 'olive');
-  });
+  themeBtn.addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'olive' ? 'light' : 'olive'));
   try { const saved = localStorage.getItem('preview-theme'); if (saved) applyTheme(saved); } catch(e){}
 
-  // ---- Group filter pills (Address book) ----
+  // ---- Group filter pills (Книга) ----
   const groupPills = document.getElementById('groupPills');
   groupPills.addEventListener('click', (e) => {
     const p = e.target.closest('.fpill');
@@ -548,6 +496,25 @@
       if (!c) return;
       strip.querySelectorAll('.ctab').forEach(x => x.classList.remove('active'));
       c.classList.add('active');
+    });
+  });
+
+  // ---- Sidebar sessions: activate + collapse groups ----
+  document.querySelectorAll('.sidebar').forEach(sb => {
+    sb.addEventListener('click', (e) => {
+      const head = e.target.closest('.sgroup-head');
+      if (head) {
+        const items = head.parentElement.querySelector('.sgroup-items');
+        const collapsed = items.style.display === 'none';
+        items.style.display = collapsed ? 'block' : 'none';
+        head.querySelector('.sg-arrow').textContent = collapsed ? '▼' : '▶';
+        return;
+      }
+      const sess = e.target.closest('.session');
+      if (sess) {
+        sb.querySelectorAll('.session').forEach(x => x.classList.remove('active'));
+        sess.classList.add('active');
+      }
     });
   });
 
@@ -581,14 +548,12 @@
     `;
     const trigger = m.querySelector('#subTrigger');
     const sub = m.querySelector('#subMenu');
-    trigger.addEventListener('click', (e) => { e.stopPropagation(); sub.classList.toggle('open'); });
+    trigger.addEventListener('click', (ev) => { ev.stopPropagation(); sub.classList.toggle('open'); });
     return m;
   }
 
-  // Static menu in its section
   document.getElementById('staticMenu').appendChild(buildMenu());
 
-  // Floating menu on right-click in Address book
   const bookTbl = document.getElementById('bookTbl');
   let floating = null;
   function closeFloating() {
@@ -612,19 +577,14 @@
     setTimeout(() => { document.addEventListener('click', closeFloating); document.addEventListener('keydown', onKey); }, 0);
   });
 
-  // ---- Legend (active theme tokens) ----
+  // ---- Legend ----
   const legend = document.getElementById('legend');
   function renderLegend() {
     const cs = getComputedStyle(document.documentElement);
     const items = [
-      ['HeaderBar', '--header-bar'],
-      ['Accent', '--accent'],
-      ['Card', '--card'],
-      ['Muted', '--muted'],
-      ['PillActive', '--pill-bg'],
-      ['TableBackground', '--table-bg'],
-      ['Border', '--border'],
-      ['StatusOnline', '--status-online'],
+      ['HeaderBar', '--header-bar'], ['Accent', '--accent'], ['Card', '--card'],
+      ['Muted', '--muted'], ['PillActive', '--pill-bg'], ['TableBackground', '--table-bg'],
+      ['Border', '--border'], ['StatusOnline', '--status-online'],
     ];
     legend.innerHTML = items.map(([name, v]) => {
       const c = cs.getPropertyValue(v).trim();
@@ -632,8 +592,7 @@
     }).join('');
   }
   renderLegend();
-  const obs = new MutationObserver(renderLegend);
-  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  new MutationObserver(renderLegend).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 </script>
 </body>
 </html>
