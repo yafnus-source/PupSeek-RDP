@@ -1952,12 +1952,13 @@ namespace ShadowRDP.Forms
             foreach (var pill in _consolePills.Values)
             {
                 pill.Location = new Point(x, 0);
-                x = pill.Right + 6;
+                x = pill.Right;
             }
             // v3.9 — "Встроить ММС" moved into the Инструменты dropdown, so
             // running-console tabs now grow directly right of the session
             // pills (full header height, active one touching the bottom edge).
-            int px = x + 8;
+            // Tabs sit flush against each other (no gap between open consoles).
+            int px = x;
             foreach (var es in _embeddedSessions)
             {
                 if (es.PillButton == null) continue;
