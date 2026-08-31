@@ -69,7 +69,7 @@ namespace ShadowRDP.Forms
             BackColor = ShadowRDP.Helpers.UiTheme.Background;
             FormBorderStyle = FormBorderStyle.Sizable;
 
-            var headerPanel = Helpers.UiHeader.Create("Открытые файлы", "все файловые серверы домена", "list", ShadowRDP.Helpers.UiTheme.HeaderBar);
+            var headerPanel = Helpers.UiHeader.Create("Открытые файлы", "все файловые серверы домена", "list", Color.FromArgb(0x56, 0x5C, 0x30));
             headerPanel.Dock = DockStyle.Top;
             Controls.Add(headerPanel);
 

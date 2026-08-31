@@ -125,7 +125,7 @@ namespace ShadowRDP.Forms
         private readonly Dictionary<Controls.ConsoleSessionControl, Label> _consolePills = new();
         private EmbeddedProgramSession? _activeEmbedded;
         private Label _mmcBtn = null!;
-        private Label _toolsBtn = null!;
+        private Label _toolsTab = null!;
         private Panel _headerPanel = null!;
         private ToolTip _toolTip = null!;
         private string? _lastEmbedDir;
@@ -333,6 +333,17 @@ namespace ShadowRDP.Forms
             // opens the KeePass vault manager form (same UI as from tray).
             // Sessions are still visible in the sidebar as tabs; this button
             // is a shortcut, not a tab toggle.
+            // v3.9 — "Инструменты" dropdown, placed in the sidebar BELOW
+            // "Пароли" with the same filled nav-button look as Книга/Пароли.
+            // Added BEFORE Пароли/Книга so with DockStyle.Top it ends up at
+            // the bottom of the three (under Пароли).
+            _toolsTab = Helpers.UiButtons.MakeFilled("Инструменты", "gear",
+                Color.FromArgb(0x56, 0x5C, 0x30), width: 166, radius: 0);
+            _toolsTab.Dock = DockStyle.Top;
+            _toolsTab.Height = 36;
+            _toolsTab.Margin = Padding.Empty;
+            sidebar.Controls.Add(_toolsTab);
+
             _passwordsTab = Helpers.UiButtons.MakeFilled("Пароли", "shield",
                 ShadowRDP.Helpers.UiTheme.SidebarTab, width: 166, radius: 0);
             _passwordsTab.Dock = DockStyle.Top;
@@ -941,70 +952,38 @@ namespace ShadowRDP.Forms
             foreach (var b in new Control[] { changePwdBtn, themeBtn, addSessionBtn, addToBookBtn, exportBtn, psBtn, cmdBtn, embedBtn })
                 b.Visible = false;
 
-            var toolsFont = new Font("Segoe UI Semibold", 9F);
-            var toolsText = "Инструменты  ▾";
-            var toolsSize = TextRenderer.MeasureText(toolsText, toolsFont);
-            var toolsBtn = new Label
-            {
-                Text = "",
-                AutoSize = false,
-                Size = new Size(toolsSize.Width + 46, 24),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Font = toolsFont,
-                Cursor = Cursors.Hand,
-                Margin = Padding.Empty
-            };
-            Color toolsColor = ShadowRDP.Helpers.UiTheme.OutlineFg;
-            Color toolsHover = ControlPaint.Light(toolsColor, 0.25f);
-            var toolsBorder = ShadowRDP.Helpers.UiTheme.OutlineBorder;
-            var toolsBg = Color.White;
-            var toolsIcon = ShadowRDP.Helpers.MenuIcons.Get("gear");
-            toolsBtn.Paint += (s, e) =>
-            {
-                var g = e.Graphics;
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var rb = new Rectangle(0, 0, toolsBtn.Width - 1, toolsBtn.Height - 1);
-                using var path = Helpers.UiButtons.RoundedRect(rb, 4);
-                g.SetClip(path);
-                g.FillRectangle(new SolidBrush(toolsBg), 0, 0, toolsBtn.Width, toolsBtn.Height);
-                g.ResetClip();
-                using var bpen = new Pen(toolsBorder, 1);
-                g.DrawPath(bpen, path);
-                const int iconPad = 9;
-                int iconH = toolsBtn.Height - 12;
-                if (toolsIcon != null)
-                    g.DrawImage(toolsIcon, new Rectangle(iconPad, (toolsBtn.Height - iconH) / 2, iconH, iconH));
-                int textX = iconPad + iconH + 6;
-                TextRenderer.DrawText(g, toolsText, toolsBtn.Font,
-                    new Rectangle(textX, 0, toolsBtn.Width - textX - 8, toolsBtn.Height),
-                    toolsColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-            };
-            toolsBtn.MouseEnter += (s, e) => { toolsColor = toolsHover; toolsBtn.Invalidate(); };
-            toolsBtn.MouseLeave += (s, e) => { toolsColor = ShadowRDP.Helpers.UiTheme.OutlineFg; toolsBtn.Invalidate(); };
-
+            // v3.9 — the "Инструменты" dropdown now lives in the sidebar
+            // (below "Пароли"), styled like the other sidebar nav buttons.
+            // The menu opens to the right of the sidebar button.
             var toolsMenu = new Helpers.ThemedContextMenu();
             toolsMenu.AddHeader("Инструменты");
             toolsMenu.AddItem("CMD", "terminal", () => launchCmd());
             toolsMenu.AddItem("PowerShell (PS)", "powershell", () => launchPs());
-            toolsMenu.AddItem("Встроить ММС", "gear", () => embedMenu.Show(toolsBtn, new Point(0, toolsBtn.Height)));
+            toolsMenu.AddItem("Встроить ММС", "gear", () =>
+            {
+                toolsMenu.Close();
+                // Warm handle before first Opening — otherwise GetPreferredSize returns 0 and menu is 0-size.
+                if (!embedMenu.IsHandleCreated) { var _ = embedMenu.Handle; }
+                BeginInvoke(new Action(() => embedMenu.Show(_toolsTab, new Point(0, _toolsTab.Height))));
+            });
             toolsMenu.AddSeparator();
-            toolsMenu.AddItem("Экспорт/Импорт", "exchange", () => exportMenu.Show(this, toolsBtn.PointToScreen(new Point(0, toolsBtn.Height))));
+            toolsMenu.AddItem("Экспорт/Импорт", "exchange", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() => exportMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)))));
+            });
             toolsMenu.AddItem("Сессия", "add", () => addSession());
             toolsMenu.AddItem("В книгу", "book", () => addToBook());
             toolsMenu.AddSeparator();
             toolsMenu.AddItem("Сменить пароль", "key", () => changePwd());
             toolsMenu.AddItem("Тема", "sun", () => switchTheme());
-            toolsBtn.Click += (s, e) => toolsMenu.Show(this, toolsBtn.PointToScreen(new Point(0, toolsBtn.Height)));
-            header.Controls.Add(toolsBtn);
-            _toolsBtn = toolsBtn;
+            _toolsTab.Click += (s, e) => toolsMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)));
 
             // Recompute X position — right-anchored buttons.
             // Layout right-to-left: changePwdBtn (rightmost), addSessionBtn,
             // addToBookBtn, exportBtn (leftmost).
             header.Layout += (s, e) =>
             {
-                toolsBtn.Location = new Point(header.Width - toolsBtn.Width - 12, 7);
-
                 // Left block, left→right: logo → title → status badge →
                 // session pills → running-console pills.
                 icon.Location = new Point(20, 6);
@@ -3263,35 +3242,35 @@ namespace ShadowRDP.Forms
             // menu itself to exactly that content (Width = maxW, Height = sum
             // of the rows) so the drop-down can't drift into a different size
             // (which moved the ✕) or overflow into up/down scroll arrows.
-            int maxW = 0;
+            int maxW2 = 0;
             foreach (ToolStripItem it in menu.Items)
             {
                 int w = it.GetPreferredSize(Size.Empty).Width;
-                if (w > maxW) maxW = w;
+                if (w > maxW2) maxW2 = w;
             }
             foreach (ToolStripItem it in menu.Items)
             {
                 if (it is Helpers.EmbedRecentItem ri)
                 {
                     ri.AutoSize = false;
-                    ri.Size = new Size(maxW, 26);
+                    ri.Size = new Size(maxW2, 26);
                 }
                 else if (it is ToolStripMenuItem mi)
                 {
                     mi.AutoSize = false;
-                    mi.Size = new Size(maxW, mi.GetPreferredSize(Size.Empty).Height);
+                    mi.Size = new Size(maxW2, mi.GetPreferredSize(Size.Empty).Height);
                 }
             }
-            int menuH = menu.Padding.Vertical;
+            int menuH2 = menu.Padding.Vertical;
             foreach (ToolStripItem it in menu.Items)
             {
                 int h = it.Height;
                 if (h <= 0) h = it.GetPreferredSize(Size.Empty).Height;
-                menuH += h;
+                menuH2 += h;
             }
             menu.AutoSize = false;
-            menu.Width = maxW + menu.Padding.Horizontal;
-            menu.Height = menuH;
+            menu.Width = maxW2 + menu.Padding.Horizontal;
+            menu.Height = menuH2;
         }
 
         // ✕ in the recent-console menu: removes the entry from history.

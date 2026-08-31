@@ -1,12 +1,12 @@
 ; Pup Seek RDP — Inno Setup installer script.
-; v3.8.0 — C#/.NET 8 self-contained single-file build.
+; v3.8.2 — C#/.NET 8 self-contained single-file build.
 ; Per-user install (no admin required for installation itself — the app
 ; auto-elevates itself via UAC at runtime for shadow RDP).
-; Compile: ISCC.exe PupSeekRDP.iss  →  produces C:\temp\Clo\prod\3.8.0.0\install\PupSeekRDP-3.8.0-Setup.exe
+; Compile: ISCC.exe PupSeekRDP.iss  →  produces C:\temp\Clo\prod\3.8.2.0\install\PupSeekRDP-3.8.2-Setup.exe
 
 [Setup]
 AppName=Pup Seek RDP
-AppVersion=3.8.0
+AppVersion=3.8.2
 AppPublisher=M.A.D.
 AppPublisherURL=https://claude.ai/claude-code
 DefaultDirName={localappdata}\Programs\Pup Seek RDP
@@ -14,8 +14,8 @@ DefaultGroupName=Pup Seek RDP
 PrivilegesRequired=lowest
 Compression=lzma2
 SolidCompression=yes
-OutputDir=C:\temp\Clo\prod\3.8.0.0\install
-OutputBaseFilename=PupSeekRDP-3.8.0-Setup
+OutputDir=C:\temp\Clo\prod\3.8.2.0\install
+OutputBaseFilename=PupSeekRDP-3.8.2-Setup
 DisableProgramGroupPage=yes
 DisableDirPage=no
 Uninstallable=yes

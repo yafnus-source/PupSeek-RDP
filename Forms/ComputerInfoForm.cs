@@ -39,7 +39,7 @@ namespace ShadowRDP.Forms
             MaximizeBox = true;
 
             // === Header (v2.2.15: blue #296AA0 bar + white text/icon) ===
-            var headerPanel = Helpers.UiHeader.Create(computer, "Отчёт о компьютере", "info");
+            var headerPanel = Helpers.UiHeader.Create(computer, "Отчёт о компьютере", "info", Color.FromArgb(0x56, 0x5C, 0x30));
             headerPanel.Dock = DockStyle.Top;
             Controls.Add(headerPanel);
 
@@ -59,7 +59,7 @@ namespace ShadowRDP.Forms
                 BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
                 BorderStyle = BorderStyle.FixedSingle,
                 CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.BorderSubtle,
+                GridColor = Color.FromArgb(0xFB, 0xF7, 0xEE),
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
                 ColumnHeadersHeight = 30,
@@ -116,8 +116,8 @@ _grid.EnableHeadersVisualStyles = false;
             _grid.Rows.Clear();
             var sectionFont = new Font("Segoe UI Semibold", 9.5F);
             var sectionBg = ShadowRDP.Helpers.UiTheme.AccentSoft;
-            var sectionFg = ShadowRDP.Helpers.UiTheme.Accent;
-            var bandBg = ShadowRDP.Helpers.UiTheme.Background;
+            var sectionFg = Color.FromArgb(0x3E, 0x43, 0x16);
+            var bandBg = Color.FromArgb(0xFB, 0xF7, 0xEE);
             var whiteBg = Color.White;
             var propColor = Color.FromArgb(90, 95, 105);
             var valueColor = ShadowRDP.Helpers.UiTheme.Foreground;
@@ -130,12 +130,14 @@ _grid.EnableHeadersVisualStyles = false;
                     bandIdx = 0;
                     var idx = _grid.Rows.Add(row.Property, "");
                     var gridRow = _grid.Rows[idx];
-                    gridRow.Cells[0].Style.BackColor = sectionBg;
-                    gridRow.Cells[0].Style.ForeColor = sectionFg;
-                    gridRow.Cells[0].Style.Font = sectionFont;
-                    gridRow.Cells[1].Style.BackColor = sectionBg;
-                    gridRow.Cells[1].Style.ForeColor = sectionFg;
-                    gridRow.Cells[1].Style.Font = sectionFont;
+                    // v3.9 — row-level style so every section header (including
+                    // the first) recolours reliably. Selection styles match so
+                    // the auto-selected first row also shows the section colours.
+                    gridRow.DefaultCellStyle.BackColor = sectionBg;
+                    gridRow.DefaultCellStyle.ForeColor = sectionFg;
+                    gridRow.DefaultCellStyle.Font = sectionFont;
+                    gridRow.DefaultCellStyle.SelectionBackColor = sectionBg;
+                    gridRow.DefaultCellStyle.SelectionForeColor = sectionFg;
                     gridRow.Height = 28;
                 }
                 else
@@ -150,6 +152,9 @@ _grid.EnableHeadersVisualStyles = false;
                     bandIdx++;
                 }
             }
+            // v3.9 — clear the default first-row selection so it doesn't
+            // override the section header colours via SelectionForeColor.
+            _grid.ClearSelection();
         }
 
         // Show "Loading..." row, run the (synchronous) report on a worker

@@ -63,11 +63,11 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(720, 420);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = UiTheme.Background;
+            BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8);
             FormBorderStyle = FormBorderStyle.Sizable;
 
             // === Blue header bar (same as Open Files / Computer Info) ===
-            var header = UiHeader.Create("Пароли", "хранилище KeePass (.kdbx)", "shield", ShadowRDP.Helpers.UiTheme.HeaderBar);
+            var header = UiHeader.Create("Пароли", "хранилище KeePass (.kdbx)", "shield", Color.FromArgb(0x62, 0x6F, 0x5E));
             header.Dock = DockStyle.Top;
 
             // === Toolbar row: compact filled buttons ("+ Сессия" / "+ В книгу" look) ===
@@ -75,7 +75,7 @@ namespace ShadowRDP.Forms
             {
                 Dock = DockStyle.Top,
                 Height = 44,
-                BackColor = UiTheme.Background
+                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
             };
             var btnFont = new Font("Segoe UI Semibold", 9F);
             int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
@@ -124,7 +124,7 @@ namespace ShadowRDP.Forms
                 Dock = DockStyle.Fill,
                 SplitterDistance = 260,
                 SplitterWidth = 6,
-                BackColor = UiTheme.Background
+                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
             };
 
             _tree = new TreeView
@@ -132,10 +132,9 @@ namespace ShadowRDP.Forms
                 Dock = DockStyle.Fill,
                 BorderStyle = BorderStyle.FixedSingle,
                 HideSelection = false,
-                // v3.7.1 — white background for the groups tree (was Card).
-                // User request: левая колонка с деревом групп PupSeekRDP
-                // должна быть на белом фоне.
-                BackColor = UiTheme.Background,
+                // v3.9 — near-white cream background for the groups tree
+                // (#FFFDF8) instead of the Olive theme Background (#E8E4D2).
+                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8),
                 ForeColor = Color.FromArgb(0x1E, 0x1E, 0x1E),
                 Font = new Font("Segoe UI", 9F),
                 ItemHeight = 22
@@ -639,7 +638,7 @@ namespace ShadowRDP.Forms
                     MaximizeBox = false,
                     MinimizeBox = false,
                     Font = new Font("Segoe UI", 9F),
-                    BackColor = UiTheme.Background
+                    BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
                 };
 
                 AddRow(dlg, "Имя:", 14, out var tbName);

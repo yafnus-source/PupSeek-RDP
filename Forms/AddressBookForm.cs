@@ -31,6 +31,8 @@ namespace ShadowRDP.Forms
         // when the search box has text. Click → empty the box + re-filter.
         private Label _searchClearBtn = null!;
         private readonly DataGridView _grid;
+        private DataGridViewColumn? _fillerCol;
+        private bool _suppressWidthSave;
         private readonly Label _statusLabel;
         private readonly Panel _tabsPanel;
 
@@ -468,6 +470,7 @@ namespace ShadowRDP.Forms
             {
                 Name = "Ping",
                 HeaderText = "В сети",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 FillWeight = 25,
                 Width = 50,
                 ImageLayout = DataGridViewImageCellLayout.Normal
@@ -483,6 +486,7 @@ namespace ShadowRDP.Forms
             {
                 Name = "Rdp",
                 HeaderText = "RDP",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 FillWeight = 20,
                 Width = 40,
                 ImageLayout = DataGridViewImageCellLayout.Normal
@@ -567,6 +571,26 @@ namespace ShadowRDP.Forms
             // Explicit key — the grid is embedded in RdpManagerForm, so
             // FindForm() alone would report the host form.
             Helpers.GridColumnOrder.Wire(_grid, "AddressBookForm");
+
+            // v3.9 — trailing filler column (Fill) absorbs the leftover width so
+            // the real columns keep their saved pixel widths instead of being
+            // stretched by AutoSizeColumnsMode.Fill. Always stays last, not
+            // user-resizable, not sortable, width not persisted.
+            _fillerCol = new DataGridViewTextBoxColumn
+            {
+                Name = "_filler",
+                HeaderText = "",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                FillWeight = 1,
+                ReadOnly = true,
+                Resizable = DataGridViewTriState.False,
+                SortMode = DataGridViewColumnSortMode.NotSortable
+            };
+            _grid.Columns.Add(_fillerCol);
+
+            // v3.9 — persist column widths live as the user drags dividers.
+            _grid.ColumnWidthChanged += OnGridColumnWidthChanged;
+
             // v2.1.77: restore v2.1.62 working setup — single OnCellPainting
             // handler with e.PaintBackground(CellBounds, false). RowPostPaint
             // approach triggered the bordered-paint path too.
@@ -801,10 +825,13 @@ namespace ShadowRDP.Forms
                 if (!doc.RootElement.TryGetProperty(ColumnWidthsFormKey, out var formEntry)) return;
                 foreach (var prop in formEntry.EnumerateObject())
                 {
+                    if (prop.Name == "_filler") continue;
                     if (!_grid.Columns.Contains(prop.Name)) continue;
                     int w = prop.Value.GetInt32();
                     if (w < 50) continue;  // sanity floor — anything tiny is bogus
-                    _grid.Columns[prop.Name]!.Width = w;
+                    _suppressWidthSave = true;
+                    try { _grid.Columns[prop.Name]!.Width = w; }
+                    finally { _suppressWidthSave = false; }
                 }
             }
             catch (Exception ex)
@@ -833,6 +860,7 @@ namespace ShadowRDP.Forms
                 var perForm = new Dictionary<string, int>();
                 foreach (DataGridViewColumn c in _grid.Columns)
                 {
+                    if (c.Name == "_filler") continue;
                     perForm[c.Name] = c.Width;
                 }
                 data[ColumnWidthsFormKey] = perForm;
@@ -848,6 +876,13 @@ namespace ShadowRDP.Forms
             {
                 Logger.Warn($"SaveColumnWidths failed: {ex.Message}");
             }
+        }
+
+        private void OnGridColumnWidthChanged(object? sender, DataGridViewColumnEventArgs e)
+        {
+            if (_suppressWidthSave) return;
+            if (e.Column == _fillerCol) return;
+            SaveColumnWidths();
         }
 
         // === Layout sync ===
@@ -2168,13 +2203,15 @@ namespace ShadowRDP.Forms
         }
 
         // === Helpers ===
-        private static void AddTextColumn(DataGridView grid, string name, string header, int fillWeight)
+        private static void AddTextColumn(DataGridView grid, string name, string header, int width)
         {
             var col = new DataGridViewTextBoxColumn
             {
                 Name = name,
                 HeaderText = header,
-                FillWeight = fillWeight
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                Width = width,
+                MinimumWidth = 40
             };
             grid.Columns.Add(col);
         }
@@ -2639,35 +2676,18 @@ namespace ShadowRDP.Forms
             }
         }
 
-        // Paint the indigo 4-square logo top-left of the header panel.
-        // Restored v2.1.48 — user wanted the original programmatically-drawn
-        // indigo logo here, real app logo moved to RDP Manager sidebar
-        // branding only.
+        // Paint the app logo top-left of the header panel. Uses the embedded
+        // logo (AppLogo.Load) so it stays in sync with the rest of the app
+        // branding — the same mark shown in the splash, sidebar, tray and
+        // exe icon. Drawn scaled into the 28×28 header slot.
         private void DrawHeaderLogo(object? sender, PaintEventArgs e)
         {
+            var logo = Helpers.AppLogo.Load();
+            if (logo == null) return;
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var bgRect = new Rectangle(14, 14, 28, 28);
-            using var bgPath = RoundedRect(bgRect, 7);
-            using (var bgBrush = new SolidBrush(Color.FromArgb(38, 91, 95, 240)))
-            {
-                g.FillPath(bgBrush, bgPath);
-            }
-            var indigo = Helpers.UiTheme.Accent;
-            DrawLogoTile(g, 19, 19, indigo, 1.0f);
-            DrawLogoTile(g, 26, 19, indigo, 0.5f);
-            DrawLogoTile(g, 19, 26, indigo, 0.5f);
-            DrawLogoTile(g, 26, 26, indigo, 0.3f);
-        }
-
-        private static void DrawLogoTile(Graphics g, int x, int y, Color baseColor, float alpha)
-        {
-            int a = (int)(baseColor.A * alpha);
-            var c = Color.FromArgb(a, baseColor.R, baseColor.G, baseColor.B);
-            using var brush = new SolidBrush(c);
-            var rect = new Rectangle(x, y, 5, 5);
-            using var path = RoundedRect(rect, 1);
-            g.FillPath(brush, path);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(logo, new Rectangle(14, 14, 28, 28));
         }
 
         // Measure rendered text width for a NeoButton (Segoe UI 10F — matches
