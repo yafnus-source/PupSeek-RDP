@@ -54,7 +54,7 @@ namespace ShadowRDP.Helpers
 
             // === Blue header (matches KeePassVaultForm / report dialogs) ===
             var header = UiHeader.Create("Хранилище паролей", "KeePass (.kdbx) — зашифрованная база", "shield",
-                UiTheme.HeaderBar, Color.White);
+                Color.FromArgb(0x56, 0x5C, 0x30), Color.White);
             dlg.Controls.Add(header);
 
             // Field rows: label (120) + input (340) + browse button (76).

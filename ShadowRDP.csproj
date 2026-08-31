@@ -8,9 +8,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>PupSeekRDP</AssemblyName>
     <RootNamespace>ShadowRDP</RootNamespace>
-    <Version>3.8.0.0</Version>
-    <AssemblyVersion>3.8.0.0</AssemblyVersion>
-    <FileVersion>3.8.0.0</FileVersion>
+    <Version>3.8.2.0</Version>
+    <AssemblyVersion>3.8.2.0</AssemblyVersion>
+    <FileVersion>3.8.2.0</FileVersion>
     <Company>M.A.D.</Company>
     <Product>Pup Seek RDP — управление RDP shadow-сессиями</Product>
     <Title>Pup Seek RDP</Title>
