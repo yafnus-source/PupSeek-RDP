@@ -17,7 +17,7 @@ namespace ShadowRDP.Services
                       "2. Установите (Next → Install)\n" +
                       "3. Откройте PowerShell и выполните:\n" +
                       "   ollama pull llama3.2\n" +
-                      "4. Ollama запустится автоматически (http://localhost:11434)\n" +
+                      "4. Ollama запустится автоматически\n" +
                       "5. Вернитесь в дашборд — кнопка «Расшифровать» заработает\n\n" +
                       "Модель llama3.2 (2 ГБ) — достаточно для расшифровки.\n" +
                       "Открыть страницу загрузки сейчас?";
@@ -39,7 +39,8 @@ namespace ShadowRDP.Services
                 // Try pull via API
                 using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
                 var payload = "{\"name\":\"llama3.2\"}";
-                var resp = await http.PostAsync("http://localhost:11434/api/pull", new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+                var baseUrl = $"http://{Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "localhost:11434"}";
+                var resp = await http.PostAsync($"{baseUrl}/api/pull", new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
                 return resp.IsSuccessStatusCode;
             }
             catch (Exception ex) { MessageBox.Show(owner, $"Не удалось: {ex.Message}", "Ollama", MessageBoxButtons.OK, MessageBoxIcon.Warning); return false; }
