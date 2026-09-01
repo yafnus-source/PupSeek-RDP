@@ -2891,15 +2891,16 @@ namespace ShadowRDP.Forms
                 var txt = e.Value?.ToString() ?? "";
                 if (string.IsNullOrWhiteSpace(txt) || txt == "0") return;
                 e.PaintBackground(e.CellBounds, true);
-                // badge pill
                 int.TryParse(txt, out int cnt);
-                Color bg = cnt > 0 ? Color.FromArgb(0xC0, 0x39, 0x2B) : Helpers.UiTheme.PillActiveBg;
-                var rect = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y + 6, e.CellBounds.Width - 16, e.CellBounds.Height - 12);
-                using var path = Helpers.UiButtons.RoundedRect(rect, 8);
+                Color bg = cnt > 0 ? Color.FromArgb(0x8B, 0x4A, 0x3E) : Helpers.UiTheme.PillActiveBg;
+                int w = (e.CellBounds.Width - 16) / 2;
+                int h = (e.CellBounds.Height - 12) / 2;
+                var rect = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - w) / 2, e.CellBounds.Y + (e.CellBounds.Height - h) / 2, w, h);
+                using var path = Helpers.UiButtons.RoundedRect(rect, 6);
                 using var brush = new SolidBrush(bg);
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 e.Graphics.FillPath(brush, path);
-                TextRenderer.DrawText(e.Graphics, txt, new Font("Segoe UI Semibold", 8f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(e.Graphics, txt, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 e.Handled = true;
                 return;
             }

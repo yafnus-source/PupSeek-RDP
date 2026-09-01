@@ -21,6 +21,7 @@ namespace ShadowRDP.Forms
         private List<DashboardEvent> _all = new List<DashboardEvent>();
         private string _level = "Все";
         private string _period = "2 дня";
+        private string _selectedHost = "";
         private Dictionary<string, Label> _levelPills = new Dictionary<string, Label>();
         private Dictionary<string, Label> _periodPills = new Dictionary<string, Label>();
         private System.Windows.Forms.Timer _pollUiTimer = new System.Windows.Forms.Timer();
@@ -82,7 +83,7 @@ namespace ShadowRDP.Forms
             _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, BackColor = UiTheme.Background, Padding = new Padding(12, 6, 12, 6), AutoSize = false };
             Controls.Add(_hostPanel);
 
-            var sep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiTheme.BorderSubtle };
+            var sep = new Panel { Dock = DockStyle.Top, Height = 2, BackColor = UiTheme.BorderSubtle };
             Controls.Add(sep);
 
             // Grid — first row was clipping under hostBar due to Fill/Top z-order; separator fixes it
@@ -191,37 +192,46 @@ namespace ShadowRDP.Forms
                 int crit = critCounts.TryGetValue(h, out var cc) ? cc : 0;
                 bool hasCrit = crit > 0;
                 bool hasAny = total > 0;
+                bool isActive = string.Equals(_selectedHost, h, StringComparison.OrdinalIgnoreCase);
 
                 var tab = new Label
                 {
                     Text = "",
                     AutoSize = false,
-                    Size = new Size(150, 26),
+                    Size = new Size(130, 24),
                     Font = new Font("Segoe UI Semibold", 8.5f),
                     TextAlign = ContentAlignment.MiddleCenter,
                     Cursor = Cursors.Hand,
-                    Margin = new Padding(0, 0, 4, 0),
+                    Margin = new Padding(0, 0, 2, 0),
                     BackColor = Color.Transparent,
                     ForeColor = Color.White
                 };
-                Color tabBg = hasCrit ? Color.FromArgb(0xC0, 0x39, 0x2B) : hasAny ? Color.FromArgb(0xE6, 0x7E, 0x22) : UiTheme.Card;
+                Color baseBg = hasCrit ? Color.FromArgb(0x8B, 0x4A, 0x3E) : hasAny ? Color.FromArgb(0x9C, 0x7A, 0x56) : UiTheme.Card;
+                Color tabBg = isActive ? ControlPaint.Dark(baseBg, 0.15f) : baseBg;
                 Color tabFg = hasAny ? Color.White : UiTheme.Foreground;
-                Color tabBorder = hasAny ? tabBg : UiTheme.BorderSubtle;
+                Color tabBorder = isActive ? Color.FromArgb(0x48, 0x30, 0x2F) : hasAny ? tabBg : UiTheme.BorderSubtle;
                 string tabText = total > 0 ? $"{h}  • {total}" : h;
                 tab.Text = tabText;
                 tab.ForeColor = tabFg;
+                int borderW = isActive ? 2 : 1;
                 tab.Paint += (s, e) =>
                 {
                     e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     var r = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
                     using var path = UiButtons.TabRect(r, 6);
                     using var brush = new SolidBrush(tabBg);
-                    using var pen = new Pen(tabBorder, 1);
+                    using var pen = new Pen(tabBorder, borderW);
                     e.Graphics.FillPath(brush, path);
                     e.Graphics.DrawPath(pen, path);
                     TextRenderer.DrawText(e.Graphics, tabText, tab.Font, r, tabFg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
                 };
-                tab.Click += (s, e) => { /* quick filter to this host could be added */ };
+                string captured = h;
+                tab.Click += (s, e) =>
+                {
+                    _selectedHost = string.Equals(_selectedHost, captured, StringComparison.OrdinalIgnoreCase) ? "" : captured;
+                    RebuildHostBar();
+                    ApplyFilters();
+                };
                 _hostPanel.Controls.Add(tab);
             }
             // add diagnostic hint if no events
@@ -241,7 +251,7 @@ namespace ShadowRDP.Forms
             else if (_period == "24 часа") periodSpan = TimeSpan.FromHours(24);
             var cutoff = now - periodSpan;
 
-            var filtered = _all.Where(e => e.Time >= cutoff).Where(e => _level == "Все" || string.Equals(e.Level, _level, StringComparison.OrdinalIgnoreCase)).OrderByDescending(e => e.Time).ToList();
+            var filtered = _all.Where(e => e.Time >= cutoff).Where(e => _level == "Все" || string.Equals(e.Level, _level, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedHost) || string.Equals(e.Computer, _selectedHost, StringComparison.OrdinalIgnoreCase)).OrderByDescending(e => e.Time).ToList();
 
             _grid.Rows.Clear();
             foreach (var ev in filtered.Take(500))
@@ -317,7 +327,7 @@ namespace ShadowRDP.Forms
             e.Handled = true;
             e.PaintBackground(e.CellBounds, true);
             var level = e.Value?.ToString() ?? "";
-            Color bg = level == "Critical" ? Color.FromArgb(0xC0, 0x39, 0x2B) : Color.FromArgb(0xE6, 0x7E, 0x22);
+            Color bg = level == "Critical" ? Color.FromArgb(0x8B, 0x4A, 0x3E) : Color.FromArgb(0x9C, 0x7A, 0x56);
             if (level == "Все") bg = UiTheme.PillActiveBg;
             var rect = new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y + 4, e.CellBounds.Width - 12, e.CellBounds.Height - 8);
             using var path = UiButtons.RoundedRect(rect, 6);
