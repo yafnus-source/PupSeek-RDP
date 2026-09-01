@@ -64,6 +64,10 @@ namespace ShadowRDP
         public static string GroupsPath => Path.Combine(DataDir, "groups.json");
         // v3.8.2 — user-customised active filter-pill colours (role → hex).
         public static string ColorsPath => Path.Combine(DataDir, "colors.json");
+        // v4.0 — Event Dashboard (Zabbix-like): monitored hosts, cached events, settings.
+        public static string DashboardEventsPath => Path.Combine(DataDir, "dashboard_events.json");
+        public static string DashboardSettingsPath => Path.Combine(DataDir, "dashboard_settings.json");
+        public static string MonitoredComputersPath => Path.Combine(DataDir, "monitored_computers.json");
 
         public static void EnsureDataDir()
         {

@@ -41,5 +41,10 @@ namespace ShadowRDP.Models
         // Added in C# rewrite only — .ps1 will ignore this on load.
         [JsonPropertyName("Group")]
         public string Group { get; set; } = "";
+
+        // Monitored by the Event Dashboard (v4.0). When true, the dashboard
+        // polls this computer's Windows Event Log for Error/Critical events.
+        [JsonPropertyName("Monitored")]
+        public bool Monitored { get; set; } = false;
     }
 }
