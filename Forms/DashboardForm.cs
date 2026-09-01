@@ -53,11 +53,6 @@ namespace ShadowRDP.Forms
             btnSettings.Click += (s, e) => ShowSettings();
             header.Controls.Add(btnSettings);
 
-            var btnDemo = UiButtons.MakeCompactFilled("Демо", 70);
-            btnDemo.Location = new Point(btnSettings.Right + 8, 13);
-            btnDemo.Click += (s, e) => GenerateDemoEvents();
-            header.Controls.Add(btnDemo);
-
             Controls.Add(header);
 
             // Filter pills area
@@ -185,7 +180,6 @@ namespace ShadowRDP.Forms
                 _hostPanel.Controls.Add(lbl);
                 return;
             }
-            // counts per host from current _all (already filtered by retention)
             var counts = _all.GroupBy(e => e.Computer, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
             var critCounts = _all.Where(e => e.Level == "Critical").GroupBy(e => e.Computer, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
             foreach (var h in hosts)
@@ -195,51 +189,37 @@ namespace ShadowRDP.Forms
                 bool hasCrit = crit > 0;
                 bool hasAny = total > 0;
 
-                var card = new Panel
+                var tab = new Label
                 {
-                    Size = new Size(160, 28),
-                    BackColor = UiTheme.Card,
-                    Margin = new Padding(0, 0, 8, 0),
-                    Cursor = Cursors.Hand
+                    Text = "",
+                    AutoSize = false,
+                    Size = new Size(150, 26),
+                    Font = new Font("Segoe UI Semibold", 8.5f),
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Cursor = Cursors.Hand,
+                    Margin = new Padding(0, 0, 4, 0),
+                    BackColor = Color.Transparent,
+                    ForeColor = Color.White
                 };
-                // rounded
-                card.Paint += (s, e) =>
+                Color tabBg = hasCrit ? Color.FromArgb(0xC0, 0x39, 0x2B) : hasAny ? Color.FromArgb(0xE6, 0x7E, 0x22) : UiTheme.Card;
+                Color tabFg = hasAny ? Color.White : UiTheme.Foreground;
+                Color tabBorder = hasAny ? tabBg : UiTheme.BorderSubtle;
+                string tabText = total > 0 ? $"{h}  • {total}" : h;
+                tab.Text = tabText;
+                tab.ForeColor = tabFg;
+                tab.Paint += (s, e) =>
                 {
                     e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    var r = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
-                    using var path = UiButtons.RoundedRect(r, 6);
-                    using var brush = new SolidBrush(card.BackColor);
-                    using var pen = new Pen(hasCrit ? Color.FromArgb(0xC0, 0x39, 0x2B) : hasAny ? Color.FromArgb(0xE6, 0x7E, 0x22) : UiTheme.BorderSubtle, hasAny ? 1.2f : 1f);
+                    var r = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
+                    using var path = UiButtons.TabRect(r, 6);
+                    using var brush = new SolidBrush(tabBg);
+                    using var pen = new Pen(tabBorder, 1);
                     e.Graphics.FillPath(brush, path);
                     e.Graphics.DrawPath(pen, path);
+                    TextRenderer.DrawText(e.Graphics, tabText, tab.Font, r, tabFg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
                 };
-                // dot
-                var dot = new Label { Size = new Size(8, 8), BackColor = hasCrit ? Color.FromArgb(0xC0, 0x39, 0x2B) : hasAny ? Color.FromArgb(0xE6, 0x7E, 0x22) : Color.FromArgb(0x9E, 0x9E, 0x9E), Location = new Point(8, 10), AutoSize = false };
-                dot.Paint += (s, e) => { e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; using var b = new SolidBrush(dot.BackColor); e.Graphics.FillEllipse(b, 0, 0, 8, 8); };
-                card.Controls.Add(dot);
-                // icon
-                var icon = Helpers.MenuIcons.Get("computer");
-                var iconBox = new PictureBox { Image = icon, Size = new Size(16, 16), Location = new Point(20, 6), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent };
-                card.Controls.Add(iconBox);
-                // name
-                var lbl = new Label { Text = h, AutoSize = false, Size = new Size(88, 16), Location = new Point(38, 6), Font = new Font("Segoe UI Semibold", 8.5f), ForeColor = UiTheme.Foreground, BackColor = Color.Transparent, TextAlign = ContentAlignment.MiddleLeft };
-                card.Controls.Add(lbl);
-                // badge count
-                if (total > 0)
-                {
-                    var badge = new Label { Text = total.ToString(), AutoSize = false, Size = new Size(22, 16), Location = new Point(128, 6), Font = new Font("Segoe UI Semibold", 7.5f), ForeColor = Color.White, BackColor = hasCrit ? Color.FromArgb(0xC0, 0x39, 0x2B) : Color.FromArgb(0xE6, 0x7E, 0x22), TextAlign = ContentAlignment.MiddleCenter };
-                    badge.Paint += (s, e) =>
-                    {
-                        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                        using var p = UiButtons.RoundedRect(new Rectangle(0, 0, badge.Width - 1, badge.Height - 1), 8);
-                        using var br = new SolidBrush(badge.BackColor);
-                        e.Graphics.FillPath(br, p);
-                        TextRenderer.DrawText(e.Graphics, badge.Text, badge.Font, badge.ClientRectangle, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                    };
-                    card.Controls.Add(badge);
-                }
-                card.Click += (s, e) => { _level = hasCrit ? "Critical" : "Все"; UpdatePills(); ApplyFilters(); };
-                _hostPanel.Controls.Add(card);
+                tab.Click += (s, e) => { /* quick filter to this host could be added */ };
+                _hostPanel.Controls.Add(tab);
             }
             // add diagnostic hint if no events
             if (_all.Count == 0)
@@ -315,28 +295,6 @@ namespace ShadowRDP.Forms
                 EventDashboardStore.SaveSettings(settings);
                 EventPollerService.Restart();
             }
-        }
-
-        private void GenerateDemoEvents()
-        {
-            var hosts = EventDashboardStore.GetMonitoredComputers();
-            if (hosts.Count == 0) { MessageBox.Show(this, "Сначала добавьте хост: Книга → ПКМ → Отслеживать события", "Демо", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            var now = DateTime.Now;
-            var demo = new List<DashboardEvent>();
-            var samples = new[] { (41, "Kernel-Power", "Critical"), (55, "NTFS", "Critical"), (7000, "Service Control Manager", "Error"), (4015, "DNS", "Error"), (1000, "Application Error", "Error") };
-            var rnd = new Random();
-            foreach (var h in hosts)
-            {
-                for (int i = 0; i < 2; i++)
-                {
-                    var s = samples[rnd.Next(samples.Length)];
-                    demo.Add(new DashboardEvent { Time = now.AddMinutes(-rnd.Next(0, 120)), Level = s.Item3, Source = s.Item2, EventId = s.Item1, Computer = h, Message = $"Демо-событие {s.Item1} от {s.Item2} на {h} — сгенерировано для проверки дашборда", LogName = "System" });
-                }
-            }
-            EventDashboardStore.AddEvents(demo);
-            _all = EventDashboardStore.LoadEvents();
-            ApplyFilters(); RebuildHostBar();
-            MessageBox.Show(this, $"Сгенерировано {demo.Count} демо-событий", "Демо", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private async void OnCellClick(object sender, DataGridViewCellEventArgs e)

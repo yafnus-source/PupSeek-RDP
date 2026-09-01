@@ -2872,13 +2872,12 @@ namespace ShadowRDP.Forms
                     if (fore == Color.Empty || fore.A == 0) fore = _grid.DefaultCellStyle.ForeColor;
                     var font = e.CellStyle.Font ?? _grid.DefaultCellStyle.Font ?? new Font("Segoe UI", 9f);
                     TextRenderer.DrawText(e.Graphics, comp, font, textRect, fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                    int dotSize = 8;
-                    var dotRect = new Rectangle(e.CellBounds.Right - dotSize - 6, e.CellBounds.Y + (e.CellBounds.Height - dotSize) / 2, dotSize, dotSize);
+                    int dotSize = 6;
+                    var dotRect = new Rectangle(e.CellBounds.Right - dotSize - 7, e.CellBounds.Y + (e.CellBounds.Height - dotSize) / 2, dotSize, dotSize);
                     var gstate = e.Graphics.Save();
                     e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using var brush = new SolidBrush(Color.FromArgb(0x48, 0x30, 0x2F));
-                    e.Graphics.FillEllipse(brush, dotRect);
-                    using var pen = new Pen(Color.White, 1f);
+                    using var pen = new Pen(Color.FromArgb(0x48, 0x30, 0x2F), 1.4f);
+                    // hollow dot — subtle, less clutter when many rows are monitored
                     e.Graphics.DrawEllipse(pen, dotRect);
                     e.Graphics.Restore(gstate);
                     e.Handled = true;
