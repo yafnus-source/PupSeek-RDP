@@ -130,6 +130,14 @@ namespace ShadowRDP.Forms
 
             Controls.Add(_grid);
 
+            // fix Dock z-order: header topmost
+            Controls.SetChildIndex(header, 5);
+            Controls.SetChildIndex(filterPanel, 4);
+            Controls.SetChildIndex(_hostPanel, 3);
+            Controls.SetChildIndex(sep, 2);
+            Controls.SetChildIndex(_grid, 1);
+            Controls.SetChildIndex(statusPanel, 0);
+
             Load += async (s, e) => { await LoadEventsAsync(); EventPollerService.OnNewEvents += OnNewEvents; EventPollerService.OnCritical += OnCritical; };
             FormClosed += (s, e) => { EventPollerService.OnNewEvents -= OnNewEvents; EventPollerService.OnCritical -= OnCritical; };
         }
