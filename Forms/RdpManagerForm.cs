@@ -156,11 +156,15 @@ namespace ShadowRDP.Forms
         // default RDP-session view.
         private Label _bookTab = null!;
         private Label _passwordsTab = null!;
+        private Label _dashboardTab = null!;
         private Panel _bookHost = null!;
+        private Panel _dashboardHost = null!;
         private AddressBookForm? _bookForm;
+        private Forms.DashboardForm? _dashboardForm;
         private SidebarTab _activeTab = SidebarTab.Sessions;
 
-        private enum SidebarTab { Sessions, Book }
+        internal enum SidebarTab { Sessions, Book, Dashboard }
+        internal void ShowDashboard() => SwitchTab(SidebarTab.Dashboard);
 
         private RdpManagerForm()
         {
@@ -240,6 +244,13 @@ namespace ShadowRDP.Forms
                 Visible = false  // Sessions view is the default
             };
             _mainArea.Controls.Add(_bookHost);
+            _dashboardHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Helpers.UiTheme.Background,
+                Visible = false
+            };
+            _mainArea.Controls.Add(_dashboardHost);
 
             // v3.0.5: sidebar separator removed — main area now directly
             // touches the sidebar. Was a 1px Dock=Left panel (UiTheme.Border).
@@ -333,6 +344,15 @@ namespace ShadowRDP.Forms
             // opens the KeePass vault manager form (same UI as from tray).
             // Sessions are still visible in the sidebar as tabs; this button
             // is a shortcut, not a tab toggle.
+            // v4.0 — Дашбоард (Zabbix-like) tab: sits BELOW Инструменты.
+            // Added FIRST so with DockStyle.Top it ends up at the bottom of the nav stack.
+            _dashboardTab = Helpers.UiButtons.MakeFilled("Дашбоард", "dashboard",
+                ShadowRDP.Helpers.UiTheme.SidebarTab, width: 166, radius: 0);
+            _dashboardTab.Dock = DockStyle.Top;
+            _dashboardTab.Height = 36;
+            _dashboardTab.Margin = Padding.Empty;
+            sidebar.Controls.Add(_dashboardTab);
+
             // v3.9 — "Инструменты" dropdown, placed in the sidebar BELOW
             // "Пароли" with the same filled nav-button look as Книга/Пароли.
             // Added BEFORE Пароли/Книга so with DockStyle.Top it ends up at
@@ -369,13 +389,10 @@ namespace ShadowRDP.Forms
             var logo = Helpers.AppLogo.Load();
             if (logo != null)
             {
-                const int logoSize = 80;
+                const int logoSize = 40;
                 const int nameHeight = 30;
-                // v2.3.5: 60 → 45 — shift logo+name DOWN by 15px per user
-                // request (same change as v2.1.97, was reverted in between).
-                // Container is Dock=Bottom, so smaller bottomSpace = shorter
-                // container = logo at higher Y from sidebar top = appears lower.
-                const int bottomSpace = 45;
+                // v4.0: halved logo 80→40 per user request to free sidebar space.
+                const int bottomSpace = 20;
                 var container = new Panel
                 {
                     Dock = DockStyle.Bottom,
@@ -424,9 +441,10 @@ namespace ShadowRDP.Forms
                 sidebar.Controls.Add(container);
             }
 
-            // Click handlers — Book switches the main area; Пароли opens
+            // Click handlers — Book/Dashboard switch the main area; Пароли opens
             // the KeePass vault manager form (non-modal singleton).
             _bookTab.Click += (s, e) => SwitchTab(SidebarTab.Book);
+            _dashboardTab.Click += (s, e) => SwitchTab(SidebarTab.Dashboard);
             _passwordsTab.Click += (s, e) => OpenPasswordVault();
 
             // Active-tab arrow — small left-pointing triangle at the
@@ -998,6 +1016,44 @@ namespace ShadowRDP.Forms
             Controls.Add(headerSep);  // Top — 1px line
             Controls.Add(header);     // Top — 48px header
 
+            // v4.0 — dashboard poller + balloon wiring (LAN-only, 1 user, 30min)
+            try
+            {
+                Services.EventPollerService.Start();
+                Services.EventPollerService.OnCritical += ev =>
+                {
+                    try
+                    {
+                        var s = Services.EventDashboardStore.LoadSettings();
+                        if (ev.Level == "Critical" && !s.NotifyCritical) return;
+                        if (ev.Level == "Error" && !s.NotifyError) return;
+                        BeginInvoke(new Action(() =>
+                        {
+                            // mark notified to avoid duplicate balloon
+                            var all = Services.EventDashboardStore.LoadEvents();
+                            var idx = all.FindIndex(x => x.Computer == ev.Computer && x.EventId == ev.EventId && x.Time == ev.Time);
+                            if (idx >= 0)
+                            {
+                                if (all[idx].Notified) return;
+                                all[idx].Notified = true;
+                                Services.EventDashboardStore.SaveEvents(all);
+                            }
+                            // show balloon via app tray icon if available
+                            try { ShadowRdpAppContext.ShowBalloon($"Критическое событие — {ev.Computer}", $"{ev.Source} (ID {ev.EventId}): {ev.Message}  {ev.Time:dd.MM HH:mm}", ToolTipIcon.Warning); }
+                            catch
+                            {
+                                // fallback: local notify icon
+                                using var ni = new NotifyIcon { Visible = true, Icon = Icon, BalloonTipTitle = $"Критическое — {ev.Computer}", BalloonTipText = $"{ev.Source} {ev.EventId}: {ev.Message}" };
+                                ni.ShowBalloonTip(4000);
+                            }
+                            if (s.NotifySound) System.Media.SystemSounds.Exclamation.Play();
+                        }));
+                    }
+                    catch { }
+                };
+            }
+            catch (Exception ex) { try { Logger.Warn($"Dashboard poller start failed: {ex.Message}"); } catch { } }
+
             FormClosing += (s, e) =>
             {
                 // Persist current sessions so the main-form "RDP Manager"
@@ -1286,22 +1342,18 @@ namespace ShadowRDP.Forms
         {
             _activeTab = tab;
 
-            // Lazy-create the embedded book the first time we switch to it.
             if (tab == SidebarTab.Book)
                 EnsureBookEmbedded();
+            else if (tab == SidebarTab.Dashboard)
+                EnsureDashboardEmbedded();
 
-            // Toggle main area children: when Book is active, _bookHost
-            // is on top; the individual RdpClient panels (added later by
-            // AddSession) are hidden by _bookHost covering them.
             _bookHost.Visible = (tab == SidebarTab.Book);
-            _bookHost.BringToFront();
+            _dashboardHost.Visible = (tab == SidebarTab.Dashboard);
+            if (tab == SidebarTab.Book) _bookHost.BringToFront();
+            else if (tab == SidebarTab.Dashboard) _dashboardHost.BringToFront();
 
-            // Refresh sessions if returning to Sessions view (size may
-            // have changed while hidden).
             if (tab == SidebarTab.Sessions)
             {
-                // v3.0.8: skip AutoOpen=false sessions that were never
-                // activated — their Client is null until first click.
                 foreach (var s in _sessions)
                     s.Client?.RefreshSize();
             }
@@ -1319,6 +1371,19 @@ namespace ShadowRDP.Forms
             Logger.Info("RDP Manager: AddressBookForm embedded into _bookHost");
         }
 
+        private void EnsureDashboardEmbedded()
+        {
+            if (_dashboardForm != null && !_dashboardForm.IsDisposed) return;
+            _dashboardForm = new Forms.DashboardForm();
+            _dashboardForm.TopLevel = false;
+            _dashboardForm.FormBorderStyle = FormBorderStyle.None;
+            _dashboardForm.Dock = DockStyle.Fill;
+            _dashboardForm.Visible = true;
+            _dashboardHost.Controls.Add(_dashboardForm);
+            _dashboardForm.Show();
+            Logger.Info("RDP Manager: DashboardForm embedded into _dashboardHost");
+        }
+
         // Updates the visual state of both sidebar tabs based on _activeTab.
         // Book tab: always #296AA0 filled (per user's spec). Sessions tab:
         // constant muted styling — no active/inactive colour change. Both
@@ -1328,6 +1393,7 @@ namespace ShadowRDP.Forms
         private void UpdateTabVisuals()
         {
             _bookTab.Invalidate();
+            _dashboardTab.Invalidate();
             _passwordsTab.Invalidate();
         }
 

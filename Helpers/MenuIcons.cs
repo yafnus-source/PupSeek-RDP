@@ -114,6 +114,7 @@ namespace ShadowRDP.Helpers
             "sun"      => DrawSun(),
             "key"      => DrawKey(),
             "book"     => DrawBook(),
+            "dashboard" => DrawDashboard(),
             _          => DrawTriangle(_dark)
         };
 
@@ -292,6 +293,21 @@ namespace ShadowRDP.Helpers
             using var pen = new Pen(_dark, 1.4f);
             g.DrawRectangle(pen, 3, 3, 10, 10);
             g.DrawLine(pen, 8, 3, 8, 13);
+            return bmp;
+        }
+
+        private static Bitmap DrawDashboard()
+        {
+            var bmp = NewBitmap();
+            using var g = Graphics.FromImage(bmp);
+            using var pen = new Pen(_dark, 1.2f);
+            using var brush = new SolidBrush(_dark);
+            // 3 bars of increasing height
+            g.FillRectangle(brush, 2, 9, 3, 5);
+            g.FillRectangle(brush, 6, 6, 3, 8);
+            g.FillRectangle(brush, 10, 3, 3, 11);
+            // small border
+            g.DrawRectangle(pen, 2, 2, 12, 12);
             return bmp;
         }
 

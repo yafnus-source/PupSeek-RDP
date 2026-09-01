@@ -29,6 +29,19 @@ namespace ShadowRDP
         // Not readonly — installed on Shown, not in ctor.
         private GlobalMouseHook? _mouseHook;
         private static bool _realExit;
+        private static ShadowRdpAppContext? _instance;
+        public static void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
+        {
+            try
+            {
+                if (_instance?._notifyIcon == null) return;
+                _instance._notifyIcon.BalloonTipTitle = title;
+                _instance._notifyIcon.BalloonTipText = text;
+                _instance._notifyIcon.BalloonTipIcon = icon;
+                _instance._notifyIcon.ShowBalloonTip(4000);
+            }
+            catch { }
+        }
 
         // v3.6.8 — lets RdpManagerForm skip destructive cleanup when the X
         // button only hides the window to tray (its own FormClosing handler
@@ -37,6 +50,7 @@ namespace ShadowRDP
 
         public ShadowRdpAppContext(bool isAdmin)
         {
+            _instance = this;
             // v3.0: RDP Manager is the main window (MainForm removed). Singleton
             // via Instance — first access constructs it.
             var rdpForm = Forms.RdpManagerForm.Instance;
@@ -69,6 +83,10 @@ namespace ShadowRDP
             {
                 if (e.Button == MouseButtons.Right)
                     _trayMenu.Show(null, Control.MousePosition);
+            };
+            _notifyIcon.BalloonTipClicked += (s, e) =>
+            {
+                try { var f = Forms.RdpManagerForm.Instance; f.Show(); if (f.WindowState == FormWindowState.Minimized) f.WindowState = FormWindowState.Normal; f.Activate(); try { f.ShowDashboard(); } catch { } } catch { }
             };
 
             // Override the X-button behaviour: hide to tray instead of exit.
