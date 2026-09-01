@@ -115,8 +115,13 @@ namespace ShadowRDP.Services
             string wmiCutoff = ManagementDateTimeConverter.ToDmtfDateTime(cutoff);
             string wql = $"SELECT TimeGenerated, EventCode, SourceName, Type, Message, Logfile FROM Win32_NTLogEvent WHERE Type=1 AND TimeGenerated >= '{wmiCutoff}'";
 
-            // Use 30s timeout per host (longer than normal WMI 6s)
-            var scope = new ManagementScope($"\\\\{computer.Trim()}\\root\\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(10), Authentication = AuthenticationLevel.PacketPrivacy });
+            // Use 30s timeout per host (longer than normal WMI 6s). Localhost → local scope.
+            ManagementScope scope;
+            var clean = computer.Trim();
+            if (string.Equals(clean, ".", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, "localhost", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+                scope = new ManagementScope(@"\\.\root\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(10), Authentication = AuthenticationLevel.PacketPrivacy });
+            else
+                scope = new ManagementScope($"\\\\{clean}\\root\\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(10), Authentication = AuthenticationLevel.PacketPrivacy });
             var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(wql));
             var task = Task.Run(() =>
             {

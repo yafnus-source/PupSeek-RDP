@@ -55,9 +55,8 @@ namespace ShadowRDP
             // via Instance — first access constructs it.
             var rdpForm = Forms.RdpManagerForm.Instance;
 
-            // === Tray context menu (themed popup) ===
+            // === Tray context menu (themed popup) — без header только в трее ===
             _trayMenu = new Helpers.ThemedContextMenu();
-            _trayMenu.AddHeader("Pup Seek RDP");
             _trayMenu.AddItem("Показать", "play", () => ShowMainForm());
             _trayMenu.AddItem("Пароли…", "shield", () => ShowVaultForm());
             _trayMenu.AddItem("Выход", "delete", () => ExitApplication());
