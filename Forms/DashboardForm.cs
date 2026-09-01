@@ -90,6 +90,11 @@ namespace ShadowRDP.Forms
             _grid.Dock = DockStyle.Fill;
             _grid.BackgroundColor = UiTheme.Card;
             _grid.BorderStyle = BorderStyle.None;
+            _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+            _grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.Single;
+            _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.Single;
             _grid.GridColor = UiTheme.BorderSubtle;
             _grid.RowHeadersVisible = false;
             _grid.AllowUserToAddRows = false;
