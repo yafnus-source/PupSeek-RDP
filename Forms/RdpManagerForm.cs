@@ -347,7 +347,7 @@ namespace ShadowRDP.Forms
             // v4.0 — Дашбоард (Zabbix-like) tab: sits BELOW Инструменты.
             // Added FIRST so with DockStyle.Top it ends up at the bottom of the nav stack.
             _dashboardTab = Helpers.UiButtons.MakeFilled("Дашбоард", "dashboard",
-                ShadowRDP.Helpers.UiTheme.SidebarTab, width: 166, radius: 0);
+                Color.FromArgb(0x48, 0x30, 0x2F), width: 166, radius: 0);
             _dashboardTab.Dock = DockStyle.Top;
             _dashboardTab.Height = 36;
             _dashboardTab.Margin = Padding.Empty;
@@ -390,54 +390,22 @@ namespace ShadowRDP.Forms
             if (logo != null)
             {
                 const int logoSize = 40;
-                const int nameHeight = 30;
-                // v4.0: halved logo 80→40 per user request to free sidebar space.
-                const int bottomSpace = 20;
                 var container = new Panel
                 {
                     Dock = DockStyle.Bottom,
-                    Height = logoSize + nameHeight + bottomSpace,
+                    Height = 64,
                     BackColor = sidebarBg,
                     Margin = Padding.Empty
                 };
-                // v3.0.4: logo + name + copyright shifted DOWN 8px (after
-                // v3.0.3's full revert to Y=0, user wanted a small margin).
                 var logoBox = new PictureBox
                 {
                     Image = logo,
                     SizeMode = PictureBoxSizeMode.Zoom,
-                    Bounds = new Rectangle((sidebar.Width - logoSize) / 2, 8, logoSize, logoSize),
+                    Bounds = new Rectangle((sidebar.Width - logoSize) / 2, (64 - logoSize) / 2, logoSize, logoSize),
                     BackColor = sidebarBg,
                     Margin = Padding.Empty
                 };
-                var nameLabel = new Label
-                {
-                    Text = "Pup Seek RDP",
-                    Bounds = new Rectangle(0, logoSize + 8, sidebar.Width, nameHeight),
-                    Font = new Font("Segoe UI Semibold", 9F),
-                    // v2.3.9: white on dark sidebar (was Foreground).
-                    ForeColor = Color.White,
-                    BackColor = sidebarBg,
-                    TextAlign = ContentAlignment.MiddleCenter
-                };
                 container.Controls.Add(logoBox);
-                container.Controls.Add(nameLabel);
-                // v3.0.4: copyright format matches the old MainForm status
-                // strip ("vX.Y  ·  Pup Seek RDP  ·  © 2026 M.A.D.  ·
-                // AI: Claude (Anthropic)"). Sidebar is narrow, so split across
-                // two lines. Pale-blue (SidebarSubFg), version from assembly.
-                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                var versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "";
-                var copyLabel = new Label
-                {
-                    Text = $"{versionStr}  ·  © 2026 M.A.D.\nAI: Claude (Anthropic)",
-                    Bounds = new Rectangle(0, logoSize + nameHeight + 8, sidebar.Width, 32),
-                    Font = new Font("Segoe UI", 7.5F),
-                    ForeColor = SidebarSubFg,
-                    BackColor = sidebarBg,
-                    TextAlign = ContentAlignment.MiddleCenter
-                };
-                container.Controls.Add(copyLabel);
                 sidebar.Controls.Add(container);
             }
 
