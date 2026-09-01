@@ -422,21 +422,15 @@ namespace ShadowRDP.Forms
             if (ev == null) return;
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Подробнее (Microsoft)", null, (s, e2) => ShowEventDetail(ev));
+            menu.Items.Add("Найти в Google", null, (s, e2) => OpenGoogleSearch(ev));
             menu.Items.Add("Спросить ИИ", null, async (s, e2) => await AskAiAsync(ev));
             menu.Show(Cursor.Position);
         }
 
-        private void ShowEventDetail(DashboardEvent ev)
+        private void OpenGoogleSearch(DashboardEvent ev)
         {
-            string description = "";
-            if (Helpers.EventFallbackDb.TryGet(ev.EventId, ev.Source, out var dbText))
-                description = dbText;
-            else
-                description = $"EventID: {ev.EventId}\nИсточник: {ev.Source}\nУровень: {ev.Level}\nКомпьютер: {ev.Computer}\n\n{ev.Message}";
-
-            using var dlg = new EventDetailForm(ev.EventId, ev.Source, ev.Level, ev.Computer, ev.Message, description);
-            dlg.ShowDialog(this);
+            var query = Uri.EscapeDataString($"Windows EventID {ev.EventId} {ev.Source} {ev.Message}");
+            Process.Start(new ProcessStartInfo($"https://www.google.com/search?q={query}") { UseShellExecute = true });
         }
 
         private async Task AskAiAsync(DashboardEvent ev)
