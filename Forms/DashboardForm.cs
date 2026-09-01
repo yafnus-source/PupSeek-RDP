@@ -49,8 +49,30 @@ namespace ShadowRDP.Forms
             btnRefresh.Click += async (s, e) => await RefreshNowAsync();
             header.Controls.Add(btnRefresh);
 
-            // AI button — shows status or install guide
-            _btnAi = UiButtons.MakeCompactFilled("Проверка ИИ...", 120);
+            // AI button — custom Label that reads lbl.Text in Paint
+            Color _aiBg = UiTheme.HeaderBar;
+            _btnAi = new Label
+            {
+                Text = "Проверка ИИ...",
+                AutoSize = false,
+                Size = new Size(120, 22),
+                Font = new Font("Segoe UI Semibold", 9f),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = Cursors.Hand,
+                BackColor = Color.Transparent,
+                ForeColor = Color.White
+            };
+            _btnAi.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, _btnAi.Width, _btnAi.Height);
+                using var path = UiButtons.RoundedRect(r, 1);
+                using var fill = new SolidBrush(_aiBg);
+                e.Graphics.FillPath(fill, path);
+                TextRenderer.DrawText(e.Graphics, _btnAi.Text, _btnAi.Font, r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            };
+            _btnAi.MouseEnter += (s, e) => { _aiBg = ControlPaint.Dark(_aiBg, 0.08f); _btnAi.Invalidate(); };
+            _btnAi.MouseLeave += (s, e) => { _aiBg = _btnAi.BackColor != Color.Transparent ? _btnAi.BackColor : UiTheme.HeaderBar; _btnAi.Invalidate(); };
             _btnAi.Location = new Point(btnRefresh.Right + 8, 13);
             _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
             header.Controls.Add(_btnAi);
@@ -66,14 +88,18 @@ namespace ShadowRDP.Forms
                         if (ok)
                         {
                             _btnAi.Text = "ИИ Работает";
+                            _aiBg = UiTheme.StatusOnline;
                             _btnAi.BackColor = UiTheme.StatusOnline;
+                            _btnAi.Invalidate();
                             _btnAi.Click -= (s2, e2) => OllamaInstaller.ShowInstallGuide(this);
                             _btnAi.Click += (s2, e2) => MessageBox.Show(this, "Ollama доступен. Модель llama3.2 готова к расшифровке событий.", "ИИ", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                         else
                         {
                             _btnAi.Text = "ИИ Недоступен";
+                            _aiBg = UiTheme.Danger;
                             _btnAi.BackColor = UiTheme.Danger;
+                            _btnAi.Invalidate();
                         }
                     }));
                 }
@@ -541,21 +567,24 @@ namespace ShadowRDP.Forms
 
             if (e.RowIndex < 0) return;
 
-            // Horizontal divider line at bottom of each row
-            e.Handled = false;
+            // ALL body cells: paint manually with e.Handled=true to kill borders
+            e.Handled = true;
+
+            // Cell background (alternating rows)
+            bool isSelected = (e.State & DataGridViewElementStates.Selected) != 0;
+            Color cellBg = isSelected ? UiTheme.AccentSoft : (e.RowIndex % 2 == 0 ? UiTheme.Card : UiTheme.RowAlt);
+            using (var bgBr = new SolidBrush(cellBg))
+                e.Graphics.FillRectangle(bgBr, e.CellBounds);
+
+            // Horizontal divider at bottom of each row
             using (var sepPen = new Pen(UiTheme.BorderSubtle, 1f))
-            {
-                int y = e.CellBounds.Bottom - 1;
-                e.Graphics.DrawLine(sepPen, e.CellBounds.Left, y, e.CellBounds.Right, y);
-            }
+                e.Graphics.DrawLine(sepPen, e.CellBounds.Left, e.CellBounds.Bottom - 1, e.CellBounds.Right, e.CellBounds.Bottom - 1);
 
             // Level column — badge with AntiAlias
             if (e.ColumnIndex == _grid.Columns["Level"].Index)
             {
-                e.Handled = true;
-                e.PaintBackground(e.CellBounds, true);
                 var level = e.Value?.ToString() ?? "";
-                Color bg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : level == "Error" ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Muted;
+                Color badgeBg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : level == "Error" ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Muted;
                 int badgeW = 46;
                 int badgeH = e.CellBounds.Height - 10;
                 int x = e.CellBounds.X + (e.CellBounds.Width - badgeW) / 2;
@@ -564,10 +593,19 @@ namespace ShadowRDP.Forms
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 using var path = UiButtons.RoundedRect(rect, 6);
-                using var brush = new SolidBrush(bg);
+                using var brush = new SolidBrush(badgeBg);
                 e.Graphics.FillPath(brush, path);
                 TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
+            }
+
+            // All other cells — draw text
+            var cellText = e.Value?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(cellText))
+            {
+                Color fg = isSelected ? UiTheme.Foreground : UiTheme.Foreground;
+                var textRect = new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y, e.CellBounds.Width - 12, e.CellBounds.Height);
+                TextRenderer.DrawText(e.Graphics, cellText, e.CellStyle?.Font ?? _grid.DefaultCellStyle.Font, textRect, fg, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             }
         }
 
