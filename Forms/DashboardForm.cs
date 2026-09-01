@@ -55,14 +55,12 @@ namespace ShadowRDP.Forms
             _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
             header.Controls.Add(_btnAi);
 
-            // Fire-and-forget availability check with hard 5s safety net
-            var aiCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+            // Fire-and-forget availability check
             Task.Run(async () =>
             {
+                var ok = await EventDecoderService.IsOllamaAvailableAsync();
                 try
                 {
-                    var ok = await EventDecoderService.IsOllamaAvailableAsync().WaitAsync(aiCts.Token);
-                    if (aiCts.IsCancellationRequested) return;
                     BeginInvoke(new Action(() =>
                     {
                         if (ok)
@@ -79,10 +77,7 @@ namespace ShadowRDP.Forms
                         }
                     }));
                 }
-                catch
-                {
-                    try { BeginInvoke(new Action(() => { _btnAi.Text = "ИИ Недоступен"; _btnAi.BackColor = UiTheme.Danger; })); } catch { }
-                }
+                catch { }
             });
 
             var btnSettings = UiButtons.MakeCompactFilled("Настройки", 90);
@@ -127,7 +122,14 @@ namespace ShadowRDP.Forms
             _grid.BackgroundColor = UiTheme.Card;
             _grid.BorderStyle = BorderStyle.None;
             _grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.Top = DataGridViewAdvancedCellBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.Left = DataGridViewAdvancedCellBorderStyle.None;
+            _grid.AdvancedCellBorderStyle.Right = DataGridViewAdvancedCellBorderStyle.None;
             _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
+            _grid.AdvancedColumnHeadersBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
             _grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
             _grid.GridColor = UiTheme.BorderSubtle;
             _grid.RowHeadersVisible = false;
@@ -435,15 +437,19 @@ namespace ShadowRDP.Forms
 
         private async Task AskAiAsync(DashboardEvent ev)
         {
-            _nyanBar.StartMarquee();
+            _nyanBar.Start();
             _status.Text = "ИИ думает...";
             try
             {
                 string decoded = await EventDecoderService.DecodeAsync(ev);
+                _nyanBar.FadeOut();
+                await Task.Delay(250); // let fadeout finish
                 MessageBox.Show(this, decoded, $"Событие {ev.EventId} — {ev.Source}", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
+                _nyanBar.FadeOut();
+                await Task.Delay(250);
                 MessageBox.Show(this, $"Ошибка ИИ: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
