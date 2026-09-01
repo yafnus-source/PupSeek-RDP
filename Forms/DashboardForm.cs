@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -17,6 +20,7 @@ namespace ShadowRDP.Forms
         private Label _status = new Label();
         private Label _title = new Label();
         private ProgressBar _progressBar = new ProgressBar();
+        private ProgressBar _aiProgressBar = new ProgressBar();
         private FlowLayoutPanel _filterLevel = new FlowLayoutPanel();
         private FlowLayoutPanel _filterPeriod = new FlowLayoutPanel();
         private List<DashboardEvent> _all = new List<DashboardEvent>();
@@ -26,7 +30,7 @@ namespace ShadowRDP.Forms
         private Dictionary<string, Label> _levelPills = new Dictionary<string, Label>();
         private Dictionary<string, Label> _periodPills = new Dictionary<string, Label>();
         private System.Windows.Forms.Timer _pollUiTimer = new System.Windows.Forms.Timer();
-        private int _lastHoverRow = -1, _lastHoverCol = -1;
+        private Label _btnAi = null!;
 
         public DashboardForm()
         {
@@ -45,14 +49,36 @@ namespace ShadowRDP.Forms
             btnRefresh.Click += async (s, e) => await RefreshNowAsync();
             header.Controls.Add(btnRefresh);
 
-            var btnInstallAi = UiButtons.MakeCompactFilled("Установка ИИ", 110);
-            btnInstallAi.Location = new Point(btnRefresh.Right + 8, 13);
-            btnInstallAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
-            header.Controls.Add(btnInstallAi);
-            Task.Run(async () => { var ok = await EventDecoderService.IsOllamaAvailableAsync(); try { BeginInvoke(new Action(() => btnInstallAi.Visible = !ok)); } catch { } });
+            // AI button — shows status or install guide
+            _btnAi = UiButtons.MakeCompactFilled("Проверка ИИ...", 120);
+            _btnAi.Location = new Point(btnRefresh.Right + 8, 13);
+            _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
+            header.Controls.Add(_btnAi);
+            Task.Run(async () =>
+            {
+                var ok = await EventDecoderService.IsOllamaAvailableAsync();
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (ok)
+                        {
+                            _btnAi.Text = "ИИ Работает";
+                            _btnAi.BackColor = UiTheme.StatusOnline;
+                            _btnAi.Click -= (s2, e2) => OllamaInstaller.ShowInstallGuide(this);
+                            _btnAi.Click += (s2, e2) => MessageBox.Show(this, "Ollama доступен. Модель llama3.2 готова к расшифровке событий.", "ИИ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                        else
+                        {
+                            _btnAi.Text = "Установка ИИ";
+                        }
+                    }));
+                }
+                catch { }
+            });
 
             var btnSettings = UiButtons.MakeCompactFilled("Настройки", 90);
-            btnSettings.Location = new Point(btnInstallAi.Right + 8, 13);
+            btnSettings.Location = new Point(_btnAi.Right + 8, 13);
             btnSettings.Click += (s, e) => ShowSettings();
             header.Controls.Add(btnSettings);
 
@@ -118,7 +144,6 @@ namespace ShadowRDP.Forms
             _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
             _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
             _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
-            // Performance: enable double buffering via reflection
             typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, _grid, new object[] { true });
 
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "Время", Width = 130 });
@@ -127,41 +152,23 @@ namespace ShadowRDP.Forms
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "EventId", HeaderText = "ID", Width = 60 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computer", HeaderText = "Хост", Width = 110 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Сообщение", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
-            var btnCol = new DataGridViewButtonColumn { Name = "Decode", HeaderText = "", Width = 110, Text = "Расшифровать", UseColumnTextForButtonValue = false };
-            _grid.Columns.Add(btnCol);
 
-            _grid.CellClick += OnCellClick;
             _grid.CellPainting += OnCellPainting;
-            _grid.MouseMove += (s, e) =>
-            {
-                var ht = _grid.HitTest(e.X, e.Y);
-                if (ht.ColumnIndex == _grid.Columns["Decode"].Index && ht.RowIndex >= 0)
-                {
-                    if (ht.RowIndex != _lastHoverRow || ht.ColumnIndex != _lastHoverCol)
-                    {
-                        if (_lastHoverRow >= 0) _grid.InvalidateCell(_lastHoverCol, _lastHoverRow);
-                        _lastHoverRow = ht.RowIndex; _lastHoverCol = ht.ColumnIndex;
-                        _grid.InvalidateCell(ht.ColumnIndex, ht.RowIndex);
-                    }
-                }
-                else if (_lastHoverRow >= 0)
-                {
-                    _grid.InvalidateCell(_lastHoverCol, _lastHoverRow);
-                    _lastHoverRow = -1; _lastHoverCol = -1;
-                }
-            };
+            _grid.CellMouseDown += OnCellMouseDown;
+            _grid.CellDoubleClick += OnCellDoubleClick;
 
-            // Status bar with progress bar
-            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 28, BackColor = UiTheme.Card };
+            // Status bar with two progress bars
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = UiTheme.Card };
             _progressBar = new ProgressBar { Dock = DockStyle.Top, Height = 3, Style = ProgressBarStyle.Continuous, Visible = false };
+            _aiProgressBar = new ProgressBar { Dock = DockStyle.Top, Height = 3, Style = ProgressBarStyle.Continuous, Visible = false, ForeColor = UiTheme.Danger };
             _status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8f), ForeColor = UiTheme.MutedForeground, Padding = new Padding(12, 0, 0, 0) };
             statusPanel.Controls.Add(_status);
+            statusPanel.Controls.Add(_aiProgressBar);
             statusPanel.Controls.Add(_progressBar);
             Controls.Add(statusPanel);
 
             Controls.Add(_grid);
 
-            // fix Dock z-order: header topmost
             Controls.SetChildIndex(header, 5);
             Controls.SetChildIndex(filterPanel, 4);
             Controls.SetChildIndex(_hostPanel, 3);
@@ -211,7 +218,7 @@ namespace ShadowRDP.Forms
             lbl.Paint += (s, e) =>
             {
                 if (lbl.BackColor == Color.Transparent) return;
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using var path = UiButtons.RoundedRect(new Rectangle(0, 0, lbl.Width - 1, lbl.Height - 1), 8);
                 using var brush = new SolidBrush(lbl.BackColor);
                 e.Graphics.FillPath(brush, path);
@@ -279,7 +286,7 @@ namespace ShadowRDP.Forms
                 int borderW = isActive ? 2 : 1;
                 tab.Paint += (s, e) =>
                 {
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                     var r = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
                     using var path = UiButtons.TabRect(r, 6);
                     using var brush = new SolidBrush(tabBg);
@@ -321,12 +328,11 @@ namespace ShadowRDP.Forms
 
             var filtered = _all.Where(e => e.Time >= cutoff).Where(e => _level == "Все" || string.Equals(e.Level, _level, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedHost) || string.Equals(e.Computer, _selectedHost, StringComparison.OrdinalIgnoreCase)).OrderByDescending(e => e.Time).ToList();
 
-            // Batch update — SuspendLayout + suspend painting for smooth render
             _grid.SuspendLayout();
             _grid.Rows.Clear();
             foreach (var ev in filtered.Take(500))
             {
-                int idx = _grid.Rows.Add(ev.Time.ToString("dd.MM HH:mm"), ev.Level, ev.Source, ev.EventId.ToString(), ev.Computer, ev.Message, string.IsNullOrWhiteSpace(ev.Decoded) ? "Расшифровать" : "Показать");
+                int idx = _grid.Rows.Add(ev.Time.ToString("dd.MM HH:mm"), ev.Level, ev.Source, ev.EventId.ToString(), ev.Computer, ev.Message);
                 _grid.Rows[idx].Tag = ev;
             }
             _grid.ResumeLayout();
@@ -396,20 +402,105 @@ namespace ShadowRDP.Forms
             }
         }
 
-        private async void OnCellClick(object sender, DataGridViewCellEventArgs e)
+        // === Context menu: ПКМ ===
+        private void OnCellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
         {
-            if (e.RowIndex < 0 || e.ColumnIndex != _grid.Columns["Decode"].Index) return;
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0) return;
+            _grid.ClearSelection();
+            _grid.Rows[e.RowIndex].Selected = true;
+            _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[0];
+
             var ev = _grid.Rows[e.RowIndex].Tag as DashboardEvent;
             if (ev == null) return;
-            _grid.Rows[e.RowIndex].Cells["Decode"].Value = "...";
-            string decoded = await EventDecoderService.DecodeAsync(ev);
-            _grid.Rows[e.RowIndex].Cells["Decode"].Value = "Показать";
-            MessageBox.Show(this, decoded, $"Событие {ev.EventId} — {ev.Source}", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Подробнее (Microsoft)", null, (s, e2) => ShowEventDetail(ev));
+            menu.Items.Add("Спросить ИИ", null, async (s, e2) => await AskAiAsync(ev));
+            menu.Show(_grid, e.Location);
+        }
+
+        private void ShowEventDetail(DashboardEvent ev)
+        {
+            string description = "";
+            if (Helpers.EventFallbackDb.TryGet(ev.EventId, ev.Source, out var dbText))
+                description = dbText;
+            else
+                description = $"EventID: {ev.EventId}\nИсточник: {ev.Source}\nУровень: {ev.Level}\nКомпьютер: {ev.Computer}\n\n{ev.Message}";
+
+            using var dlg = new EventDetailForm(ev.EventId, ev.Source, ev.Level, ev.Computer, ev.Message, description);
+            dlg.ShowDialog(this);
+        }
+
+        private async Task AskAiAsync(DashboardEvent ev)
+        {
+            _aiProgressBar.Visible = true;
+            _aiProgressBar.Style = ProgressBarStyle.Marquee;
+            _status.Text = "ИИ думает...";
+            try
+            {
+                string decoded = await EventDecoderService.DecodeAsync(ev);
+                MessageBox.Show(this, decoded, $"Событие {ev.EventId} — {ev.Source}", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Ошибка ИИ: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                _aiProgressBar.Visible = false;
+                _aiProgressBar.Style = ProgressBarStyle.Continuous;
+                UpdateStatus();
+            }
+        }
+
+        // === Double-click: EventLog with server ===
+        private void OnCellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            var ev = _grid.Rows[e.RowIndex].Tag as DashboardEvent;
+            if (ev == null) return;
+
+            // Try to read from the remote server's EventLog
+            string detail = ReadEventFromServer(ev);
+            if (string.IsNullOrWhiteSpace(detail)) detail = ev.Message;
+
+            using var dlg = new EventDetailForm(ev.EventId, ev.Source, ev.Level, ev.Computer, ev.Message, detail);
+            dlg.ShowDialog(this);
+        }
+
+        private string ReadEventFromServer(DashboardEvent ev)
+        {
+            try
+            {
+                var computer = ev.Computer;
+                bool isLocal = string.Equals(computer, ".", StringComparison.OrdinalIgnoreCase) || string.Equals(computer, "localhost", StringComparison.OrdinalIgnoreCase) || string.Equals(computer, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+                EventLogSession session = isLocal ? new EventLogSession() : new EventLogSession(computer);
+                string logName = string.IsNullOrEmpty(ev.LogName) ? "System" : ev.LogName;
+                string xpath = $"*[System[EventID={ev.EventId}]]";
+                var query = new EventLogQuery(logName, PathType.LogName, xpath) { Session = session, TolerateQueryErrors = true };
+                using var reader = new EventLogReader(query);
+                for (EventRecord rec = reader.ReadEvent(); rec != null; rec = reader.ReadEvent())
+                {
+                    try
+                    {
+                        if (rec.TimeCreated.HasValue && Math.Abs((rec.TimeCreated.Value - ev.Time).TotalMinutes) < 5)
+                        {
+                            string msg = "";
+                            try { msg = rec.FormatDescription() ?? ""; } catch { }
+                            if (string.IsNullOrWhiteSpace(msg)) msg = rec.ToString() ?? "";
+                            return msg;
+                        }
+                    }
+                    finally { rec.Dispose(); }
+                }
+            }
+            catch { }
+            return "";
         }
 
         private void OnCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
         {
-            // === Header cells: custom paint to override system #0078D7 ===
+            // === Header cells ===
             if (e.RowIndex == -1 && e.ColumnIndex >= 0)
             {
                 e.Handled = true;
@@ -417,13 +508,11 @@ namespace ShadowRDP.Forms
                 e.Graphics.FillRectangle(bgBrush, e.CellBounds);
                 var col = _grid.Columns[e.ColumnIndex];
                 var headerText = col.HeaderText;
-                int textW = TextRenderer.MeasureText(headerText, new Font("Segoe UI Semibold", 8.5f)).Width;
                 int glyphSpace = col.HeaderCell.SortGlyphDirection != SortOrder.None ? 16 : 0;
                 int textX = e.CellBounds.X + 8;
                 int textWAvail = e.CellBounds.Width - 8 - glyphSpace;
                 var textRect = new Rectangle(textX, e.CellBounds.Y, textWAvail, e.CellBounds.Height);
                 TextRenderer.DrawText(e.Graphics, headerText, new Font("Segoe UI Semibold", 8.5f), textRect, Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                // Sort glyph — triangle in #626F5E
                 if (col.HeaderCell.SortGlyphDirection != SortOrder.None)
                 {
                     int gx = e.CellBounds.Right - 18;
@@ -446,7 +535,7 @@ namespace ShadowRDP.Forms
 
             if (e.RowIndex < 0) return;
 
-            // Level column — fixed-width badge (20% smaller)
+            // Level column — badge with AntiAlias
             if (e.ColumnIndex == _grid.Columns["Level"].Index)
             {
                 e.Handled = true;
@@ -458,35 +547,12 @@ namespace ShadowRDP.Forms
                 int x = e.CellBounds.X + (e.CellBounds.Width - badgeW) / 2;
                 int y = e.CellBounds.Y + (e.CellBounds.Height - badgeH) / 2;
                 var rect = new Rectangle(x, y, badgeW, badgeH);
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 using var path = UiButtons.RoundedRect(rect, 6);
                 using var brush = new SolidBrush(bg);
                 e.Graphics.FillPath(brush, path);
                 TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                return;
-            }
-
-            // Decode column — Accent-colored button (20% smaller)
-            if (e.ColumnIndex == _grid.Columns["Decode"].Index)
-            {
-                e.Handled = true;
-                e.PaintBackground(e.CellBounds, true);
-                var val = e.Value?.ToString() ?? "";
-                bool isDecoded = val == "Показать";
-                Color bg = isDecoded ? UiTheme.Accent : UiTheme.HoverBg;
-                Color fg = Color.White;
-                int pad = 5;
-                int btnH = e.CellBounds.Height - 10;
-                var rect = new Rectangle(e.CellBounds.X + pad, e.CellBounds.Y + (e.CellBounds.Height - btnH) / 2, e.CellBounds.Width - pad * 2, btnH);
-                using var path = UiButtons.RoundedRect(rect, 4);
-                using var brush = new SolidBrush(bg);
-                e.Graphics.FillPath(brush, path);
-                var font = new Font("Segoe UI Semibold", 7f);
-                TextRenderer.DrawText(e.Graphics, val, font, rect, fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                if (e.RowIndex == _lastHoverRow && e.ColumnIndex == _lastHoverCol)
-                {
-                    using var hoverBrush = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
-                    e.Graphics.FillPath(hoverBrush, path);
-                }
                 return;
             }
         }

@@ -9,7 +9,7 @@ namespace ShadowRDP.Services
 {
     public static class EventDecoderService
     {
-        private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
         private static string OllamaBase => $"http://{Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "localhost:11434"}";
 
         public static async Task<string> DecodeAsync(DashboardEvent ev)
@@ -21,7 +21,19 @@ namespace ShadowRDP.Services
             {
                 try
                 {
-                    var prompt = $"Объясни простым человеческим языком, что означает Windows-событие. EventID: {ev.EventId}, Источник: {ev.Source}, Уровень: {ev.Level}, Компьютер: {ev.Computer}, Сообщение: {ev.Message}. Ответ кратко (2-3 предложения), на русском, с советом что делать.";
+                    var prompt = $@"Проанализируй Windows-событие и дай ответ на русском языке по 4 разделам.
+
+EventID: {ev.EventId}
+Источник: {ev.Source}
+Уровень: {ev.Level}
+Компьютер: {ev.Computer}
+Сообщение: {ev.Message}
+
+Формат ответа:
+1. Что означает — кратко (1-2 предложения)
+2. Возможные причины — список
+3. Что делать — конкретные шаги
+4. Критичность — Low / Medium / High";
                     var payload = new
                     {
                         model = "llama3.2",
