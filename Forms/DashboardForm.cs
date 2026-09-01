@@ -20,7 +20,7 @@ namespace ShadowRDP.Forms
         private Label _status = new Label();
         private Label _title = new Label();
         private ProgressBar _progressBar = new ProgressBar();
-        private ProgressBar _aiProgressBar = new ProgressBar();
+        private NyanCatProgressBar _nyanBar = new NyanCatProgressBar();
         private FlowLayoutPanel _filterLevel = new FlowLayoutPanel();
         private FlowLayoutPanel _filterPeriod = new FlowLayoutPanel();
         private List<DashboardEvent> _all = new List<DashboardEvent>();
@@ -54,11 +54,15 @@ namespace ShadowRDP.Forms
             _btnAi.Location = new Point(btnRefresh.Right + 8, 13);
             _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
             header.Controls.Add(_btnAi);
+
+            // Fire-and-forget availability check with hard 5s safety net
+            var aiCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
             Task.Run(async () =>
             {
-                var ok = await EventDecoderService.IsOllamaAvailableAsync();
                 try
                 {
+                    var ok = await EventDecoderService.IsOllamaAvailableAsync().WaitAsync(aiCts.Token);
+                    if (aiCts.IsCancellationRequested) return;
                     BeginInvoke(new Action(() =>
                     {
                         if (ok)
@@ -122,8 +126,8 @@ namespace ShadowRDP.Forms
             _grid.Dock = DockStyle.Fill;
             _grid.BackgroundColor = UiTheme.Card;
             _grid.BorderStyle = BorderStyle.None;
-            _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
-            _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+            _grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
+            _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
             _grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
             _grid.GridColor = UiTheme.BorderSubtle;
             _grid.RowHeadersVisible = false;
@@ -159,13 +163,15 @@ namespace ShadowRDP.Forms
             _grid.CellMouseDown += OnCellMouseDown;
             _grid.CellDoubleClick += OnCellDoubleClick;
 
-            // Status bar with two progress bars
+            // Status bar with NyanCat progress
             var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = UiTheme.Card };
             _progressBar = new ProgressBar { Dock = DockStyle.Top, Height = 3, Style = ProgressBarStyle.Continuous, Visible = false };
-            _aiProgressBar = new ProgressBar { Dock = DockStyle.Top, Height = 3, Style = ProgressBarStyle.Continuous, Visible = false, ForeColor = UiTheme.Danger };
+            _nyanBar.Dock = DockStyle.Top;
+            _nyanBar.Height = 36;
+            _nyanBar.Visible = false;
             _status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8f), ForeColor = UiTheme.MutedForeground, Padding = new Padding(12, 0, 0, 0) };
             statusPanel.Controls.Add(_status);
-            statusPanel.Controls.Add(_aiProgressBar);
+            statusPanel.Controls.Add(_nyanBar);
             statusPanel.Controls.Add(_progressBar);
             Controls.Add(statusPanel);
 
@@ -435,8 +441,7 @@ namespace ShadowRDP.Forms
 
         private async Task AskAiAsync(DashboardEvent ev)
         {
-            _aiProgressBar.Visible = true;
-            _aiProgressBar.Style = ProgressBarStyle.Marquee;
+            _nyanBar.StartMarquee();
             _status.Text = "ИИ думает...";
             try
             {
@@ -449,8 +454,7 @@ namespace ShadowRDP.Forms
             }
             finally
             {
-                _aiProgressBar.Visible = false;
-                _aiProgressBar.Style = ProgressBarStyle.Continuous;
+                _nyanBar.Stop();
                 UpdateStatus();
             }
         }
@@ -536,6 +540,14 @@ namespace ShadowRDP.Forms
             }
 
             if (e.RowIndex < 0) return;
+
+            // Horizontal divider line at bottom of each row
+            e.Handled = false;
+            using (var sepPen = new Pen(UiTheme.BorderSubtle, 1f))
+            {
+                int y = e.CellBounds.Bottom - 1;
+                e.Graphics.DrawLine(sepPen, e.CellBounds.Left, y, e.CellBounds.Right, y);
+            }
 
             // Level column — badge with AntiAlias
             if (e.ColumnIndex == _grid.Columns["Level"].Index)
