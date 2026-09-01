@@ -51,7 +51,7 @@ namespace ShadowRDP.Forms
                 ForeColor = UiTheme.Foreground,
                 Font = new Font("Segoe UI", 10f),
                 BorderStyle = BorderStyle.None,
-                Padding = new Padding(12),
+                Padding = new Padding(12, 30, 12, 12),
                 Text = string.IsNullOrWhiteSpace(detailedDescription) ? message : detailedDescription
             };
             Controls.Add(txtBox);

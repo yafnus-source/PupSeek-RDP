@@ -178,8 +178,6 @@ namespace ShadowRDP.Forms
             _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
             _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
             _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
-            typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, _grid, new object[] { true });
-
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "Время", Width = 130 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Level", HeaderText = "Уровень", Width = 80, MinimumWidth = 80 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Source", HeaderText = "Источник", Width = 120 });
@@ -469,14 +467,16 @@ namespace ShadowRDP.Forms
             {
                 string decoded = await EventDecoderService.DecodeAsync(ev);
                 _nyanBar.FadeOut();
-                await Task.Delay(250); // let fadeout finish
-                MessageBox.Show(this, decoded, $"Событие {ev.EventId} — {ev.Source}", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await Task.Delay(250);
+                using var dlg = new AiAnswerForm(ev.EventId, ev.Source, ev.Level, ev.Computer, decoded);
+                dlg.ShowDialog(this);
             }
             catch (Exception ex)
             {
                 _nyanBar.FadeOut();
                 await Task.Delay(250);
-                MessageBox.Show(this, $"Ошибка ИИ: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                using var dlg = new AiAnswerForm(ev.EventId, ev.Source, ev.Level, ev.Computer, $"Ошибка ИИ: {ex.Message}");
+                dlg.ShowDialog(this);
             }
             finally
             {
