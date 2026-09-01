@@ -26,7 +26,7 @@ namespace ShadowRDP.Helpers
 
         public NyanCatProgressBar()
         {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
             Height = 36;
             BackColor = Color.Transparent;
             for (int i = 0; i < _stars.Length; i++)
