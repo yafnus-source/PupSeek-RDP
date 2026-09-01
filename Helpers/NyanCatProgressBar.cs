@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -15,6 +16,7 @@ namespace ShadowRDP.Helpers
         private PointF[] _stars = new PointF[14];
         private bool _fading;
         private int _fadeAlpha = 255;
+        private Stopwatch _sw = new Stopwatch();
 
         private static readonly Color[] Rainbow = {
             Color.FromArgb(0xFF, 0x00, 0x00),
@@ -44,10 +46,12 @@ namespace ShadowRDP.Helpers
                     _fadeAlpha -= 15;
                     if (_fadeAlpha <= 0) { Stop(); return; }
                 }
-                else
+                else if (_sw.IsRunning)
                 {
-                    _progress += 0.004f; // ~5s full width at 50ms tick
-                    if (_progress >= 1f) _progress = 1f;
+                    // Progress based on real elapsed time: approaches 1 asymptotically
+                    // At 10s -> 0.50, 20s -> 0.74, 30s -> 0.86, 60s -> 0.98
+                    double elapsed = _sw.Elapsed.TotalSeconds;
+                    _progress = Math.Min(1f, (float)(1.0 - Math.Exp(-elapsed / 12.0)));
                 }
 
                 // Move stars left
@@ -69,6 +73,7 @@ namespace ShadowRDP.Helpers
             _progress = 0f;
             _fading = false;
             _fadeAlpha = 255;
+            _sw.Restart();
             Visible = true;
             if (!_timer.Enabled) _timer.Start();
             Invalidate();
@@ -77,6 +82,7 @@ namespace ShadowRDP.Helpers
         public void Stop()
         {
             _timer.Stop();
+            _sw.Stop();
             Visible = false;
             _fading = false;
         }
@@ -116,7 +122,7 @@ namespace ShadowRDP.Helpers
                 }
             }
 
-            // Cat position: smooth left to right
+            // Cat position: smooth left to right based on real time
             int catX = (int)(_progress * (w - catW));
 
             // Rainbow trail: from 0 to catX
