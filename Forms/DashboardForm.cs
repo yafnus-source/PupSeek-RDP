@@ -82,10 +82,13 @@ namespace ShadowRDP.Forms
             _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, BackColor = UiTheme.Background, Padding = new Padding(12, 6, 12, 6), AutoSize = false };
             Controls.Add(_hostPanel);
 
-            // Grid
+            var sep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiTheme.BorderSubtle };
+            Controls.Add(sep);
+
+            // Grid — first row was clipping under hostBar due to Fill/Top z-order; separator fixes it
             _grid.Dock = DockStyle.Fill;
             _grid.BackgroundColor = UiTheme.Card;
-            _grid.BorderStyle = BorderStyle.FixedSingle;
+            _grid.BorderStyle = BorderStyle.None;
             _grid.GridColor = UiTheme.BorderSubtle;
             _grid.RowHeadersVisible = false;
             _grid.AllowUserToAddRows = false;
@@ -117,13 +120,13 @@ namespace ShadowRDP.Forms
             _grid.CellClick += OnCellClick;
             _grid.CellPainting += OnCellPainting;
 
-            Controls.Add(_grid);
-
-            // Status bar
+            // Status bar — add BEFORE grid so Fill docks between hostBar and status
             var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = UiTheme.Card };
             _status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8f), ForeColor = UiTheme.MutedForeground, Padding = new Padding(12, 0, 0, 0) };
             statusPanel.Controls.Add(_status);
             Controls.Add(statusPanel);
+
+            Controls.Add(_grid);
 
             Load += async (s, e) => { await LoadEventsAsync(); EventPollerService.OnNewEvents += OnNewEvents; EventPollerService.OnCritical += OnCritical; };
             FormClosed += (s, e) => { EventPollerService.OnNewEvents -= OnNewEvents; EventPollerService.OnCritical -= OnCritical; };
