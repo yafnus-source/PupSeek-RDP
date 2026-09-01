@@ -16,6 +16,7 @@ namespace ShadowRDP.Forms
         private FlowLayoutPanel _hostPanel = new FlowLayoutPanel();
         private Label _status = new Label();
         private Label _title = new Label();
+        private ProgressBar _progressBar = new ProgressBar();
         private FlowLayoutPanel _filterLevel = new FlowLayoutPanel();
         private FlowLayoutPanel _filterPeriod = new FlowLayoutPanel();
         private List<DashboardEvent> _all = new List<DashboardEvent>();
@@ -104,7 +105,7 @@ namespace ShadowRDP.Forms
             _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             _grid.ReadOnly = true;
             _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            _grid.RowTemplate.Height = 26;
+            _grid.RowTemplate.Height = 29;
             _grid.ColumnHeadersHeight = 28;
             _grid.EnableHeadersVisualStyles = false;
             _grid.ColumnHeadersDefaultCellStyle.BackColor = UiTheme.HeaderBar;
@@ -113,6 +114,10 @@ namespace ShadowRDP.Forms
             _grid.DefaultCellStyle.Font = new Font("Segoe UI", 8.5f);
             _grid.DefaultCellStyle.BackColor = UiTheme.Card;
             _grid.AlternatingRowsDefaultCellStyle.BackColor = UiTheme.RowAlt;
+            _grid.DefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
+            _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Accent;
+            _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
+            _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Accent;
             // Performance: enable double buffering via reflection
             typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, _grid, new object[] { true });
 
@@ -146,10 +151,12 @@ namespace ShadowRDP.Forms
                 }
             };
 
-            // Status bar — add BEFORE grid so Fill docks between hostBar and status
-            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = UiTheme.Card };
+            // Status bar with progress bar
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 28, BackColor = UiTheme.Card };
+            _progressBar = new ProgressBar { Dock = DockStyle.Top, Height = 3, Style = ProgressBarStyle.Continuous, Visible = false };
             _status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8f), ForeColor = UiTheme.MutedForeground, Padding = new Padding(12, 0, 0, 0) };
             statusPanel.Controls.Add(_status);
+            statusPanel.Controls.Add(_progressBar);
             Controls.Add(statusPanel);
 
             Controls.Add(_grid);
@@ -175,11 +182,16 @@ namespace ShadowRDP.Forms
                     if (string.IsNullOrEmpty(host))
                     {
                         _title.Text = "ДАШБОРД СОБЫТИЙ";
+                        _progressBar.Visible = false;
+                        _progressBar.Value = 0;
                     }
                     else
                     {
                         _title.Text = $"ДАШБОРД — {host} ({current}/{total})";
                         _status.Text = $"Опрос {current} из {total}: {host}...";
+                        _progressBar.Visible = true;
+                        _progressBar.Maximum = total;
+                        _progressBar.Value = current;
                     }
                 }));
             }
@@ -340,7 +352,11 @@ namespace ShadowRDP.Forms
         {
             _title.Text = "ДАШБОРД — обновление...";
             _status.Text = "Опрос хостов...";
+            _progressBar.Visible = true;
+            _progressBar.Style = ProgressBarStyle.Marquee;
             await EventPollerService.PollOnceAsync();
+            _progressBar.Visible = false;
+            _progressBar.Style = ProgressBarStyle.Continuous;
             _all = EventDashboardStore.LoadEvents();
             ApplyFilters();
             RebuildHostBar();
