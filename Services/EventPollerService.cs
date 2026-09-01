@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Linq;
 using System.Management;
 using System.Threading;
@@ -54,7 +55,7 @@ namespace ShadowRDP.Services
             try
             {
                 var hosts = EventDashboardStore.GetMonitoredComputers();
-                if (hosts.Count == 0) return;
+                if (hosts.Count == 0) { Logger.Info("EventPoller: no monitored hosts"); return; }
                 var settings = EventDashboardStore.LoadSettings();
                 var cutoff = DateTime.Now.AddDays(-settings.RetentionDays);
                 var existing = EventDashboardStore.LoadEvents();
@@ -66,6 +67,7 @@ namespace ShadowRDP.Services
                     try
                     {
                         var events = await QueryHostAsync(host, cutoff, _cts?.Token ?? CancellationToken.None);
+                        Logger.Info($"EventPoller: {host} -> {events.Count} events");
                         foreach (var ev in events)
                         {
                             var key = $"{ev.Computer}|{ev.EventId}|{ev.Time:O}|{ev.Source}";
@@ -100,6 +102,10 @@ namespace ShadowRDP.Services
                     }
                     Logger.Info($"EventPoller: +{allNew.Count} new events from {hosts.Count} hosts");
                 }
+                else
+                {
+                    Logger.Info($"EventPoller: 0 new events from {hosts.Count} hosts (cutoff {cutoff:yyyy-MM-dd HH:mm})");
+                }
             }
             catch (Exception ex) { try { Logger.Warn($"PollOnce failed: {ex.Message}"); } catch { } }
             finally { _running = false; }
@@ -107,75 +113,114 @@ namespace ShadowRDP.Services
 
         private static async Task<List<DashboardEvent>> QueryHostAsync(string computer, DateTime cutoff, CancellationToken ct)
         {
-            // Query last 2 days, Error (Type=1) and Critical handling via Level? Win32_NTLogEvent.Type: 1=Error, 2=Warning. Critical is Type=1 with EventCode in critical list but we treat all Error as candidates and filter by Log.
-            // Simpler: WHERE Type=1 (Error) and TimeGenerated recent.
-            // Win32_NTLogEvent TimeGenerated is datetime string.
-            var list = new List<DashboardEvent>();
-            // WMI datetime format: yyyymmddHHMMSS.mmmmmm+UUU ; cutoff as WMI string
-            string wmiCutoff = ManagementDateTimeConverter.ToDmtfDateTime(cutoff);
-            string wql = $"SELECT TimeGenerated, EventCode, SourceName, Type, Message, Logfile FROM Win32_NTLogEvent WHERE Type=1 AND TimeGenerated >= '{wmiCutoff}'";
-
-            // Use 30s timeout per host (longer than normal WMI 6s). Localhost → local scope.
-            ManagementScope scope;
             var clean = computer.Trim();
-            if (string.Equals(clean, ".", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, "localhost", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, Environment.MachineName, StringComparison.OrdinalIgnoreCase))
-                scope = new ManagementScope(@"\\.\root\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(10), Authentication = AuthenticationLevel.PacketPrivacy });
-            else
-                scope = new ManagementScope($"\\\\{clean}\\root\\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(10), Authentication = AuthenticationLevel.PacketPrivacy });
-            var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(wql));
-            var task = Task.Run(() =>
+            bool isLocal = string.Equals(clean, ".", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, "localhost", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+            // Primary: EventLogSession (fast, per-log, no WMI hang). Your PowerShell test hung because WMI scanned ALL logs.
+            try
             {
-                var tmp = new List<DashboardEvent>();
-                try
+                long diffMs = (long)(DateTime.UtcNow - cutoff.ToUniversalTime()).TotalMilliseconds;
+                if (diffMs < 0) diffMs = 172800000;
+                if (diffMs > 172800000) diffMs = 172800000;
+                string xpath = $"*[System[(Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) <= {diffMs}]]]";
+                var logs = new[] { "System", "Application" };
+                var task = Task.Run(() =>
                 {
-                    using var results = searcher.Get();
-                    foreach (ManagementObject mo in results)
+                    var tmp = new List<DashboardEvent>();
+                    foreach (var log in logs)
                     {
+                        EventLogSession? session = null;
+                        EventLogQuery? query = null;
+                        EventLogReader? reader = null;
                         try
                         {
-                            var typeObj = mo["Type"]?.ToString();
-                            // Type: convert to level: 1=Error, treat as Error (Critical not distinct in Win32_NTLogEvent, but EventCode in critical set could be mapped)
-                            string level = "Error";
-                            var codeObj = mo["EventCode"];
-                            int code = 0;
-                            if (codeObj != null) int.TryParse(codeObj.ToString(), out code);
-                            // Known critical IDs
-                            var criticalIds = new HashSet<int> { 41, 55, 6008, 1001 };
-                            if (criticalIds.Contains(code)) level = "Critical";
-
-                            var timeObj = mo["TimeGenerated"]?.ToString();
-                            DateTime time = DateTime.Now;
-                            if (!string.IsNullOrEmpty(timeObj))
+                            query = new EventLogQuery(log, PathType.LogName, xpath);
+                            if (!isLocal) { try { session = new EventLogSession(clean); query.Session = session; } catch { query.Session = null; } }
+                            reader = new EventLogReader(query);
+                            for (EventRecord? rec = reader.ReadEvent(); rec != null; rec = reader.ReadEvent())
                             {
-                                try { time = ManagementDateTimeConverter.ToDateTime(timeObj); } catch { }
+                                try
+                                {
+                                    if (rec.TimeCreated == null) continue;
+                                    if (rec.TimeCreated.Value.ToLocalTime() < cutoff) continue;
+                                    int code = rec.Id;
+                                    string level = rec.Level == 1 ? "Critical" : "Error";
+                                    var criticalIds = new HashSet<int> { 41, 55, 6008, 1001 };
+                                    if (criticalIds.Contains(code)) level = "Critical";
+                                    string msg = "";
+                                    try { msg = rec.FormatDescription() ?? ""; } catch { try { msg = rec.ToString() ?? ""; } catch { } }
+                                    tmp.Add(new DashboardEvent { Time = rec.TimeCreated.Value.ToLocalTime(), Level = level, Source = rec.ProviderName ?? "", EventId = code, Computer = clean, Message = msg.Trim(), LogName = log, Notified = false });
+                                    if (tmp.Count >= 200) break;
+                                }
+                                finally { rec.Dispose(); }
+                                if (ct.IsCancellationRequested) break;
                             }
-                            var ev = new DashboardEvent
-                            {
-                                Time = time,
-                                Level = level,
-                                Source = mo["SourceName"]?.ToString() ?? "",
-                                EventId = code,
-                                Computer = computer.Trim(),
-                                Message = (mo["Message"]?.ToString() ?? "").Trim(),
-                                LogName = mo["Logfile"]?.ToString() ?? "",
-                                Notified = false
-                            };
-                            // Restore decoded/fallback if exists in cache? keep empty, decoder will fill later
-                            tmp.Add(ev);
                         }
-                        finally { mo.Dispose(); }
+                        catch (Exception ex) { Logger.Warn($"EventLog poll {clean}/{log}: {ex.Message}"); }
+                        finally { try { reader?.Dispose(); } catch { } try { session?.Dispose(); } catch { } }
                     }
+                    return tmp;
+                }, ct);
+                var timeout = Task.Delay(TimeSpan.FromSeconds(15), ct);
+                var winner = await Task.WhenAny(task, timeout);
+                if (winner == task)
+                {
+                    var res = await task;
+                    if (res.Any()) return res.OrderByDescending(e => e.Time).Take(100).ToList();
+                    Logger.Info($"EventLog poll {clean}: 0 events, trying WMI fallback");
                 }
-                catch (Exception ex) { Logger.Warn($"WMI poll {computer}: {ex.Message}"); }
-                return tmp;
-            }, ct);
+                else Logger.Warn($"EventLog poll {clean}: timeout 15s");
+            }
+            catch (Exception ex) { Logger.Warn($"EventLog poll {clean} outer: {ex.Message}"); }
 
-            var timeout = Task.Delay(TimeSpan.FromSeconds(30), ct);
-            var winner = await Task.WhenAny(task, timeout);
-            if (winner != task) return list;
-            var res = await task;
-            // sort and take top 100 per host to avoid flood
-            return res.OrderByDescending(e => e.Time).Take(100).ToList();
+            // Fallback: WMI per-log (narrow, avoids full scan that hangs)
+            try
+            {
+                string wmiCutoff = ManagementDateTimeConverter.ToDmtfDateTime(cutoff);
+                var tmp = new List<DashboardEvent>();
+                var logs = new[] { "System", "Application" };
+                foreach (var log in logs)
+                {
+                    string wql = $"SELECT TimeGenerated, EventCode, SourceName, Type, Message, Logfile FROM Win32_NTLogEvent WHERE Logfile='{log}' AND Type=1 AND TimeGenerated >= '{wmiCutoff}'";
+                    ManagementScope scope = isLocal ? new ManagementScope(@"\\.\root\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(8), Authentication = AuthenticationLevel.PacketPrivacy }) : new ManagementScope($"\\\\{clean}\\root\\cimv2", new ConnectionOptions { Timeout = TimeSpan.FromSeconds(8), Authentication = AuthenticationLevel.PacketPrivacy });
+                    var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(wql));
+                    searcher.Options.Timeout = TimeSpan.FromSeconds(8);
+                    searcher.Options.ReturnImmediately = true;
+                    var t = Task.Run(() =>
+                    {
+                        var local = new List<DashboardEvent>();
+                        try
+                        {
+                            using var results = searcher.Get();
+                            int cnt = 0;
+                            foreach (ManagementObject mo in results)
+                            {
+                                try
+                                {
+                                    int code = 0; var co = mo["EventCode"]; if (co != null) int.TryParse(co.ToString(), out code);
+                                    string level = new HashSet<int> { 41, 55, 6008, 1001 }.Contains(code) ? "Critical" : "Error";
+                                    var timeObj = mo["TimeGenerated"]?.ToString();
+                                    DateTime time = DateTime.Now;
+                                    if (!string.IsNullOrEmpty(timeObj)) try { time = ManagementDateTimeConverter.ToDateTime(timeObj); } catch { }
+                                    local.Add(new DashboardEvent { Time = time, Level = level, Source = mo["SourceName"]?.ToString() ?? "", EventId = code, Computer = clean, Message = (mo["Message"]?.ToString() ?? "").Trim(), LogName = log, Notified = false });
+                                    if (++cnt >= 50) break;
+                                }
+                                finally { mo.Dispose(); }
+                                if (ct.IsCancellationRequested) break;
+                            }
+                        }
+                        catch (Exception ex) { Logger.Warn($"WMI poll {clean}/{log}: {ex.Message}"); }
+                        return local;
+                    }, ct);
+                    var to = Task.Delay(TimeSpan.FromSeconds(10), ct);
+                    var w = await Task.WhenAny(t, to);
+                    if (w == t) tmp.AddRange(await t);
+                    else Logger.Warn($"WMI poll {clean}/{log}: timeout 10s");
+                    if (ct.IsCancellationRequested) break;
+                }
+                if (tmp.Any()) return tmp.OrderByDescending(e => e.Time).Take(100).ToList();
+            }
+            catch (Exception ex) { Logger.Warn($"WMI fallback {clean}: {ex.Message}"); }
+            return new List<DashboardEvent>();
         }
     }
 }
