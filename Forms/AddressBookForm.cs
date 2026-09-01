@@ -54,6 +54,8 @@ namespace ShadowRDP.Forms
         private static readonly Brush _rdpActiveBrush = new SolidBrush(Helpers.UiTheme.StatusActive);
         // v3.1.x: RDP dot colour (same #296AA0 the painting used before).
         private static readonly Brush _rdpDotBrush = new SolidBrush(ShadowRDP.Helpers.UiTheme.HeaderBar);
+        // v4.0 — monitored row background tint (#527A9D @ 12% alpha)
+        private static readonly Brush _monitoredBgBrush = new SolidBrush(Color.FromArgb(30, 0x52, 0x7A, 0x9D));
 
         // v3.1.x: cached snapshot of RdpManagerForm's live sessions. Paint
         // used to call HasSessionFor(computer) per painted cell — that's a
@@ -1056,7 +1058,6 @@ namespace ShadowRDP.Forms
                 // (blue dot when RdpManagerForm has a live session for this computer).
                 var rowIdx = _grid.Rows.Add(icon, null, e.Group ?? "", e.Computer, e.FullName, e.User, e.Phone, e.IPs, e.LastSeen, newEventsText);
                 var row = _grid.Rows[rowIdx];
-                if (e.Monitored) row.Cells["Computer"].ToolTipText = "Отслеживается в дашборде";
                 if (newCnt > 0) row.Cells["NewEvents"].ToolTipText = $"{newCnt} новых событий — откройте Дашбоард";
 
                 // v2.1.77: restore per-cell alternating row coloring. This
@@ -2805,8 +2806,16 @@ namespace ShadowRDP.Forms
             // === Ping column: draw status dot over the bitmap icon ===
             if (colName == "Ping")
             {
+                // Monitored row background tint — once per row (via Ping column)
+                var rowComp = _grid.Rows[e.RowIndex].Cells["Computer"].Value?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(rowComp) && _monitoredSet.Contains(rowComp)
+                    && (e.State & DataGridViewElementStates.Selected) == 0)
+                {
+                    e.Graphics.FillRectangle(_monitoredBgBrush, e.CellBounds);
+                }
+
                 e.PaintBackground(e.CellBounds, false);
-                var computer = _grid.Rows[e.RowIndex].Cells["Computer"].Value?.ToString() ?? "";
+                var computer = rowComp;
                 Color dotColor;
                 if (!string.IsNullOrEmpty(computer) &&
                     PingCache.TryGet(computer, out var alive, out _) && alive)
@@ -2859,32 +2868,8 @@ namespace ShadowRDP.Forms
                 return;
             }
 
-            // v4.0 — dashboard monitoring indicator on Computer cell
-            if (colName == "Computer")
-            {
-                var comp = e.Value?.ToString() ?? "";
-                if (!string.IsNullOrEmpty(comp) && _monitoredSet.Contains(comp))
-                {
-                    e.PaintBackground(e.CellBounds, true);
-                    var textRect = new Rectangle(e.CellBounds.X + 4, e.CellBounds.Y, e.CellBounds.Width - 18, e.CellBounds.Height);
-                    Color fore = e.CellStyle.ForeColor;
-                    if ((e.State & DataGridViewElementStates.Selected) != 0) fore = e.CellStyle.SelectionForeColor;
-                    if (fore == Color.Empty || fore.A == 0) fore = _grid.DefaultCellStyle.ForeColor;
-                    var font = e.CellStyle.Font ?? _grid.DefaultCellStyle.Font ?? new Font("Segoe UI", 9f);
-                    TextRenderer.DrawText(e.Graphics, comp, font, textRect, fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                    int dotSize = 6;
-                    var dotRect = new Rectangle(e.CellBounds.Right - dotSize - 7, e.CellBounds.Y + (e.CellBounds.Height - dotSize) / 2, dotSize, dotSize);
-                    var gstate = e.Graphics.Save();
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using var pen = new Pen(Color.FromArgb(0x48, 0x30, 0x2F), 1.4f);
-                    // hollow dot — subtle, less clutter when many rows are monitored
-                    e.Graphics.DrawEllipse(pen, dotRect);
-                    e.Graphics.Restore(gstate);
-                    e.Handled = true;
-                    return;
-                }
-                return;
-            }
+            // v4.0 — monitoring indicator removed; row background tint is painted in Ping block
+            if (colName == "Computer") return;
 
             if (colName == "NewEvents")
             {
