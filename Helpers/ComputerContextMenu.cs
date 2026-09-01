@@ -715,6 +715,26 @@ namespace ShadowRDP.Helpers
             menu.AddItem("Просмотр событий (eventvwr)", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "eventvwr.msc"); });
             menu.AddItem("События (WMI)...", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new EventLogForm(c); dlg.ShowDialog(owner); } });
             menu.AddItem("Диспетчер задач...", "tasks", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new TaskManagerForm(c); dlg.ShowDialog(owner); } });
+            // v4.0 — dashboard monitoring toggle
+            {
+                var c = computerResolver() ?? "";
+                if (!string.IsNullOrEmpty(c))
+                {
+                    var entries = Services.AddressBookStore.Load();
+                    var ent = entries.FirstOrDefault(e => string.Equals(e.Computer, c, StringComparison.OrdinalIgnoreCase));
+                    bool isMon = ent != null && ent.Monitored;
+                    menu.AddItem(isMon ? "Отслеживать события ✓" : "Отслеживать события", "dashboard", () =>
+                    {
+                        var all = Services.AddressBookStore.Load();
+                        var target = all.FirstOrDefault(e => string.Equals(e.Computer, c, StringComparison.OrdinalIgnoreCase));
+                        if (target == null) { MessageBox.Show(owner, $"Компьютер {c} не найден в книге.", "Дашбоард", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                        target.Monitored = !target.Monitored;
+                        Services.AddressBookStore.Save(all);
+                        Services.EventDashboardStore.SaveMonitoredComputers(all.Where(e => e.Monitored).Select(e => e.Computer).ToList());
+                        MessageBox.Show(owner, target.Monitored ? $"Добавлен в дашбоард: {c}" : $"Убран из дашборда: {c}", "Дашбоард", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    });
+                }
+            }
 
             menu.AddSeparator();
             AddDomainSubmenuThemed(menu, owner, computerResolver, userResolver);
