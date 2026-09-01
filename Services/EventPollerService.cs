@@ -18,6 +18,7 @@ namespace ShadowRDP.Services
 
         public static event Action<List<DashboardEvent>>? OnNewEvents;
         public static event Action<DashboardEvent>? OnCritical;
+        public static event Action<string, int, int>? OnProgress; // (host, current, total)
 
         public static void Start()
         {
@@ -62,10 +63,12 @@ namespace ShadowRDP.Services
                 var existingKeys = new HashSet<string>(existing.Select(e => $"{e.Computer}|{e.EventId}|{e.Time:O}|{e.Source}"));
 
                 var allNew = new List<DashboardEvent>();
-                foreach (var host in hosts)
+                for (int i = 0; i < hosts.Count; i++)
                 {
+                    var host = hosts[i];
                     try
                     {
+                        try { OnProgress?.Invoke(host, i + 1, hosts.Count); } catch { }
                         var events = await QueryHostAsync(host, cutoff, _cts?.Token ?? CancellationToken.None);
                         Logger.Info($"EventPoller: {host} -> {events.Count} events");
                         foreach (var ev in events)
@@ -106,6 +109,7 @@ namespace ShadowRDP.Services
                 {
                     Logger.Info($"EventPoller: 0 new events from {hosts.Count} hosts (cutoff {cutoff:yyyy-MM-dd HH:mm})");
                 }
+                try { OnProgress?.Invoke("", hosts.Count, hosts.Count); } catch { }
             }
             catch (Exception ex) { try { Logger.Warn($"PollOnce failed: {ex.Message}"); } catch { } }
             finally { _running = false; }
