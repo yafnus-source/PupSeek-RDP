@@ -70,11 +70,15 @@ namespace ShadowRDP.Forms
                         }
                         else
                         {
-                            _btnAi.Text = "Установка ИИ";
+                            _btnAi.Text = "ИИ Недоступен";
+                            _btnAi.BackColor = UiTheme.Danger;
                         }
                     }));
                 }
-                catch { }
+                catch
+                {
+                    try { BeginInvoke(new Action(() => { _btnAi.Text = "ИИ Недоступен"; _btnAi.BackColor = UiTheme.Danger; })); } catch { }
+                }
             });
 
             var btnSettings = UiButtons.MakeCompactFilled("Настройки", 90);
@@ -121,8 +125,6 @@ namespace ShadowRDP.Forms
             _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
             _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
             _grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.Single;
-            _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.Single;
             _grid.GridColor = UiTheme.BorderSubtle;
             _grid.RowHeadersVisible = false;
             _grid.AllowUserToAddRows = false;
@@ -416,7 +418,7 @@ namespace ShadowRDP.Forms
             var menu = new ContextMenuStrip();
             menu.Items.Add("Подробнее (Microsoft)", null, (s, e2) => ShowEventDetail(ev));
             menu.Items.Add("Спросить ИИ", null, async (s, e2) => await AskAiAsync(ev));
-            menu.Show(_grid, e.Location);
+            menu.Show(Cursor.Position);
         }
 
         private void ShowEventDetail(DashboardEvent ev)
