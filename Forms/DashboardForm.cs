@@ -15,7 +15,7 @@ namespace ShadowRDP.Forms
 {
     public class DashboardForm : Form
     {
-        private readonly DataGridView _grid = new DataGridView();
+        private readonly DataGridView _grid = new Controls.DoubleBufferedDataGridView();
         private FlowLayoutPanel _hostPanel = new FlowLayoutPanel();
         private Label _status = new Label();
         private Label _title = new Label();
@@ -165,7 +165,7 @@ namespace ShadowRDP.Forms
             _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             _grid.ReadOnly = true;
             _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            _grid.RowTemplate.Height = 33;
+            _grid.RowTemplate.Height = 36;
             _grid.ColumnHeadersHeight = 28;
             _grid.EnableHeadersVisualStyles = false;
             _grid.ColumnHeadersDefaultCellStyle.BackColor = UiTheme.HeaderBar;
@@ -178,7 +178,6 @@ namespace ShadowRDP.Forms
             _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
             _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
             _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
-            typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, _grid, new object[] { true });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "Время", Width = 130 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Level", HeaderText = "Уровень", Width = 80, MinimumWidth = 80 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Source", HeaderText = "Источник", Width = 120 });
