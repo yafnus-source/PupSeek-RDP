@@ -393,7 +393,7 @@ namespace ShadowRDP.Forms
                 var container = new Panel
                 {
                     Dock = DockStyle.Bottom,
-                    Height = 64,
+                    Height = 80,
                     BackColor = sidebarBg,
                     Margin = Padding.Empty
                 };
@@ -401,11 +401,21 @@ namespace ShadowRDP.Forms
                 {
                     Image = logo,
                     SizeMode = PictureBoxSizeMode.Zoom,
-                    Bounds = new Rectangle((sidebar.Width - logoSize) / 2, (64 - logoSize) / 2, logoSize, logoSize),
+                    Bounds = new Rectangle((sidebar.Width - logoSize) / 2, 10, logoSize, logoSize),
                     BackColor = sidebarBg,
                     Margin = Padding.Empty
                 };
+                var nameLabel = new Label
+                {
+                    Text = "Pup Seek RDP",
+                    Bounds = new Rectangle(0, 52, sidebar.Width, 18),
+                    Font = new Font("Segoe UI Semibold", 9F),
+                    ForeColor = Color.White,
+                    BackColor = sidebarBg,
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
                 container.Controls.Add(logoBox);
+                container.Controls.Add(nameLabel);
                 sidebar.Controls.Add(container);
             }
 
