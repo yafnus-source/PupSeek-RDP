@@ -110,8 +110,6 @@ namespace ShadowRDP.Forms
         private readonly Label _messageAllBtn;
         // Inventory button — "Инвентаризация ПО". Visible on the "Все" tab.
         // Opens SoftwareInventoryForm to scan all address-book computers.
-        // v4.0 — dashboard monitoring indicator (set of Computer names that are monitored)
-        private HashSet<string> _monitoredSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Label _inventoryBtn;
 
         // Sort state for column-header click. Null = no sort (load order).
@@ -1003,7 +1001,6 @@ namespace ShadowRDP.Forms
             // the constructor before this is called.
             if (IsDisposed || _grid.IsDisposed || _grid.Columns.Count == 0) return;
             var entries = AddressBookStore.Load().ToList();
-            _monitoredSet = new HashSet<string>(entries.Where(x => x.Monitored && !string.IsNullOrWhiteSpace(x.Computer)).Select(x => x.Computer.Trim()), StringComparer.OrdinalIgnoreCase);
 
             // Apply current sort (column-header click). Stable enough for our
             // purposes — entries with equal keys keep their JSON order.
@@ -2856,33 +2853,6 @@ namespace ShadowRDP.Forms
                     e.Graphics.Restore(gstate3);
                 }
                 e.Handled = true;
-                return;
-            }
-
-            // v4.0 — dashboard monitoring indicator on Computer cell
-            if (colName == "Computer")
-            {
-                var comp = e.Value?.ToString() ?? "";
-                if (!string.IsNullOrEmpty(comp) && _monitoredSet.Contains(comp))
-                {
-                    e.PaintBackground(e.CellBounds, true);
-                    var textRect = new Rectangle(e.CellBounds.X + 4, e.CellBounds.Y, e.CellBounds.Width - 18, e.CellBounds.Height);
-                    Color fore = e.CellStyle.ForeColor;
-                    if ((e.State & DataGridViewElementStates.Selected) != 0) fore = e.CellStyle.SelectionForeColor;
-                    if (fore == Color.Empty || fore.A == 0) fore = _grid.DefaultCellStyle.ForeColor;
-                    var font = e.CellStyle.Font ?? _grid.DefaultCellStyle.Font ?? new Font("Segoe UI", 9f);
-                    TextRenderer.DrawText(e.Graphics, comp, font, textRect, fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                    int dotSize = 6;
-                    var dotRect = new Rectangle(e.CellBounds.Right - dotSize - 7, e.CellBounds.Y + (e.CellBounds.Height - dotSize) / 2, dotSize, dotSize);
-                    var gstate = e.Graphics.Save();
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using var pen = new Pen(Color.FromArgb(0x48, 0x30, 0x2F), 1.4f);
-                    // hollow dot — subtle, less clutter when many rows are monitored
-                    e.Graphics.DrawEllipse(pen, dotRect);
-                    e.Graphics.Restore(gstate);
-                    e.Handled = true;
-                    return;
-                }
                 return;
             }
 

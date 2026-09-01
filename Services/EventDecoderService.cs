@@ -21,24 +21,13 @@ namespace ShadowRDP.Services
             {
                 try
                 {
-                    var prompt = $@"Проанализируй Windows-событие и дай ответ на русском языке по 4 разделам.
-
-EventID: {ev.EventId}
-Источник: {ev.Source}
-Уровень: {ev.Level}
-Компьютер: {ev.Computer}
-Сообщение: {ev.Message}
-
-Формат ответа:
-1. Что означает — кратко (1-2 предложения)
-2. Возможные причины — список
-3. Что делать — конкретные шаги
-4. Критичность — Low / Medium / High";
+                    var prompt = $@"Windows EventID {ev.EventId}, Source: {ev.Source}, Level: {ev.Level}, PC: {ev.Computer}, Message: {ev.Message}. Ответ по-русски: 1) Что значит 2) Причины 3) Что делать 4) Критичность (Low/Medium/High). Кратко.";
                     var payload = new
                     {
                         model = "llama3.2",
                         messages = new[] { new { role = "user", content = prompt } },
-                        stream = false
+                        stream = false,
+                        options = new { num_predict = 300, temperature = 0.3 }
                     };
                     var json = JsonSerializer.Serialize(payload);
                     var resp = await _http.PostAsync($"{OllamaBase}/api/chat", new StringContent(json, Encoding.UTF8, "application/json"));
@@ -80,8 +69,8 @@ EventID: {ev.EventId}
         {
             try
             {
-                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2));
-                var resp = await _http.GetAsync($"{OllamaBase}/api/tags", cts.Token);
+                using var checkHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                var resp = await checkHttp.GetAsync($"{OllamaBase}/api/tags");
                 return resp.IsSuccessStatusCode;
             }
             catch { return false; }
