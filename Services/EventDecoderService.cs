@@ -10,6 +10,7 @@ namespace ShadowRDP.Services
     public static class EventDecoderService
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static string OllamaBase => $"http://{Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "localhost:11434"}";
 
         public static async Task<string> DecodeAsync(DashboardEvent ev)
         {
@@ -28,7 +29,7 @@ namespace ShadowRDP.Services
                         stream = false
                     };
                     var json = JsonSerializer.Serialize(payload);
-                    var resp = await _http.PostAsync("http://localhost:11434/api/chat", new StringContent(json, Encoding.UTF8, "application/json"));
+                    var resp = await _http.PostAsync($"{OllamaBase}/api/chat", new StringContent(json, Encoding.UTF8, "application/json"));
                     if (resp.IsSuccessStatusCode)
                     {
                         var body = await resp.Content.ReadAsStringAsync();
@@ -68,7 +69,7 @@ namespace ShadowRDP.Services
             try
             {
                 using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2));
-                var resp = await _http.GetAsync("http://localhost:11434/api/tags", cts.Token);
+                var resp = await _http.GetAsync($"{OllamaBase}/api/tags", cts.Token);
                 return resp.IsSuccessStatusCode;
             }
             catch { return false; }
