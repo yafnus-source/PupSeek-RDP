@@ -115,9 +115,9 @@ namespace ShadowRDP.Forms
             _grid.DefaultCellStyle.BackColor = UiTheme.Card;
             _grid.AlternatingRowsDefaultCellStyle.BackColor = UiTheme.RowAlt;
             _grid.DefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
-            _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Accent;
+            _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
             _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
-            _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Accent;
+            _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
             // Performance: enable double buffering via reflection
             typeof(DataGridView).InvokeMember("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty, null, _grid, new object[] { true });
 
@@ -409,29 +409,63 @@ namespace ShadowRDP.Forms
 
         private void OnCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
         {
+            // === Header cells: custom paint to override system #0078D7 ===
+            if (e.RowIndex == -1 && e.ColumnIndex >= 0)
+            {
+                e.Handled = true;
+                using var bgBrush = new SolidBrush(UiTheme.HeaderBar);
+                e.Graphics.FillRectangle(bgBrush, e.CellBounds);
+                var col = _grid.Columns[e.ColumnIndex];
+                var headerText = col.HeaderText;
+                int textW = TextRenderer.MeasureText(headerText, new Font("Segoe UI Semibold", 8.5f)).Width;
+                int glyphSpace = col.HeaderCell.SortGlyphDirection != SortOrder.None ? 16 : 0;
+                int textX = e.CellBounds.X + 8;
+                int textWAvail = e.CellBounds.Width - 8 - glyphSpace;
+                var textRect = new Rectangle(textX, e.CellBounds.Y, textWAvail, e.CellBounds.Height);
+                TextRenderer.DrawText(e.Graphics, headerText, new Font("Segoe UI Semibold", 8.5f), textRect, Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                // Sort glyph — triangle in #626F5E
+                if (col.HeaderCell.SortGlyphDirection != SortOrder.None)
+                {
+                    int gx = e.CellBounds.Right - 18;
+                    int gy = e.CellBounds.Y + (e.CellBounds.Height - 8) / 2;
+                    var glyphColor = Color.FromArgb(0x62, 0x6F, 0x5E);
+                    using var glyphBrush = new SolidBrush(glyphColor);
+                    if (col.HeaderCell.SortGlyphDirection == SortOrder.Ascending)
+                    {
+                        var pts = new[] { new Point(gx + 4, gy), new Point(gx + 8, gy + 6), new Point(gx, gy + 6) };
+                        e.Graphics.FillPolygon(glyphBrush, pts);
+                    }
+                    else
+                    {
+                        var pts = new[] { new Point(gx, gy), new Point(gx + 8, gy), new Point(gx + 4, gy + 6) };
+                        e.Graphics.FillPolygon(glyphBrush, pts);
+                    }
+                }
+                return;
+            }
+
             if (e.RowIndex < 0) return;
 
-            // Level column — fixed-width badge
+            // Level column — fixed-width badge (20% smaller)
             if (e.ColumnIndex == _grid.Columns["Level"].Index)
             {
                 e.Handled = true;
                 e.PaintBackground(e.CellBounds, true);
                 var level = e.Value?.ToString() ?? "";
                 Color bg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : level == "Error" ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Muted;
-                // Fixed badge width: 58px, centered in cell
-                int badgeW = 58;
-                int badgeH = e.CellBounds.Height - 8;
+                int badgeW = 46;
+                int badgeH = e.CellBounds.Height - 10;
                 int x = e.CellBounds.X + (e.CellBounds.Width - badgeW) / 2;
-                int y = e.CellBounds.Y + 4;
+                int y = e.CellBounds.Y + (e.CellBounds.Height - badgeH) / 2;
                 var rect = new Rectangle(x, y, badgeW, badgeH);
                 using var path = UiButtons.RoundedRect(rect, 6);
                 using var brush = new SolidBrush(bg);
                 e.Graphics.FillPath(brush, path);
-                TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 8f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
             }
 
-            // Decode column — Accent-colored button
+            // Decode column — Accent-colored button (20% smaller)
             if (e.ColumnIndex == _grid.Columns["Decode"].Index)
             {
                 e.Handled = true;
@@ -440,14 +474,14 @@ namespace ShadowRDP.Forms
                 bool isDecoded = val == "Показать";
                 Color bg = isDecoded ? UiTheme.Accent : UiTheme.HoverBg;
                 Color fg = Color.White;
-                int pad = 4;
-                var rect = new Rectangle(e.CellBounds.X + pad, e.CellBounds.Y + 3, e.CellBounds.Width - pad * 2, e.CellBounds.Height - 6);
+                int pad = 5;
+                int btnH = e.CellBounds.Height - 10;
+                var rect = new Rectangle(e.CellBounds.X + pad, e.CellBounds.Y + (e.CellBounds.Height - btnH) / 2, e.CellBounds.Width - pad * 2, btnH);
                 using var path = UiButtons.RoundedRect(rect, 4);
                 using var brush = new SolidBrush(bg);
                 e.Graphics.FillPath(brush, path);
-                var font = new Font("Segoe UI Semibold", 8f);
+                var font = new Font("Segoe UI Semibold", 7f);
                 TextRenderer.DrawText(e.Graphics, val, font, rect, fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                // Hover effect — use tracked hover cell
                 if (e.RowIndex == _lastHoverRow && e.ColumnIndex == _lastHoverCol)
                 {
                     using var hoverBrush = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
