@@ -529,6 +529,7 @@ namespace ShadowRDP.Forms
             AddTextColumn(_grid, "Phone", "Телефон", 70);
             AddTextColumn(_grid, "IPs", "IP", 100);
             AddTextColumn(_grid, "LastSeen", "Последний сеанс", 60);
+            AddTextColumn(_grid, "NewEvents", "События", 75);
 
             // 15px left padding on data columns so cell text isn't crammed
             // against the column separator. (Ping and Group columns have
@@ -597,6 +598,8 @@ namespace ShadowRDP.Forms
             // handler with e.PaintBackground(CellBounds, false). RowPostPaint
             // approach triggered the bordered-paint path too.
             _grid.CellPainting += OnCellPainting;
+            // v4.0 — auto-refresh "События" counts when new dashboard events arrive
+            try { Services.EventPollerService.OnNewEvents += _ => { try { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => { if (!IsDisposed) ReloadGrid(); })); } catch { } }; } catch { }
 
             // Commit the edit on Enter / click-away so CellValueChanged fires
             // immediately. Without this the user has to navigate away from
@@ -1033,6 +1036,8 @@ namespace ShadowRDP.Forms
             var gridHandle = _grid.Handle;
             SendMessage(gridHandle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
             _grid.SuspendLayout();
+            // v4.0 — cache new-events counts per computer for "События" column
+            var newCounts = Services.EventDashboardStore.LoadEvents().Where(ev => !ev.Notified).GroupBy(ev => ev.Computer, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
             try
             {
                 foreach (var e in entries)
@@ -1043,12 +1048,16 @@ namespace ShadowRDP.Forms
                 {
                     icon = alive ? aliveIcon : deadIcon;
                 }
-                // Column order: Ping, Rdp, Group, Computer, FullName, User, Phone, IPs, LastSeen.
+                // Column order: Ping, Rdp, Group, Computer, FullName, User, Phone, IPs, LastSeen, NewEvents.
+                int newCnt = 0;
+                if (!string.IsNullOrWhiteSpace(e.Computer) && newCounts.TryGetValue(e.Computer.Trim(), out var cc)) newCnt = cc;
+                string newEventsText = newCnt > 0 ? newCnt.ToString() : "";
                 // Rdp cell stays null — painted on the fly by OnCellPainting
                 // (blue dot when RdpManagerForm has a live session for this computer).
-                var rowIdx = _grid.Rows.Add(icon, null, e.Group ?? "", e.Computer, e.FullName, e.User, e.Phone, e.IPs, e.LastSeen);
+                var rowIdx = _grid.Rows.Add(icon, null, e.Group ?? "", e.Computer, e.FullName, e.User, e.Phone, e.IPs, e.LastSeen, newEventsText);
                 var row = _grid.Rows[rowIdx];
                 if (e.Monitored) row.Cells["Computer"].ToolTipText = "Отслеживается в дашборде";
+                if (newCnt > 0) row.Cells["NewEvents"].ToolTipText = $"{newCnt} новых событий — откройте Дашбоард";
 
                 // v2.1.77: restore per-cell alternating row coloring. This
                 // was the working setup in v2.1.62 — AlternatingRowsDefaultCellStyle
@@ -2875,6 +2884,24 @@ namespace ShadowRDP.Forms
                     e.Handled = true;
                     return;
                 }
+                return;
+            }
+
+            if (colName == "NewEvents")
+            {
+                var txt = e.Value?.ToString() ?? "";
+                if (string.IsNullOrWhiteSpace(txt) || txt == "0") return;
+                e.PaintBackground(e.CellBounds, true);
+                // badge pill
+                int.TryParse(txt, out int cnt);
+                Color bg = cnt > 0 ? Color.FromArgb(0xC0, 0x39, 0x2B) : Helpers.UiTheme.PillActiveBg;
+                var rect = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y + 6, e.CellBounds.Width - 16, e.CellBounds.Height - 12);
+                using var path = Helpers.UiButtons.RoundedRect(rect, 8);
+                using var brush = new SolidBrush(bg);
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.FillPath(brush, path);
+                TextRenderer.DrawText(e.Graphics, txt, new Font("Segoe UI Semibold", 8f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                e.Handled = true;
                 return;
             }
 
