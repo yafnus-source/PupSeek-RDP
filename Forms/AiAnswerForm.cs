@@ -10,7 +10,7 @@ namespace ShadowRDP.Forms
         public AiAnswerForm(int eventId, string source, string level, string computer, string aiAnswer)
         {
             Text = $"Ответ ИИ — EventID {eventId} — {source}";
-            Size = new Size(520, 520);
+            Size = new Size(520, 550);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -41,7 +41,6 @@ namespace ShadowRDP.Forms
             infoPanel.Controls.Add(infoLabel);
             Controls.Add(infoPanel);
 
-            var txtPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 30, 12, 12), BackColor = UiTheme.Card };
             var txtBox = new TextBox
             {
                 Dock = DockStyle.Fill,
@@ -54,8 +53,7 @@ namespace ShadowRDP.Forms
                 BorderStyle = BorderStyle.None,
                 Text = aiAnswer
             };
-            txtPanel.Controls.Add(txtBox);
-            Controls.Add(txtPanel);
+            Controls.Add(txtBox);
 
             var btnClose = UiButtons.MakeCompactFilled("Закрыть", 80);
             btnClose.Location = new Point(Width - 100, Height - 70);
@@ -63,6 +61,9 @@ namespace ShadowRDP.Forms
             Controls.Add(btnClose);
 
             Resize += (s, e) => { btnClose.Location = new Point(Width - 100, Height - 70); };
+
+            // Scroll TextBox to top after text is set
+            Shown += (s, e) => { txtBox.SelectionStart = 0; txtBox.SelectionLength = 0; txtBox.ScrollToCaret(); };
         }
     }
 }
