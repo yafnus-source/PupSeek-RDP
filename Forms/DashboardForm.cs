@@ -422,8 +422,8 @@ namespace ShadowRDP.Forms
             if (ev == null) return;
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Найти в Google", null, (s, e2) => OpenGoogleSearch(ev));
-            menu.Items.Add("Спросить ИИ", null, async (s, e2) => await AskAiAsync(ev));
+            menu.Items.Add("Найти в Google", MenuIcons.Get("search"), (s, e2) => OpenGoogleSearch(ev));
+            menu.Items.Add("Спросить ИИ", MenuIcons.Get("globe"), async (s, e2) => await AskAiAsync(ev));
             menu.Show(Cursor.Position);
         }
 
