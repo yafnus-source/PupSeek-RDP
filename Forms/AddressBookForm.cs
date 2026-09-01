@@ -2892,7 +2892,7 @@ namespace ShadowRDP.Forms
                 if (string.IsNullOrWhiteSpace(txt) || txt == "0") return;
                 e.PaintBackground(e.CellBounds, true);
                 int.TryParse(txt, out int cnt);
-                Color bg = cnt > 0 ? Color.FromArgb(0x8B, 0x4A, 0x3E) : Helpers.UiTheme.PillActiveBg;
+                Color bg = cnt > 0 ? Color.FromArgb(0xB0, 0x7A, 0x72) : Helpers.UiTheme.PillActiveBg;
                 int w = (e.CellBounds.Width - 16) / 2;
                 int h = (e.CellBounds.Height - 12) / 2;
                 var rect = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - w) / 2, e.CellBounds.Y + (e.CellBounds.Height - h) / 2, w, h);

@@ -83,7 +83,7 @@ namespace ShadowRDP.Forms
             _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, BackColor = UiTheme.Background, Padding = new Padding(12, 6, 12, 6), AutoSize = false };
             Controls.Add(_hostPanel);
 
-            var sep = new Panel { Dock = DockStyle.Top, Height = 2, BackColor = UiTheme.BorderSubtle };
+            var sep = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = UiTheme.BorderSubtle };
             Controls.Add(sep);
 
             // Grid — first row was clipping under hostBar due to Fill/Top z-order; separator fixes it
@@ -97,7 +97,8 @@ namespace ShadowRDP.Forms
             _grid.AllowUserToResizeRows = false;
             _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             _grid.ReadOnly = true;
-            _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            _grid.RowTemplate.Height = 26; // +5% (was ~24-25)
             _grid.ColumnHeadersHeight = 28;
             _grid.EnableHeadersVisualStyles = false;
             _grid.ColumnHeadersDefaultCellStyle.BackColor = UiTheme.HeaderBar;
@@ -206,7 +207,7 @@ namespace ShadowRDP.Forms
                     BackColor = Color.Transparent,
                     ForeColor = Color.White
                 };
-                Color baseBg = hasCrit ? Color.FromArgb(0x8B, 0x4A, 0x3E) : hasAny ? Color.FromArgb(0x9C, 0x7A, 0x56) : UiTheme.Card;
+                Color baseBg = hasCrit ? Color.FromArgb(0xB0, 0x7A, 0x72) : hasAny ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Card;
                 Color tabBg = isActive ? ControlPaint.Dark(baseBg, 0.15f) : baseBg;
                 Color tabFg = hasAny ? Color.White : UiTheme.Foreground;
                 Color tabBorder = isActive ? Color.FromArgb(0x48, 0x30, 0x2F) : hasAny ? tabBg : UiTheme.BorderSubtle;
@@ -229,6 +230,12 @@ namespace ShadowRDP.Forms
                 tab.Click += (s, e) =>
                 {
                     _selectedHost = string.Equals(_selectedHost, captured, StringComparison.OrdinalIgnoreCase) ? "" : captured;
+                    RebuildHostBar();
+                    ApplyFilters();
+                };
+                tab.DoubleClick += (s, e) =>
+                {
+                    _selectedHost = "";
                     RebuildHostBar();
                     ApplyFilters();
                 };
@@ -258,6 +265,10 @@ namespace ShadowRDP.Forms
             {
                 int idx = _grid.Rows.Add(ev.Time.ToString("dd.MM HH:mm"), ev.Level, ev.Source, ev.EventId.ToString(), ev.Computer, ev.Message, string.IsNullOrWhiteSpace(ev.Decoded) ? "Расшифровать" : "Показать");
                 _grid.Rows[idx].Tag = ev;
+            }
+            if (_grid.Rows.Count > 0)
+            {
+                try { _grid.FirstDisplayedScrollingRowIndex = 0; _grid.ClearSelection(); } catch { }
             }
             UpdateStatus(filtered.Count);
         }
@@ -327,7 +338,7 @@ namespace ShadowRDP.Forms
             e.Handled = true;
             e.PaintBackground(e.CellBounds, true);
             var level = e.Value?.ToString() ?? "";
-            Color bg = level == "Critical" ? Color.FromArgb(0x8B, 0x4A, 0x3E) : Color.FromArgb(0x9C, 0x7A, 0x56);
+            Color bg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : Color.FromArgb(0xB8, 0x9A, 0x7A);
             if (level == "Все") bg = UiTheme.PillActiveBg;
             var rect = new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y + 4, e.CellBounds.Width - 12, e.CellBounds.Height - 8);
             using var path = UiButtons.RoundedRect(rect, 6);
