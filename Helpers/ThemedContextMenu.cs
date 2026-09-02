@@ -224,6 +224,15 @@ namespace ShadowRDP.Helpers
                     }
                 }
                 Items.Add(item);
+
+                // Darken icon on hover for all items with images
+                if (item is ToolStripMenuItem tsiHover && tsiHover.Image != null)
+                {
+                    var origImg = tsiHover.Image;
+                    var darkImg = MenuIcons.Darken(origImg);
+                    tsiHover.MouseEnter += (s, e) => { tsiHover.Image = darkImg; };
+                    tsiHover.MouseLeave += (s, e) => { tsiHover.Image = origImg; };
+                }
             }
         }
 

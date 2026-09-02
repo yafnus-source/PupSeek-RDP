@@ -51,7 +51,8 @@ namespace ShadowRDP.Forms
                 Font = new Font("Segoe UI", 10f),
                 BorderStyle = BorderStyle.None,
                 DetectUrls = false,
-                WordWrap = true
+                WordWrap = true,
+                Text = aiAnswer
             };
             Controls.Add(txtBox);
 
@@ -62,14 +63,7 @@ namespace ShadowRDP.Forms
 
             Resize += (s, e) => { btnClose.Location = new Point(Width - 100, Height - 70); };
 
-            // Set text after Controls are added, then scroll to top
-            Shown += (s, e) =>
-            {
-                txtBox.Text = aiAnswer;
-                txtBox.SelectionStart = 0;
-                txtBox.SelectionLength = 0;
-                txtBox.ScrollToCaret();
-            };
+            Shown += (s, e) => BeginInvoke(new Action(() => { txtBox.SelectionStart = 0; txtBox.SelectionLength = 0; txtBox.ScrollToCaret(); }));
         }
     }
 }

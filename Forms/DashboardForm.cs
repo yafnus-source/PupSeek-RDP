@@ -448,9 +448,9 @@ namespace ShadowRDP.Forms
             var ev = _grid.Rows[e.RowIndex].Tag as DashboardEvent;
             if (ev == null) return;
 
-            var menu = new ContextMenuStrip();
-            menu.Items.Add("Найти в Google", MenuIcons.Get("search"), (s, e2) => OpenGoogleSearch(ev));
-            menu.Items.Add("Спросить ИИ", MenuIcons.Get("globe"), async (s, e2) => await AskAiAsync(ev));
+            var menu = new ThemedContextMenu();
+            menu.AddItem("Найти в Google", "search", () => OpenGoogleSearch(ev));
+            menu.AddItem("Спросить ИИ", "globe", async () => await AskAiAsync(ev));
             menu.Show(Cursor.Position);
         }
 
@@ -593,8 +593,8 @@ namespace ShadowRDP.Forms
             {
                 var level = e.Value?.ToString() ?? "";
                 Color badgeBg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : level == "Error" ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Muted;
-                int badgeW = 46;
-                int badgeH = e.CellBounds.Height - 10;
+                int badgeW = 31;
+                int badgeH = e.CellBounds.Height - 12;
                 int x = e.CellBounds.X + (e.CellBounds.Width - badgeW) / 2;
                 int y = e.CellBounds.Y + (e.CellBounds.Height - badgeH) / 2;
                 var rect = new Rectangle(x, y, badgeW, badgeH);
@@ -603,7 +603,7 @@ namespace ShadowRDP.Forms
                 using var path = UiButtons.RoundedRect(rect, 6);
                 using var brush = new SolidBrush(badgeBg);
                 e.Graphics.FillPath(brush, path);
-                TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(e.Graphics, level, new Font("Segoe UI Semibold", 6.5f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
             }
 
@@ -613,7 +613,10 @@ namespace ShadowRDP.Forms
             {
                 Color fg = isSelected ? UiTheme.Foreground : UiTheme.Foreground;
                 var textRect = new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y, e.CellBounds.Width - 12, e.CellBounds.Height);
-                TextRenderer.DrawText(e.Graphics, cellText, e.CellStyle?.Font ?? _grid.DefaultCellStyle.Font, textRect, fg, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                var flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
+                if (e.ColumnIndex == _grid.Columns["Message"].Index)
+                    flags |= TextFormatFlags.SingleLine;
+                TextRenderer.DrawText(e.Graphics, cellText, e.CellStyle?.Font ?? _grid.DefaultCellStyle.Font, textRect, fg, flags);
             }
         }
 
