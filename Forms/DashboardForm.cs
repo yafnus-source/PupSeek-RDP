@@ -451,7 +451,7 @@ namespace ShadowRDP.Forms
             var menu = new ThemedContextMenu();
             menu.AddItem("Найти в Google", "search", () => OpenGoogleSearch(ev));
             menu.AddItem("Спросить ИИ", "globe", async () => await AskAiAsync(ev));
-            menu.Show(Cursor.Position);
+            menu.Show(this, Cursor.Position);
         }
 
         private void OpenGoogleSearch(DashboardEvent ev)
