@@ -41,19 +41,23 @@ namespace ShadowRDP.Forms
             infoPanel.Controls.Add(infoLabel);
             Controls.Add(infoPanel);
 
-            var txtBox = new TextBox
+            var scrollPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
+                AutoScroll = true,
                 BackColor = UiTheme.Card,
-                ForeColor = UiTheme.Foreground,
+                Padding = new Padding(12, 12, 12, 12)
+            };
+            var txtLabel = new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(480, 0),
                 Font = new Font("Segoe UI", 10f),
-                BorderStyle = BorderStyle.None,
+                ForeColor = UiTheme.Foreground,
                 Text = aiAnswer
             };
-            Controls.Add(txtBox);
+            scrollPanel.Controls.Add(txtLabel);
+            Controls.Add(scrollPanel);
 
             var btnClose = UiButtons.MakeCompactFilled("Закрыть", 80);
             btnClose.Location = new Point(Width - 100, Height - 70);

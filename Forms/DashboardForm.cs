@@ -594,7 +594,7 @@ namespace ShadowRDP.Forms
                 var level = e.Value?.ToString() ?? "";
                 Color badgeBg = level == "Critical" ? Color.FromArgb(0xB0, 0x7A, 0x72) : level == "Error" ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Muted;
                 int badgeW = 31;
-                int badgeH = e.CellBounds.Height - 12;
+                int badgeH = e.CellBounds.Height - 14;
                 int x = e.CellBounds.X + (e.CellBounds.Width - badgeW) / 2;
                 int y = e.CellBounds.Y + (e.CellBounds.Height - badgeH) / 2;
                 var rect = new Rectangle(x, y, badgeW, badgeH);
