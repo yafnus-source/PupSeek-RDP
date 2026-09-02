@@ -5,6 +5,7 @@ using System.Diagnostics.Eventing.Reader;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ShadowRDP.Helpers;
@@ -15,7 +16,7 @@ namespace ShadowRDP.Forms
 {
     public class DashboardForm : Form
     {
-        private readonly DataGridView _grid = new Controls.DoubleBufferedDataGridView();
+        private readonly DataGridView _grid = new DataGridView();
         private FlowLayoutPanel _hostPanel = new FlowLayoutPanel();
         private Label _status = new Label();
         private Label _title = new Label();
@@ -147,7 +148,7 @@ namespace ShadowRDP.Forms
             _grid.Dock = DockStyle.Fill;
             _grid.BackgroundColor = UiTheme.Card;
             _grid.BorderStyle = BorderStyle.None;
-            _grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
+            _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
             _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
             _grid.AdvancedCellBorderStyle.Top = DataGridViewAdvancedCellBorderStyle.None;
             _grid.AdvancedCellBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
@@ -486,15 +487,22 @@ namespace ShadowRDP.Forms
         }
 
         // === Double-click: EventLog with server ===
-        private void OnCellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        private async void OnCellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
             var ev = _grid.Rows[e.RowIndex].Tag as DashboardEvent;
             if (ev == null) return;
 
-            // Try to read from the remote server's EventLog
-            string detail = ReadEventFromServer(ev);
+            _status.Text = "Загрузка события...";
+            string detail = "";
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                detail = await Task.Run(() => ReadEventFromServer(ev), cts.Token);
+            }
+            catch { }
             if (string.IsNullOrWhiteSpace(detail)) detail = ev.Message;
+            _status.Text = "";
 
             using var dlg = new EventDetailForm(ev.EventId, ev.Source, ev.Level, ev.Computer, ev.Message, detail);
             dlg.ShowDialog(this);

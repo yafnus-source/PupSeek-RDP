@@ -41,17 +41,17 @@ namespace ShadowRDP.Forms
             infoPanel.Controls.Add(infoLabel);
             Controls.Add(infoPanel);
 
-            var txtBox = new TextBox
+            var txtBox = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
                 ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
                 BackColor = UiTheme.Card,
                 ForeColor = UiTheme.Foreground,
                 Font = new Font("Segoe UI", 10f),
                 BorderStyle = BorderStyle.None,
-                Text = aiAnswer
+                DetectUrls = false,
+                WordWrap = true
             };
             Controls.Add(txtBox);
 
@@ -62,8 +62,14 @@ namespace ShadowRDP.Forms
 
             Resize += (s, e) => { btnClose.Location = new Point(Width - 100, Height - 70); };
 
-            // Scroll TextBox to top after text is set
-            Shown += (s, e) => { txtBox.SelectionStart = 0; txtBox.SelectionLength = 0; txtBox.ScrollToCaret(); };
+            // Set text after Controls are added, then scroll to top
+            Shown += (s, e) =>
+            {
+                txtBox.Text = aiAnswer;
+                txtBox.SelectionStart = 0;
+                txtBox.SelectionLength = 0;
+                txtBox.ScrollToCaret();
+            };
         }
     }
 }
