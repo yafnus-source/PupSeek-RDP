@@ -1,0 +1,9 @@
+# /monitor/data/.htaccess
+# Папка только данных: запрет листинга и исполнения скриптов
+Options -Indexes
+php_flag engine off
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule \.(php|phtml|php5|php7|phar|cgi|pl|py)$ - [F,L]
+</IfModule>
+Require all denied

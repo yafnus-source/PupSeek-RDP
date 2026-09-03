@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using ShadowRDP.Helpers;
 
@@ -7,17 +8,24 @@ namespace ShadowRDP.Forms
 {
     public class EventDetailForm : Form
     {
+        private readonly Panel _header;
+        private readonly Panel _infoPanel;
+        private readonly TextBox _txtBox;
+        private readonly Panel _btnBar;
+        private readonly Label _btnClose;
+        private const int BarH = 40;
+
         public EventDetailForm(int eventId, string source, string level, string computer, string message, string detailedDescription)
         {
             Text = $"EventID {eventId} — {source}";
-            Size = new Size(480, 360);
+            Size = new Size(672, 504);
+            MinimumSize = new Size(504, 364);
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            KeyPreview = true;
             BackColor = UiTheme.Card;
 
-            var header = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = UiTheme.HeaderBar };
+            _header = new Panel { BackColor = UiTheme.HeaderBar };
             var titleLabel = new Label
             {
                 Text = $"EventID {eventId} — {source}",
@@ -27,10 +35,9 @@ namespace ShadowRDP.Forms
                 AutoSize = true,
                 Location = new Point(16, 14)
             };
-            header.Controls.Add(titleLabel);
-            Controls.Add(header);
+            _header.Controls.Add(titleLabel);
 
-            var infoPanel = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = UiTheme.Muted, Padding = new Padding(12, 8, 12, 8) };
+            _infoPanel = new Panel { BackColor = UiTheme.Muted, Padding = new Padding(12, 8, 12, 8) };
             var infoLabel = new Label
             {
                 Dock = DockStyle.Fill,
@@ -38,31 +45,86 @@ namespace ShadowRDP.Forms
                 ForeColor = UiTheme.Foreground,
                 Text = $"Уровень: {level}  |  Хост: {computer}"
             };
-            infoPanel.Controls.Add(infoLabel);
-            Controls.Add(infoPanel);
+            _infoPanel.Controls.Add(infoLabel);
 
-            var txtBox = new TextBox
+            _txtBox = new TextBox
             {
-                Dock = DockStyle.Fill,
                 Multiline = true,
                 ReadOnly = true,
+                WordWrap = true,
                 ScrollBars = ScrollBars.Vertical,
                 BackColor = UiTheme.Card,
                 ForeColor = UiTheme.Foreground,
                 Font = new Font("Segoe UI", 10f),
                 BorderStyle = BorderStyle.None,
-                Padding = new Padding(12, 30, 12, 12),
+                TabStop = false,
+                HideSelection = false,
                 Text = string.IsNullOrWhiteSpace(detailedDescription) ? message : detailedDescription
             };
-            Controls.Add(txtBox);
 
-            var btnClose = UiButtons.MakeCompactFilled("Закрыть", 80);
-            btnClose.Location = new Point(Width - 100, Height - 70);
-            btnClose.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
-            Controls.Add(btnClose);
+            _btnClose = UiButtons.MakeCompactFilled("Закрыть", 80);
+            _btnClose.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
+            _btnBar = new Panel { BackColor = UiTheme.Card };
+            _btnBar.Controls.Add(_btnClose);
 
-            // Re-layout on resize
-            Resize += (s, e) => { btnClose.Location = new Point(Width - 100, Height - 70); };
+            Controls.Add(_header);
+            Controls.Add(_infoPanel);
+            Controls.Add(_txtBox);
+            Controls.Add(_btnBar);
+
+            _txtBox.BringToFront();
+            _btnBar.BringToFront();
+            _btnClose.BringToFront();
+
+            ApplyLayout();
+            Resize += (s, e) => ApplyLayout();
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); } };
+
+            Shown += (s, e) =>
+            {
+                var wa = Screen.FromControl(this).WorkingArea;
+                if (Width > wa.Width) Width = wa.Width;
+                if (Height > wa.Height) Height = wa.Height;
+                Left = Math.Max(wa.Left, Math.Min(Left, wa.Right - Width));
+                Top = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height));
+
+                ApplyLayout();
+                ActiveControl = null;
+
+                BeginInvoke(new Action(() =>
+                {
+                    _txtBox.Select(0, 0);
+                    _txtBox.ScrollToCaret();
+                    DumpDiag("Shown+afterBeginInvoke");
+                }));
+            };
+        }
+
+        private void ApplyLayout()
+        {
+            var cw = ClientSize.Width;
+            var ch = ClientSize.Height;
+            _header.SetBounds(0, 0, cw, 48);
+            _infoPanel.SetBounds(0, 48, cw, 60);
+            _txtBox.SetBounds(0, 108, cw, ch - 108 - BarH);
+            _btnBar.SetBounds(0, ch - BarH, cw, BarH);
+            _btnClose.Location = new Point(cw - 98, (BarH - _btnClose.Height) / 2);
+        }
+
+        private void DumpDiag(string tag)
+        {
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PupSeekRDP");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "eventdetail_diag.log");
+                var wa = Screen.FromControl(this).WorkingArea;
+                using var sw = new StreamWriter(path, append: true);
+                sw.WriteLine($"{DateTime.Now:HH:mm:ss.fff} | {tag} | Form=({Left},{Top}) {Width}x{Height} Client={ClientSize.Width}x{ClientSize.Height} DPI={DeviceDpi} WorkArea=({wa.Left},{wa.Top},{wa.Width},{wa.Height})");
+                sw.WriteLine($"  header={_header.Bounds} info={_infoPanel.Bounds} txt={_txtBox.Bounds} bar={_btnBar.Bounds} btn={_btnClose.Bounds} btnVisible={_btnClose.Visible} btnParent={_btnBar.Bounds}");
+                sw.WriteLine($"  txt Multiline={_txtBox.Multiline} Wrap={_txtBox.WordWrap} Scroll={_txtBox.ScrollBars} Len={_txtBox.TextLength} Sel={_txtBox.SelectionStart}+{_txtBox.SelectionLength} ActiveControl={ActiveControl?.Name}");
+            }
+            catch { }
         }
     }
 }

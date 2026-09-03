@@ -14,7 +14,7 @@ namespace ShadowRDP.Helpers
     {
         private sealed class Spec
         {
-            public enum Kind { Header, Item, Separator, Submenu }
+            public enum Kind { Header, Item, Separator, Submenu, DynamicSubmenu }
             public Kind Type;
             public string? Title;
             public string? Subtitle;
@@ -80,6 +80,18 @@ namespace ShadowRDP.Helpers
             return this;
         }
 
+        public ThemedContextMenu AddDynamicSubmenu(string text, string? iconKey, Action<ThemedContextMenu> populate)
+        {
+            _specs.Add(new Spec
+            {
+                Type = Spec.Kind.DynamicSubmenu,
+                Text = text,
+                IconKey = iconKey,
+                BuildSub = populate
+            });
+            return this;
+        }
+
         public ThemedContextMenu InsertItem(int index, string text, string? iconKey, Action onClick,
             string? rightMeta = null, bool isChecked = false)
         {
@@ -111,6 +123,15 @@ namespace ShadowRDP.Helpers
                 BuildSub = buildSub
             });
             return this;
+        }
+
+        // For dynamic submenu the child is rebuilt on every click, so it never goes stale.
+        private void RebuildDynamicChild(ThemedContextMenu child, Action<ThemedContextMenu> populate)
+        {
+            child.Items.Clear();
+            // Prevent the child's own Show() from clearing what we just added via BuildItems.
+            child._built = true;
+            populate(child);
         }
 
         public new void Show(IWin32Window? owner, Point screenLocation)
@@ -187,22 +208,52 @@ namespace ShadowRDP.Helpers
                             Image = IconFor(spec.IconKey, th),
                             ForeColor = th.Foreground,
                             ImageScaling = ToolStripItemImageScaling.None,
-                            Padding =             new Padding(0, 3, 0, 4)
+                            Padding = new Padding(0, 3, 0, 4)
                         };
                         var child = new ThemedContextMenu();
                         spec.BuildSub!(child);
                         child.BuildItems();           // build eagerly so the dropdown isn't empty
                         tsi.DropDown = child;
-                        // Open only on click, not on hover.
-                        bool allowOpen = false;
-                        child.Opening += (s, e) => { if (!allowOpen) e.Cancel = true; };
+                        // #3 global hover: open on hover, click toggles (no Opening cancel).
                         tsi.Click += (s, e) =>
                         {
                             if (tsi.DropDown.Visible) { child.Close(); return; }
-                            allowOpen = true;
                             tsi.ShowDropDown();
-                            allowOpen = false;
                         };
+                        tsi.MouseEnter += (s, e) =>
+                        {
+                            if (!tsi.DropDown.Visible) tsi.ShowDropDown();
+                        };
+                        item = tsi;
+                        break;
+                    }
+                    case Spec.Kind.DynamicSubmenu:
+                    {
+                        var tsi = new ToolStripMenuItem(spec.Text ?? "")
+                        {
+                            Image = IconFor(spec.IconKey, th),
+                            ForeColor = th.Foreground,
+                            ImageScaling = ToolStripItemImageScaling.None,
+                            Padding = new Padding(0, 3, 0, 4),
+                            DropDownDirection = ToolStripDropDownDirection.Right
+                        };
+                        var child = new ThemedContextMenu();
+                        child._built = true; // prevent Show() from clearing dynamic items via BuildItems()
+                        tsi.DropDown = child;
+                        var populate = spec.BuildSub;
+                        void OpenDynamic()
+                        {
+                            RebuildDynamicChild(child, populate!);
+                            child.PerformLayout();
+                            if (!tsi.DropDown.Visible) tsi.ShowDropDown();
+                        }
+                        tsi.Click += (s, e) =>
+                        {
+                            if (tsi.DropDown.Visible) { child.Close(); return; }
+                            OpenDynamic();
+                        };
+                        // #3 global hover: rebuild + open on hover (no Opening cancel).
+                        tsi.MouseEnter += (s, e) => OpenDynamic();
                         item = tsi;
                         break;
                     }

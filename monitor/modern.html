@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Монитор — Дашборд событий · PupSeek RDP 3.9</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --accent:#5B5FF0; --accent-2:#8B5CF6; --bg:#F5F0EB; --card:#FFFFFF; --border:#E1DCD7; --fg:#1C1917; --muted:#78716C; --crit:#DC2626; --err:#EA580C; --ok:#10B981; }
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--fg)}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .glass{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:60;background:linear-gradient(90deg,var(--accent),var(--accent-2),#F8E5BC);box-shadow:0 0 14px rgba(91,95,240,.6);transition:width .12s linear}
+  @keyframes pulseDot{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.45);opacity:1}50%{box-shadow:0 0 0 7px rgba(16,185,129,0);opacity:.7}}
+  .pulse{animation:pulseDot 1.9s ease-in-out infinite}
+  @keyframes shimmer{to{background-position:200% center}}
+  .shimmer{background:linear-gradient(110deg,#A5B4FC 25%,#fff 42%,#F8E5BC 55%,#A5B4FC 75%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 5.5s linear infinite}
+  .card{transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease}
+  .card:hover{transform:translateY(-1px);box-shadow:0 12px 28px -14px rgba(0,0,0,.18);border-color:#C7C9F8 !important}
+  .pill{transition:all .18s ease}
+  .host{transition:all .15s ease}
+  .host.active{transform:translateY(-1px);box-shadow:0 8px 20px -10px rgba(91,95,240,.5)}
+  .lvl-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px}
+  .scrollbar-thin::-webkit-scrollbar{height:6px;width:6px}
+  .scrollbar-thin::-webkit-scrollbar-thumb{background:#C7C9F8;border-radius:999px}
+  .scrollbar-thin::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- PROGRESS -->
+<div id="progress" class="progress"></div>
+
+<!-- LOGIN OVERLAY (modern glass) -->
+<div id="auth" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background:radial-gradient(900px 600px at 75% -10%,rgba(41,106,160,.35),transparent 60%),radial-gradient(700px 500px at 10% 15%,rgba(91,95,240,.22),transparent 55%),linear-gradient(180deg,#0B1220 0%,#0E1730 100%)">
+  <div class="absolute inset-0" style="background-image:repeating-linear-gradient(0deg,transparent,transparent 42px,rgba(255,255,255,.04) 42px,rgba(255,255,255,.04) 43px),repeating-linear-gradient(90deg,transparent,transparent 42px,rgba(255,255,255,.04) 42px,rgba(255,255,255,.04) 43px)"></div>
+  <div class="relative w-full max-w-[380px] rounded-[22px] p-[1px]" style="background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.04));box-shadow:0 24px 60px -20px rgba(0,0,0,.6)">
+    <div class="rounded-[21px] p-7" style="background:rgba(255,255,255,.96);backdrop-filter:blur(12px)">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-4" style="background:linear-gradient(135deg,#5B5FF0,#8B5CF6);color:#fff;box-shadow:0 10px 24px -10px rgba(91,95,240,.6)"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
+      <h1 class="text-[18px] font-black tracking-tight">Дашборд событий</h1>
+      <p class="text-[12.5px] mt-1" style="color:var(--muted)">Введите пароль — доступ по PHP-сессии 12ч</p>
+      <div class="mt-5">
+        <label class="text-[11px] font-bold tracking-widest uppercase" style="color:var(--muted)">Пароль</label>
+        <div class="relative mt-1.5">
+          <i data-lucide="lock" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style="color:#A8A29E"></i>
+          <input id="pass" type="password" placeholder="••••••••" class="w-full pl-9 pr-3 py-3 rounded-xl text-[14px] font-medium outline-none" style="background:#fff;border:1px solid var(--border);color:var(--fg)" onfocus="this.style.borderColor='#C7C9F8';this.style.boxShadow='0 0 0 4px rgba(91,95,240,.12)'" onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
+        </div>
+      </div>
+      <button id="btnLogin" type="button" class="mt-4 w-full py-3 rounded-xl text-[14px] font-black text-white flex items-center justify-center gap-2" style="background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 12px 28px -12px rgba(91,95,240,.6)">Войти <i data-lucide="arrow-right" class="w-4 h-4"></i></button>
+      <div id="authErr" class="text-[12px] mt-3 min-h-[16px]" style="color:#DC2626"></div>
+      <div class="mono text-[10px] mt-4 text-center" style="color:var(--muted)">demo: <b style="color:var(--fg)">monitor2026</b> · sessionStorage</div>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header class="sticky top-0 z-40 glass" style="background:rgba(11,18,32,.82);border-bottom:1px solid rgba(255,255,255,.08)">
+  <div class="w-full px-2 sm:px-4 h-[56px] flex items-center gap-3">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:linear-gradient(135deg,#5B5FF0,#8B5CF6)"><i data-lucide="activity" class="w-4 h-4 text-white"></i></div>
+      <div class="leading-tight">
+        <div class="text-[13px] font-black text-white tracking-tight">Дашборд событий <span class="px-1.5 py-0.5 rounded text-[10px] font-black ml-1" style="background:#5B5FF0;color:#fff">3.9</span></div>
+        <div class="text-[11px] text-white/45 mono"><span id="hdrHosts">3 хоста</span> · <span id="hdrTotal">633 события</span></div>
+      </div>
+    </div>
+    <div class="hidden md:flex items-center gap-2 ml-6">
+      <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold" style="background:rgba(16,185,129,.12);color:#34D399;border:1px solid rgba(16,185,129,.22)"><span class="w-1.5 h-1.5 rounded-full pulse" style="background:#10B981"></span> LIVE</span>
+      <span class="mono text-[11px] px-2.5 py-1 rounded-full" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.08)">опрос 30с</span>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <div class="hidden sm:flex items-center gap-2 mr-1">
+        <span class="mono text-[11px] px-2.5 py-1.5 rounded-full font-bold" style="background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.10)">Critical: <b id="hdrCrit" style="color:#FCA5A5">—</b></span>
+        <span class="mono text-[11px] px-2.5 py-1.5 rounded-full font-bold" style="background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.10)">Error: <b id="hdrErr" style="color:#FDBA74">—</b></span>
+      </div>
+      <button onclick="refreshBusy()" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-[13px] font-bold bg-white text-[#1C1917] hover:bg-white/90 transition-colors"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Обновить</button>
+      <a href="logout.php" class="px-3.5 py-2 rounded-xl text-[13px] font-bold text-white/70 hover:text-white hover:bg-white/10 transition-colors" style="border:1px solid rgba(255,255,255,.14)">Выход</a>
+    </div>
+  </div>
+  <div id="bar" class="h-[2px] w-0" style="background:linear-gradient(90deg,#5B5FF0,#8B5CF6,#F8E5BC)"></div>
+</header>
+
+<!-- FILTERS -->
+<div class="w-full px-2 sm:px-4 mt-6">
+  <div class="rounded-2xl p-3 sm:p-4 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between" style="background:var(--card);border:1px solid var(--border);box-shadow:0 8px 24px -16px rgba(0,0,0,.12)">
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="flex items-center gap-1.5">
+        <span class="text-[11px] font-black tracking-widest uppercase mr-1" style="color:var(--muted)">Уровень</span>
+        <div id="levelPills" class="flex gap-1 p-1 rounded-full" style="background:var(--bg);border:1px solid var(--border)"></div>
+      </div>
+      <div class="w-px h-6 hidden sm:block" style="background:var(--border)"></div>
+      <div class="flex items-center gap-1.5">
+        <span class="text-[11px] font-black tracking-widest uppercase mr-1 hidden sm:inline" style="color:var(--muted)">Период</span>
+        <div id="periodPills" class="flex gap-1 p-1 rounded-full" style="background:var(--bg);border:1px solid var(--border)"></div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 w-full lg:w-auto">
+      <div class="relative flex-1 lg:w-[280px]">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style="color:var(--muted)"></i>
+        <input id="q" placeholder="Поиск по сообщению, источнику, ID..." class="w-full pl-9 pr-3 py-2.5 rounded-full text-[13px] outline-none" style="background:var(--bg);border:1px solid var(--border);color:var(--fg)" oninput="apply()">
+      </div>
+      <button class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2.5 rounded-full text-[12px] font-bold" style="background:var(--bg);border:1px solid var(--border);color:var(--muted)"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i> Фильтры</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOST BAR -->
+<div class="w-full px-2 sm:px-4 mt-4">
+  <div class="flex items-center gap-2">
+    <span class="text-[11px] font-black tracking-widest uppercase hidden sm:inline" style="color:var(--muted)">Хосты</span>
+    <div id="hostbar" class="flex items-center gap-2 overflow-x-auto scrollbar-thin flex-1 py-1"></div>
+    <button id="btnClearHost" class="hidden text-[12px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap" style="background:var(--card);border:1px solid var(--border);color:var(--muted)">Сбросить</button>
+  </div>
+</div>
+
+<!-- GRID -->
+<div class="w-full px-2 sm:px-4 mt-4 flex-1 flex flex-col min-h-[420px]">
+  <div class="rounded-2xl overflow-hidden flex flex-col flex-1" style="background:var(--card);border:1px solid var(--border);box-shadow:0 12px 32px -18px rgba(0,0,0,.12)">
+    <div class="overflow-auto flex-1 scrollbar-thin">
+      <table class="w-full min-w-[1100px]">
+        <thead class="sticky top-0 z-10" style="background:#0B1220">
+          <tr class="mono text-[11px] font-bold tracking-widest uppercase" style="color:rgba(255,255,255,.55)">
+            <th class="text-left px-4 py-3 font-bold whitespace-nowrap">Время</th>
+            <th class="text-left px-4 py-3 font-bold">Уровень</th>
+            <th class="text-left px-4 py-3 font-bold hidden lg:table-cell">Источник</th>
+            <th class="text-left px-4 py-3 font-bold">ID</th>
+            <th class="text-left px-4 py-3 font-bold">Хост</th>
+            <th class="text-left px-4 py-3 font-bold">Сообщение</th>
+            <th class="text-right px-4 py-3 font-bold hidden sm:table-cell"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody" class="text-[13px]"></tbody>
+      </table>
+      <div id="empty" class="hidden p-12 text-center">
+        <div class="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3" style="background:var(--bg);border:1px solid var(--border)"><i data-lucide="inbox" class="w-5 h-5" style="color:var(--muted)"></i></div>
+        <div class="text-[14px] font-bold">Нет событий</div>
+        <div class="text-[13px] mt-1" style="color:var(--muted)">Попробуйте сменить период или сбросить фильтры</div>
+      </div>
+    </div>
+    <!-- STATUS -->
+    <div class="flex flex-wrap gap-2 items-center justify-between px-4 py-3" style="background:#FAF7F4;border-top:1px solid var(--border)">
+      <div class="flex flex-wrap gap-1.5 mono text-[11px] font-bold">
+        <span class="px-2.5 py-1 rounded-full" style="background:var(--card);border:1px solid var(--border);color:var(--fg)">Показано: <b id="stShown">0</b></span>
+        <span class="px-2.5 py-1 rounded-full" style="background:var(--card);border:1px solid var(--border);color:var(--muted)">Всего: <b id="stTotal">0</b></span>
+        <span class="px-2.5 py-1 rounded-full hidden sm:inline-flex" style="background:#FEF2F2;color:#991B1B;border:1px solid #FECACA">Critical: <b id="stCrit">0</b></span>
+        <span class="px-2.5 py-1 rounded-full hidden sm:inline-flex" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA">Error: <b id="stErr">0</b></span>
+        <span class="px-2.5 py-1 rounded-full hidden md:inline-flex" style="background:var(--card);border:1px solid var(--border);color:var(--muted)">Хостов: <b id="stHosts">0</b></span>
+      </div>
+      <div class="mono text-[11px] flex items-center gap-2" style="color:var(--muted)">
+        <span class="hidden sm:inline">Обновлено: <b id="stNow" style="color:var(--fg)">—</b></span>
+        <span>Следующее: <b id="stNext" style="color:var(--fg)">—</b></span>
+        <span class="w-1 h-1 rounded-full" style="background:var(--border)"></span>
+        <span class="inline-flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full pulse" style="background:var(--ok)"></span> 30с</span>
+      </div>
+    </div>
+  </div>
+  <div class="mono text-[11px] mt-3 flex flex-wrap gap-2" style="color:var(--muted)">
+    <span>Двойной клик по хосту — сброс фильтра</span>
+    <span class="hidden sm:inline" style="color:var(--border)">·</span>
+    <span>Данные: <span style="color:var(--fg)">dashboard_events.json</span> в <span style="color:var(--fg)">%PROGRAMDATA%\PupSeekRDP</span> · <span style="color:var(--fg)">EventPollerService</span> + <span style="color:var(--fg)">EventDecoderService</span></span>
+  </div>
+</div>
+
+<footer class="w-full px-2 sm:px-4 py-8 mono text-[11px] flex flex-wrap justify-between gap-3" style="color:var(--muted)">
+  <span>© 2026 PupSeek RDP 3.9 · монитор</span>
+  <span>Таймаут сессии 12ч · <span style="color:var(--fg)">config.php</span></span>
+</footer>
+
+<script>
+// demo data — подменяется PHP: const DATA = <?php echo $eventsJson; ?>;
+const DATA = [
+  {"time":"2026-09-02T18:13:00+03:00","level":"Error","source":"Service Control Manager","eventId":7001,"computer":"srv-01","message":"Служба Служба профилей пользователей не запустилась из-за ошибки: Не удалось найти указанный файл."},
+  {"time":"2026-09-02T18:07:00+03:00","level":"Critical","source":"Kernel-Power","eventId":41,"computer":"ws-114","message":"Система перезагрузилась без корректного завершения. Возможна потеря данных."},
+  {"time":"2026-09-02T17:55:00+03:00","level":"Error","source":"GroupPolicy","eventId":1054,"computer":"srv-backup","message":"Windows не удалось получить имя контроллера домена. Проверьте DNS."},
+  {"time":"2026-09-02T17:44:00+03:00","level":"Error","source":"Security-Kerberos","eventId":3,"computer":"facebook","message":"KDC_ERR_PREAUTH_REQUIRED — сбой проверки подлинности Kerberos для Contoso.local\\iivanov."},
+  {"time":"2026-09-02T17:23:44+03:00","level":"Error","source":"GroupPolicy","eventId":1054,"computer":"srv-backup","message":"Group Policy failed — DNS name resolution failure."},
+  {"time":"2026-09-02T16:30:00+03:00","level":"Critical","source":"Disk","eventId":7,"computer":"srv-01","message":"Устройство \\Device\\Harddisk0\\DR0 имеет повреждённый блок."},
+  {"time":"2026-09-02T15:10:00+03:00","level":"Error","source":"Service Control Manager","eventId":7034,"computer":"ws-114","message":"Служба Центр обновления Windows аварийно завершилась."}
+];
+
+let level="Все", period="2 дня", selectedHost="", q="";
+
+function buildPills(){
+  const lv=document.getElementById("levelPills");
+  [["Все","Все"],["Critical","Critical"],["Error","Error"]].forEach(([label,val])=>{
+    const b=document.createElement("button"); b.className="pill mono text-[12px] px-3 py-1.5 rounded-full font-bold border "+(level===val?"text-white shadow-sm":""); b.style.background=level===val?"linear-gradient(135deg,#5B5FF0,#8B5CF6)": "var(--card)"; b.style.color=level===val?"#fff":"var(--muted)"; b.style.borderColor=level===val?"transparent":"var(--border)"; b.textContent=label;
+    b.onclick=()=>{level=val; buildPills(); apply();}; lv.appendChild(b);
+  });
+  lv.innerHTML=""; [["Все","Все"],["Critical","Critical"],["Error","Error"]].forEach(([label,val])=>{
+    const b=document.createElement("button"); b.className="pill mono text-[12px] px-3.5 py-1.5 rounded-full font-bold"; b.style.background=level===val?"linear-gradient(135deg,#5B5FF0,#8B5CF6)":"var(--card)"; b.style.color=level===val?"#fff":"var(--muted)"; b.style.border="1px solid "+(level===val?"transparent":"var(--border)"); if(level===val) b.style.boxShadow="0 6px 16px -8px rgba(91,95,240,.6)"; b.textContent=label;
+    b.onclick=()=>{level=val; buildPills(); apply();}; lv.appendChild(b);
+  });
+  const pp=document.getElementById("periodPills");
+  pp.innerHTML="";
+  ["30 мин","1 час","24 часа","2 дня"].forEach(p=>{
+    const b=document.createElement("button"); b.className="mono text-[12px] px-3 py-1.5 rounded-full font-bold"; b.style.background=period===p?"#1C1917":"var(--card)"; b.style.color=period===p?"#fff":"var(--muted)"; b.style.border="1px solid "+(period===p?"#1C1917":"var(--border)"); b.textContent=p;
+    b.onclick=()=>{period=p; buildPills(); apply();}; pp.appendChild(b);
+  });
+}
+function hostCounts(){const m={}; DATA.forEach(e=>{m[e.computer]=(m[e.computer]||0)+1}); return m}
+function buildHostBar(){
+  const bar=document.getElementById("hostbar"); bar.innerHTML="";
+  const total=hostCounts(); const hosts=Object.keys(total);
+  document.getElementById("btnClearHost").style.display=selectedHost?"inline-flex":"none";
+  if(!hosts.length){bar.innerHTML='<span class="mono text-[13px]" style="color:var(--muted)">Нет хостов — добавьте в Книге ПКМ → Отслеживать события</span>'; return}
+  // all
+  const all=document.createElement("button"); all.className="host mono text-[12px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 whitespace-nowrap "+(!selectedHost?"active":"");
+  all.style.background=!selectedHost?"var(--fg)":"var(--card)"; all.style.color=!selectedHost?"#fff":"var(--muted)"; all.style.border="1px solid "+(!selectedHost?"var(--fg)":"var(--border)"); all.innerHTML='Все <span class="px-1.5 py-0.5 rounded-full mono text-[10px] font-black" style="background:rgba(255,255,255,.14)">'+DATA.length+'</span>';
+  all.onclick=()=>{selectedHost=""; buildHostBar(); apply();}; bar.appendChild(all);
+  hosts.forEach(h=>{
+    const n=total[h]||0; const active=selectedHost===h;
+    const crit=DATA.filter(e=>e.computer===h && e.level==="Critical").length;
+    const btn=document.createElement("button"); btn.className="host mono text-[12px] px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 whitespace-nowrap "+(active?"active shadow-sm":"");
+    let bg, fg, bd; if(crit>0){bg="#FEF2F2"; fg="#991B1B"; bd="#FECACA"} else if(active){bg="linear-gradient(135deg,#5B5FF0,#8B5CF6)"; fg="#fff"; bd="transparent"} else {bg="var(--card)"; fg="var(--fg)"; bd="var(--border)"}
+    if(active && crit===0){ btn.style.background="linear-gradient(135deg,#5B5FF0,#8B5CF6)"; btn.style.color="#fff"; btn.style.borderColor="transparent"; btn.style.boxShadow="0 6px 16px -8px rgba(91,95,240,.5)"; }
+    else { btn.style.background=bg; btn.style.color=fg; btn.style.border="1px solid "+bd; }
+    btn.innerHTML=`${h} <span class="px-1.5 py-0.5 rounded-full mono text-[10px] font-black" style="background:${active?'rgba(255,255,255,.18)': crit?'#FEE2E2':'var(--bg)'};color:${active?'#fff':fg}">${n}</span>`;
+    btn.title=h+" ("+n+")"+(crit?" · Critical "+crit:"");
+    btn.onclick=()=>{selectedHost=active?"":h; buildHostBar(); apply();};
+    btn.ondblclick=()=>{selectedHost=""; buildHostBar(); apply();};
+    bar.appendChild(btn);
+  });
+}
+document.getElementById("btnClearHost").onclick=()=>{selectedHost=""; buildHostBar(); apply();};
+document.getElementById("q").addEventListener("input", e=>{q=e.target.value.toLowerCase(); apply();});
+
+function cutoffFor(p){ if(p==="30 мин")return 30*60*1000; if(p==="1 час")return 60*60*1000; if(p==="24 часа")return 24*60*60*1000; return 2*24*60*60*1000; }
+function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function apply(){
+  const nowMs=Date.now(), cutoff=nowMs - cutoffFor(period);
+  let rows=DATA.filter(e=>{
+    const t=new Date(e.time).getTime();
+    if(t<cutoff) return false;
+    if(level!=="Все" && e.level!==level) return false;
+    if(selectedHost && e.computer!==selectedHost) return false;
+    if(q && !( (e.message||"").toLowerCase().includes(q) || (e.source||"").toLowerCase().includes(q) || String(e.eventId).includes(q) || (e.computer||"").toLowerCase().includes(q) )) return false;
+    return true;
+  });
+  rows.sort((a,b)=>new Date(b.time)-new Date(a.time)); rows=rows.slice(0,500);
+  const tb=document.getElementById("tbody"); tb.innerHTML="";
+  document.getElementById("empty").style.display= rows.length? "none":"block";
+  const frag=document.createDocumentFragment();
+  rows.forEach(e=>{
+    const tr=document.createElement("tr"); tr.className="group";
+    tr.style.borderBottom="1px solid var(--border)"; tr.style.background="#fff";
+    tr.onmouseenter=()=>tr.style.background="#F5F3FF"; tr.onmouseleave=()=>tr.style.background="#fff";
+    const d=new Date(e.time); const pad2=n=>String(n).padStart(2,"0");
+    const ts=pad2(d.getDate())+"."+pad2(d.getMonth()+1)+" "+pad2(d.getHours())+":"+pad2(d.getMinutes());
+    const lvl=e.level==="Critical" ? `<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full mono text-[11px] font-black" style="background:#FEF2F2;color:#991B1B;border:1px solid #FECACA"><span class="lvl-dot" style="background:#DC2626"></span>Critical</span>` :
+            e.level==="Error" ? `<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full mono text-[11px] font-black" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA"><span class="lvl-dot" style="background:#EA580C"></span>Error</span>` :
+            `<span class="mono text-[11px] font-bold" style="color:var(--muted)">${esc(e.level)}</span>`;
+    tr.innerHTML = `<td class="px-4 py-3 mono text-[12px] whitespace-nowrap" style="color:var(--muted)">${ts}</td>
+      <td class="px-4 py-3">${lvl}</td>
+      <td class="px-4 py-3 mono text-[12px] hidden lg:table-cell" style="color:var(--fg)">${esc(e.source)}</td>
+      <td class="px-4 py-3 mono text-[12px] font-bold" style="color:var(--fg)">${esc(e.eventId)}</td>
+      <td class="px-4 py-3"><span class="mono text-[12px] px-2 py-1 rounded-full font-bold" style="background:var(--bg);border:1px solid var(--border);color:var(--fg)">${esc(e.computer)}</span></td>
+      <td class="px-4 py-3 text-[13px] leading-snug max-w-[520px]" style="color:var(--fg)"><span class="block truncate" title="${esc(e.message)}">${esc(e.message)}</span></td>
+      <td class="px-4 py-3 text-right hidden sm:table-cell"><button class="p-1.5 rounded-lg hover:bg-black/[.06] transition-colors" style="color:var(--muted)" title="Детали"><i data-lucide="chevron-right" class="w-4 h-4"></i></button></td>`;
+    frag.appendChild(tr);
+  });
+  tb.appendChild(frag);
+  if(window.lucide) lucide.createIcons();
+  // status
+  const total=DATA.length, crit=DATA.filter(e=>e.level==="Critical").length, err=DATA.filter(e=>e.level==="Error").length;
+  document.getElementById("stShown").textContent=rows.length;
+  document.getElementById("stTotal").textContent=total;
+  document.getElementById("stCrit").textContent=crit;
+  document.getElementById("stErr").textContent=err;
+  document.getElementById("stHosts").textContent=Object.keys(hostCounts()).length;
+  document.getElementById("hdrTotal").textContent=total+" событий";
+  document.getElementById("hdrHosts").textContent=Object.keys(hostCounts()).length+" хоста";
+  document.getElementById("hdrCrit").textContent=crit;
+  document.getElementById("hdrErr").textContent=err;
+  const now2=new Date(), pad3=n=>String(n).padStart(2,"0");
+  document.getElementById("stNow").textContent=pad3(now2.getHours())+":"+pad3(now2.getMinutes());
+  const nxt=new Date(now2.getTime()+30*60*1000); document.getElementById("stNext").textContent=pad3(nxt.getHours())+":"+pad3(nxt.getMinutes());
+}
+function refreshBusy(){
+  const bar=document.getElementById("bar"); bar.style.width="30%"; bar.style.transition="none";
+  requestAnimationFrame(()=>{
+    bar.style.transition="width .7s ease"; bar.style.width="100%";
+    setTimeout(()=>{bar.style.width="0"; apply();}, 750);
+  });
+}
+// auth demo
+(function(){
+  const overlay=document.getElementById("auth");
+  const pass=document.getElementById("pass");
+  const btn=document.getElementById("btnLogin");
+  const err=document.getElementById("authErr");
+  const DEMO="monitor2026";
+  let ok=false;
+  try{ ok=sessionStorage.getItem("dash_auth")==="1"; }catch(e){ ok=false; }
+  if(ok) overlay.style.display="none";
+  // ?demo=1 bypass for file:// where sessionStorage may be blocked
+  if(location.search.includes("demo=1")){ try{sessionStorage.setItem("dash_auth","1");}catch(e){} overlay.style.display="none"; }
+  function tryLogin(){
+    const v=(pass.value||"").trim();
+    if(v===DEMO){ try{sessionStorage.setItem("dash_auth","1");}catch(e){} overlay.style.display="none"; err.textContent=""; }
+    else { err.textContent="Неверный пароль — попробуйте monitor2026"; try{pass.select();}catch(e){} pass.focus(); }
+  }
+  if(btn) btn.onclick=tryLogin;
+  if(pass) pass.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); tryLogin(); }});
+  setTimeout(()=>{ try{pass.focus();}catch(e){} }, 180);
+  // expose for console debug
+  window._dashTryLogin=tryLogin;
+})();
+
+buildPills(); buildHostBar(); apply();
+if(window.lucide) lucide.createIcons();
+// progress on scroll
+let ticking=false;
+window.addEventListener("scroll", ()=>{
+  if(ticking) return; ticking=true;
+  requestAnimationFrame(()=>{
+    const h=document.documentElement.scrollHeight - innerHeight;
+    document.getElementById("progress").style.width = (h>0? (scrollY/h*100):0) + "%";
+    ticking=false;
+  });
+}, {passive:true});
+</script>
+</body>
+</html>

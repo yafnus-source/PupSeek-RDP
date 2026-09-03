@@ -18,7 +18,7 @@ namespace ShadowRDP.Forms
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = false;
             TopMost = true;
-            BackColor = UiTheme.Background;
+            BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8);
 
             const int splashSize = 360;
             ClientSize = new Size(splashSize, splashSize + 80);
@@ -62,7 +62,7 @@ namespace ShadowRDP.Forms
             // since ~v3.5.8 — every release forgot to bump it). Format
             // matches the sidebar copyright: v{Major}.{Minor}.{Build}.
             var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            var verText = asmVer != null ? $"v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "v3.8.2";
+            var verText = asmVer != null ? $"v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "v3.9.0";
 
             var ver = new Label
             {
