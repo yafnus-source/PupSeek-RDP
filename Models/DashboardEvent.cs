@@ -50,6 +50,9 @@ namespace ShadowRDP.Models
         [JsonPropertyName("notifySound")]
         public bool NotifySound { get; set; } = false;
 
+        [JsonPropertyName("showNyanCat")]
+        public bool ShowNyanCat { get; set; } = true;
+
         [JsonPropertyName("aiProvider")]
         public string AiProvider { get; set; } = "ollama"; // ollama | fallback
     }

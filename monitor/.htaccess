@@ -1,0 +1,13 @@
+# /monitor/.htaccess
+Options -Indexes
+
+# Закрыть прямой HTTP-доступ к конфигу и данным (PHP читает их серверно)
+<FilesMatch "^(config\.php|dashboard_events\.json)$">
+  Require all denied
+</FilesMatch>
+
+# Запретить исполнение PHP в папке данных
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^data/.*\.(php|phtml|php5|php7|phar|cgi|pl)$ - [F,L]
+</IfModule>

@@ -124,7 +124,6 @@ namespace ShadowRDP.Forms
         private readonly List<EmbeddedProgramSession> _embeddedSessions = new();
         private readonly Dictionary<Controls.ConsoleSessionControl, Label> _consolePills = new();
         private EmbeddedProgramSession? _activeEmbedded;
-        private Label _mmcBtn = null!;
         private Label _toolsTab = null!;
         private Panel _headerPanel = null!;
         private ToolTip _toolTip = null!;
@@ -906,46 +905,13 @@ namespace ShadowRDP.Forms
             _toolTip = new ToolTip { ShowAlways = true, InitialDelay = 300, AutoPopDelay = 10000 };
             _headerPanel = header;
 
-            var embedFont = new Font("Segoe UI Semibold", 9F);
-            var embedText = "＋  Встроить ММС";
-            var embedTextSize = TextRenderer.MeasureText(embedText, embedFont);
-            var embedBtn = new Label
-            {
-                Text = "",
-                AutoSize = false,
-                Size = new Size(embedTextSize.Width + 22, 22),
-                Anchor = AnchorStyles.Top,
-                Font = embedFont,
-                Cursor = Cursors.Hand,
-                Margin = Padding.Empty
-            };
-            _mmcBtn = embedBtn;
-            _toolTip.SetToolTip(embedBtn, "Встроить ММС…");
-            // v3.6.8 — backgroundless text button: color #1E3A5F, hover
-            // brightens the text to #2A5A8E (no background fill).
-            var embedColor = ShadowRDP.Helpers.UiTheme.Sidebar;
-            var embedHoverColor = Color.FromArgb(0x2A, 0x5A, 0x8E);
-            embedBtn.Paint += (s, e) =>
-            {
-                var r = new Rectangle(0, 0, embedBtn.Width, embedBtn.Height);
-                TextRenderer.DrawText(e.Graphics, embedText, embedBtn.Font, r,
-                    embedColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            };
-            embedBtn.MouseEnter += (s, e) => { embedColor = embedHoverColor; embedBtn.Invalidate(); };
-            embedBtn.MouseLeave += (s, e) => { embedColor = ShadowRDP.Helpers.UiTheme.Sidebar; embedBtn.Invalidate(); };
+            // v3.9 D — header "Встроить ММС" removed: legacy embedBtn/embedMenu (ContextMenuStrip popup)
+            // caused first-click miss due to toolsMenu.Close()+BeginInvoke race and handle warming.
+            // Now handled as dynamic submenu inside toolsMenu — no second top-level popup.
 
-            var embedMenu = new ContextMenuStrip { ShowImageMargin = false };
-            embedMenu.Opening += (s, e) => PopulateEmbedMenu(embedMenu);
-            // Both left click and right click show the recent-console menu.
-            embedBtn.ContextMenuStrip = embedMenu;
-            embedBtn.Click += (s, e) => embedMenu.Show(embedBtn, new Point(0, embedBtn.Height));
-            header.Controls.Add(embedBtn);
-
-            // v3.9 — collapse the 7 header action buttons + "Встроить ММС"
-            // into a single "Инструменты" dropdown (design-preview parity).
-            // The original buttons are kept (Visible=false) so their existing
-            // handlers stay wired; the dropdown triggers them — no logic dup.
-            foreach (var b in new Control[] { changePwdBtn, themeBtn, addSessionBtn, addToBookBtn, exportBtn, psBtn, cmdBtn, embedBtn })
+            // v3.9 — collapse the 7 header action buttons into a single "Инструменты" dropdown (design-preview parity).
+            // The original buttons are kept (Visible=false) so their existing handlers stay wired; the dropdown triggers them — no logic dup.
+            foreach (var b in new Control[] { changePwdBtn, themeBtn, addSessionBtn, addToBookBtn, exportBtn, psBtn, cmdBtn })
                 b.Visible = false;
 
             // v3.9 — the "Инструменты" dropdown now lives in the sidebar
@@ -955,13 +921,9 @@ namespace ShadowRDP.Forms
             toolsMenu.AddHeader("Инструменты");
             toolsMenu.AddItem("CMD", "terminal", () => launchCmd());
             toolsMenu.AddItem("PowerShell (PS)", "powershell", () => launchPs());
-            toolsMenu.AddItem("Встроить ММС", "gear", () =>
-            {
-                toolsMenu.Close();
-                // Warm handle before first Opening — otherwise GetPreferredSize returns 0 and menu is 0-size.
-                if (!embedMenu.IsHandleCreated) { var _ = embedMenu.Handle; }
-                BeginInvoke(new Action(() => embedMenu.Show(_toolsTab, new Point(0, _toolsTab.Height))));
-            });
+            // D — "Встроить ММС" as dynamic submenu (no second popup, no Close+BeginInvoke race).
+            // Child is rebuilt on every click so recent list is always fresh; first click now works.
+            toolsMenu.AddDynamicSubmenu("Встроить ММС", "gear", child => PopulateEmbedMenu(child));
             toolsMenu.AddSeparator();
             toolsMenu.AddItem("Экспорт/Импорт", "exchange", () =>
             {
@@ -3271,7 +3233,7 @@ namespace ShadowRDP.Forms
                         ProgramIcon = GetEmbedIcon(entry.Path)
                     };
                     item.OnOpen = e => OpenEmbedProgram(e);
-                    item.OnDelete = e => DeleteEmbedRecent(e);
+                    item.OnDelete = e => { DeleteEmbedRecent(e); try { menu.Close(); } catch { } };
                     menu.Items.Add(item);
                 }
                 menu.Items.Add(new ToolStripSeparator());
@@ -3305,16 +3267,29 @@ namespace ShadowRDP.Forms
                     mi.Size = new Size(maxW2, mi.GetPreferredSize(Size.Empty).Height);
                 }
             }
-            int menuH2 = menu.Padding.Vertical;
-            foreach (ToolStripItem it in menu.Items)
+            // For plain ContextMenuStrip (legacy) we fix both Width+Height to avoid scroll arrows.
+            // For ThemedContextMenu as submenu, fixing Height breaks DropDown positioning (appears at 0,0 or flipped);
+            // keep Height auto, only fix Width for ✕ alignment.
+            if (menu is Helpers.ThemedContextMenu)
             {
-                int h = it.Height;
-                if (h <= 0) h = it.GetPreferredSize(Size.Empty).Height;
-                menuH2 += h;
+                menu.AutoSize = false;
+                menu.Width = maxW2 + menu.Padding.Horizontal;
+                // Height left to auto-layout (PerformLayout will compute); ensure layout is fresh.
+                menu.PerformLayout();
             }
-            menu.AutoSize = false;
-            menu.Width = maxW2 + menu.Padding.Horizontal;
-            menu.Height = menuH2;
+            else
+            {
+                int menuH2 = menu.Padding.Vertical;
+                foreach (ToolStripItem it in menu.Items)
+                {
+                    int h = it.Height;
+                    if (h <= 0) h = it.GetPreferredSize(Size.Empty).Height;
+                    menuH2 += h;
+                }
+                menu.AutoSize = false;
+                menu.Width = maxW2 + menu.Padding.Horizontal;
+                menu.Height = menuH2;
+            }
         }
 
         // ✕ in the recent-console menu: removes the entry from history.

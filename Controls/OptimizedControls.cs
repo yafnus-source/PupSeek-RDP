@@ -57,15 +57,24 @@ namespace ShadowRDP.Controls
     // v2.1.63 — DataGridView subclass with DoubleBuffered enabled.
     // The base class disables double-buffering because the protected
     // DoubleBuffered property defaults to false. Without it, every
-    // scroll tick triggers a full repaint that visibly flickers and
-    // feels slow even with few rows. Enabling it via subclass (the
-    // cleanest path — reflection on the protected setter works but is
-    // brittle) gives buttery 60fps scrolling for the address-book grid.
+    // Double-buffered grid — enables DoubleBuffered for buttery scrolling.
+    // NOTE for fully-custom cell painting (every cell e.Handled=true):
+    // the base OnPaintBackground only fills the DataGridView's display area
+    // and, with DoubleBuffered + custom cell painting, untouched buffer
+    // pixels (scrollbar gutter, clip edges) can blit through as black lines
+    // that flicker on/off while scrolling. Forcing the background to fill
+    // the ENTIRE ClientRectangle guarantees a light buffer, no artifacts.
     public class DoubleBufferedDataGridView : DataGridView
     {
         public DoubleBufferedDataGridView()
         {
             DoubleBuffered = true;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs pevent)
+        {
+            using var b = new System.Drawing.SolidBrush(BackgroundColor);
+            pevent.Graphics.FillRectangle(b, ClientRectangle);
         }
     }
 }
