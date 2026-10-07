@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Management;
 using System.Text;
@@ -24,6 +25,43 @@ namespace ShadowRDP.Services
             public int ExitCode;
             public string Output = "";
             public string Error = "";
+        }
+
+        // v3.9.5 — кодировка вывода: powershell.exe/cmd пишут в локальную
+        // OEM-кодовую страницу (для ru-RU это CP866), а .NET читает по
+        // умолчанию UTF-8 — отсюда кракозябры. Регистрируем codepages-
+        // провайдер и читаем в OEM; файл WMI-канала декодируем с детектом
+        // (строгий UTF-8, иначе OEM).
+        private static readonly Encoding OemEncoding = CreateOemEncoding();
+
+        private static Encoding CreateOemEncoding()
+        {
+            try
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+            }
+            catch
+            {
+                return Encoding.UTF8;
+            }
+        }
+
+        // Декодирует байты вывода: UTF-8 (BOM или строгая валидация),
+        // иначе локальный OEM (CP866 и т.п.). ASCII проходит как UTF-8.
+        public static string DecodeOutput(byte[]? bytes)
+        {
+            if (bytes == null || bytes.Length == 0) return "";
+            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+            try
+            {
+                return new UTF8Encoding(false, true).GetString(bytes);
+            }
+            catch (ArgumentException)
+            {
+                return OemEncoding.GetString(bytes);
+            }
         }
 
         // Экранирование для одинарных кавычек PowerShell.
@@ -71,7 +109,11 @@ namespace ShadowRDP.Services
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    // powershell.exe пишет stdout/stderr в OEM (CP866) —
+                    // читаем в той же кодировке, иначе кракозябры.
+                    StandardOutputEncoding = OemEncoding,
+                    StandardErrorEncoding = OemEncoding
                 };
                 using var proc = Process.Start(psi);
                 if (proc == null)
@@ -192,7 +234,10 @@ namespace ShadowRDP.Services
                 {
                     if (File.Exists(uncPath))
                     {
-                        r.Output = (await Task.Run(() => File.ReadAllText(uncPath))).Trim();
+                        // cmd пишет файл в OEM; читаем байты с детектом
+                        // UTF-8/OEM, чтобы кириллица не портилась.
+                        var bytes = await Task.Run(() => File.ReadAllBytes(uncPath));
+                        r.Output = DecodeOutput(bytes).Trim();
                         try { File.Delete(uncPath); } catch { }
                     }
                 }
