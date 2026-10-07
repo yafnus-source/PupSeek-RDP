@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using ShadowRDP.Forms;
 using ShadowRDP.Services;
@@ -156,14 +157,14 @@ namespace ShadowRDP.Helpers
                 owner, computerResolver, c =>
                 {
                     using var dlg = new EventLogForm(c);
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
             AddLauncher(menu, "Диспетчер задач...", "tasks",
                 owner, computerResolver, c =>
                 {
                     using var dlg = new TaskManagerForm(c);
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
 
@@ -380,19 +381,14 @@ namespace ShadowRDP.Helpers
                 var computer = computerResolver();
                 if (string.IsNullOrEmpty(computer)) return;
                 var ip = LookupIpFromAddressBook(computer);
-                if (string.IsNullOrEmpty(ip))
+                if (!string.IsNullOrEmpty(ip))
                 {
-                    var net = WmiService.GetNetworkConfigAsync(computer).GetAwaiter().GetResult();
-                    if (net != null && net.IPv4Addresses.Count > 0)
-                        ip = string.Join(", ", net.IPv4Addresses);
-                }
-                if (string.IsNullOrEmpty(ip))
-                {
-                    MessageBox.Show(owner, "IP не найден.", "Скопировать",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    try { Clipboard.SetText(ip); } catch { }
                     return;
                 }
-                try { Clipboard.SetText(ip); } catch { }
+                // v3.9.3 Фаза 2 — WMI в фоне: меню не висит на недоступном
+                // хосте; результат — в буфер + сообщение.
+                CopyIpViaWmiAsync(owner, computer);
             };
         }
 
@@ -405,7 +401,7 @@ namespace ShadowRDP.Helpers
                 var computer = computerResolver() ?? "";
                 if (string.IsNullOrEmpty(computer)) return;
                 using var dlg = new ComputerInfoForm(computer);
-                dlg.ShowDialog(owner);
+                UiModal.ShowDimmed(owner, dlg);
             };
         }
 
@@ -446,14 +442,14 @@ namespace ShadowRDP.Helpers
                 owner, computerResolver, c =>
                 {
                     using var dlg = new LocalAdminsForm(c);
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
             AddDomainLauncher(miDomain, "Group Policy Results...", "list",
                 owner, computerResolver, c =>
                 {
                     using var dlg = new GpResultsForm(c);
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
             AddDomainLauncher(miDomain, "Поиск где залогинен пользователь...", "search",
@@ -464,14 +460,14 @@ namespace ShadowRDP.Helpers
                     // user, where else are they logged in?".
                     var user = userResolver?.Invoke();
                     using var dlg = new FindUserDialog(c, user, autoStart: true);
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
             AddDomainLauncher(miDomain, "Открытые файлы (все серверы)...", "list",
                 owner, computerResolver, c =>
                 {
                     using var dlg = new OpenFilesForm();
-                    dlg.ShowDialog(owner);
+                    UiModal.ShowDimmed(owner, dlg);
                     return true;
                 });
 
@@ -614,6 +610,37 @@ namespace ShadowRDP.Helpers
             catch { return ""; }
         }
 
+        // v3.9.3 Фаза 2 — WMI-опрос в фоне: меню не висит на недоступном
+        // хосте. Clipboard требует STA → результат маршалим в UI-поток
+        // владельца; при неудаче — сообщение, при успехе IP уже в буфере.
+        private static void CopyIpViaWmiAsync(IWin32Window owner, string computer)
+        {
+            TaskScheduler ui;
+            try { ui = TaskScheduler.FromCurrentSynchronizationContext(); }
+            catch { return; }
+            Task.Run(async () =>
+            {
+                try { return await WmiService.GetNetworkConfigAsync(computer); }
+                catch { return null; }
+            }).ContinueWith(t =>
+            {
+                try
+                {
+                    var net = t.Result;
+                    string? ip = (net != null && net.IPv4Addresses.Count > 0)
+                        ? string.Join(", ", net.IPv4Addresses) : null;
+                    if (string.IsNullOrEmpty(ip))
+                        MessageBox.Show(owner, "IP не найден.", "Скопировать",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    else
+                    {
+                        try { Clipboard.SetText(ip); } catch { }
+                    }
+                }
+                catch { }
+            }, ui);
+        }
+
         // v3.9.0 — themed variant of Build() that returns a custom
         // ThemedContextMenu popup instead of a ContextMenuStrip.
         public static ThemedContextMenu BuildThemed(
@@ -708,13 +735,13 @@ namespace ShadowRDP.Helpers
                 var c = computerResolver() ?? "";
                 if (string.IsNullOrEmpty(c)) return;
                 using var dlg = new ComputerInfoForm(c);
-                dlg.ShowDialog(owner);
+                UiModal.ShowDimmed(owner, dlg);
             });
             menu.AddItem("Computer Management (MMC)", "gear", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "compmgmt.msc"); });
             menu.AddItem("Службы (services.msc)", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "services.msc"); });
             menu.AddItem("Просмотр событий (eventvwr)", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "eventvwr.msc"); });
-            menu.AddItem("События (WMI)...", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new EventLogForm(c); dlg.ShowDialog(owner); } });
-            menu.AddItem("Диспетчер задач...", "tasks", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new TaskManagerForm(c); dlg.ShowDialog(owner); } });
+            menu.AddItem("События (WMI)...", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new EventLogForm(c);                 UiModal.ShowDimmed(owner, dlg); } });
+            menu.AddItem("Диспетчер задач...", "tasks", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new TaskManagerForm(c);                 UiModal.ShowDimmed(owner, dlg); } });
             // v4.0 — dashboard monitoring toggle
             {
                 var c = computerResolver() ?? "";
@@ -732,6 +759,25 @@ namespace ShadowRDP.Helpers
                         Services.AddressBookStore.Save(all);
                         Services.EventDashboardStore.SaveMonitoredComputers(all.Where(e => e.Monitored).Select(e => e.Computer).ToList());
                         MessageBox.Show(owner, target.Monitored ? $"Добавлен в дашбоард: {c}" : $"Убран из дашборда: {c}", "Дашбоард", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    });
+                }
+            }
+            // v3.9.1 — SNMP monitoring toggle (Zabbix dash without agent)
+            {
+                var c = computerResolver() ?? "";
+                if (!string.IsNullOrEmpty(c))
+                {
+                    var entries = Services.AddressBookStore.Load();
+                    var ent = entries.FirstOrDefault(e => string.Equals(e.Computer, c, StringComparison.OrdinalIgnoreCase));
+                    bool isSnmp = ent != null && ent.SnmpMonitored;
+                    menu.AddItem(isSnmp ? "Отслеживать по SNMP ✓" : "Отслеживать по SNMP", "globe", () =>
+                    {
+                        var all = Services.AddressBookStore.Load();
+                        var target = all.FirstOrDefault(e => string.Equals(e.Computer, c, StringComparison.OrdinalIgnoreCase));
+                        if (target == null) { MessageBox.Show(owner, $"Компьютер {c} не найден в книге.", "Дашбоард", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                        target.SnmpMonitored = !target.SnmpMonitored;
+                        Services.AddressBookStore.Save(all);
+                        MessageBox.Show(owner, target.SnmpMonitored ? $"SNMP-мониторинг включён: {c} (опрос по UDP 161)" : $"SNMP-мониторинг отключён: {c}", "Дашбоард", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     });
                 }
             }
@@ -829,13 +875,13 @@ namespace ShadowRDP.Helpers
                     var c = computerResolver();
                     if (string.IsNullOrEmpty(c)) return;
                     var ip = LookupIpFromAddressBook(c);
-                    if (string.IsNullOrEmpty(ip))
+                    if (!string.IsNullOrEmpty(ip))
                     {
-                        var net = WmiService.GetNetworkConfigAsync(c).GetAwaiter().GetResult();
-                        if (net != null && net.IPv4Addresses.Count > 0) ip = string.Join(", ", net.IPv4Addresses);
+                        try { Clipboard.SetText(ip); } catch { }
+                        return;
                     }
-                    if (string.IsNullOrEmpty(ip)) { MessageBox.Show(owner, "IP не найден.", "Скопировать", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-                    try { Clipboard.SetText(ip); } catch { }
+                    // v3.9.3 Фаза 2 — WMI в фоне (см. выше).
+                    CopyIpViaWmiAsync(owner, c);
                 });
             });
         }
@@ -858,10 +904,11 @@ namespace ShadowRDP.Helpers
                 });
                 sub.AddSeparator();
                 AddDomainLauncherThemed(sub, "Управление службами (grid)...", "gear", owner, computerResolver, c => RemoteActions.OpenMsc(c, "services.msc"));
-                AddDomainLauncherThemed(sub, "Локальные администраторы...", "shield", owner, computerResolver, c => { using var dlg = new LocalAdminsForm(c); dlg.ShowDialog(owner); return true; });
-                AddDomainLauncherThemed(sub, "Group Policy Results...", "list", owner, computerResolver, c => { using var dlg = new GpResultsForm(c); dlg.ShowDialog(owner); return true; });
-                AddDomainLauncherThemed(sub, "Поиск где залогинен пользователь...", "search", owner, computerResolver, c => { var user = userResolver?.Invoke(); using var dlg = new FindUserDialog(c, user, autoStart: true); dlg.ShowDialog(owner); return true; });
-                AddDomainLauncherThemed(sub, "Открытые файлы (все серверы)...", "list", owner, computerResolver, c => { using var dlg = new OpenFilesForm(); dlg.ShowDialog(owner); return true; });
+                AddDomainLauncherThemed(sub, "Локальные администраторы...", "shield", owner, computerResolver, c => { using var dlg = new LocalAdminsForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Group Policy Results...", "list", owner, computerResolver, c => { using var dlg = new GpResultsForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Поиск где залогинен пользователь...", "search", owner, computerResolver, c => { var user = userResolver?.Invoke(); using var dlg = new FindUserDialog(c, user, autoStart: true);                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Открытые файлы (все серверы)...", "list", owner, computerResolver, c => { using var dlg = new OpenFilesForm();                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Удаленный реестр...", "key", owner, computerResolver, c => { using var dlg = new Forms.RemoteRegistryForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
                 sub.AddSeparator();
                 sub.AddItem("Отправить сообщение...", "msg", () =>
                 {

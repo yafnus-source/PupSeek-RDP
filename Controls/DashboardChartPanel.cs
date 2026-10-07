@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using ScottPlot.WinForms;
 using ShadowRDP.Helpers;
 using ShadowRDP.Models;
 using Label = System.Windows.Forms.Label;
@@ -14,19 +13,18 @@ namespace ShadowRDP.Controls
     public class DashboardChartPanel : UserControl
     {
         private readonly TableLayoutPanel _gridCharts;
-        private readonly FormsPlot _plotLevel;
-        private readonly FormsPlot _plotHost;
-        private readonly FormsPlot _plotSource;
-        private readonly FormsPlot _plotTime;
+        private readonly Panel _pnlLevel;
+        private readonly Panel _pnlHost;
+        private readonly Panel _pnlSource;
+        private readonly Panel _pnlTime;
         private readonly Label _lblKpi;
         private DashboardStats? _lastStats;
 
-        // For hit-testing
         private List<string> _hostKeys = new();
         private List<string> _sourceKeys = new();
         private List<DateTime> _timeBuckets = new();
 
-        public event Action<string, string>? OnChartClick; // kind, key
+        public event Action<string, string>? OnChartClick;
 
         public DashboardChartPanel()
         {
@@ -60,30 +58,29 @@ namespace ShadowRDP.Controls
             _gridCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
             _gridCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
 
-            _plotLevel = CreatePlot("Уровень");
-            _plotHost = CreatePlot("По хостам");
-            _plotSource = CreatePlot("Топ источников");
-            _plotTime = CreatePlot("Динамика");
+            _pnlLevel = CreateCardPanel("Уровень (клик → фильтр)");
+            _pnlHost = CreateCardPanel("Топ хостов");
+            _pnlSource = CreateCardPanel("Топ источников");
+            _pnlTime = CreateCardPanel("Динамика по времени");
 
-            _gridCharts.Controls.Add(WrapPlot(_plotLevel, "Уровень (клик → фильтр)"), 0, 0);
-            _gridCharts.Controls.Add(WrapPlot(_plotHost, "Топ хостов"), 1, 0);
-            _gridCharts.Controls.Add(WrapPlot(_plotSource, "Топ источников"), 0, 1);
-            _gridCharts.Controls.Add(WrapPlot(_plotTime, "Динамика по времени"), 1, 1);
+            _gridCharts.Controls.Add(_pnlLevel, 0, 0);
+            _gridCharts.Controls.Add(_pnlHost, 1, 0);
+            _gridCharts.Controls.Add(_pnlSource, 0, 1);
+            _gridCharts.Controls.Add(_pnlTime, 1, 1);
 
             Controls.Add(_gridCharts);
-            // Ensure kpi on top
             Controls.SetChildIndex(_lblKpi, 0);
             Controls.SetChildIndex(_gridCharts, 1);
         }
 
-        private Panel WrapPlot(FormsPlot plot, string title)
+        private Panel CreateCardPanel(string title)
         {
-            var p = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(4), Margin = new Padding(6) };
-            p.Paint += (s, e) =>
+            var card = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(4), Margin = new Padding(6) };
+            card.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 using var pen = new Pen(UiTheme.BorderSubtle, 1);
-                var r = new Rectangle(0, 0, p.Width - 1, p.Height - 1);
+                var r = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
                 using var path = UiButtons.RoundedRect(r, 6);
                 e.Graphics.DrawPath(pen, path);
             };
@@ -92,84 +89,39 @@ namespace ShadowRDP.Controls
                 Text = title,
                 Dock = DockStyle.Top,
                 Height = 18,
-                Font = new Font("Segoe UI Semibold", 9f),
+                Font = new Font("Segoe UI Semibold", 8f),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(0x62, 0x6F, 0x5E),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Padding = new Padding(0, 0, 0, 0)
+                TextAlign = ContentAlignment.MiddleCenter
             };
-            // Round top of header via parent paint, keep label flat
-            plot.Dock = DockStyle.Fill;
-            plot.BackColor = Color.White;
-            p.Controls.Add(plot);
-            p.Controls.Add(lbl);
-            return p;
+            var inner = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(6) };
+            inner.Tag = title;
+            card.Controls.Add(inner);
+            card.Controls.Add(lbl);
+            lbl.BringToFront();
+            inner.Click += (s, e) => HandleCardClick(card, inner, title);
+            lbl.Click += (s, e) => HandleCardClick(card, inner, title);
+            return card;
         }
 
-        private FormsPlot CreatePlot(string title)
+        private void HandleCardClick(Panel card, Panel inner, string title)
         {
-            var fp = new FormsPlot { Dock = DockStyle.Fill, BackColor = Color.White };
-            fp.Plot.FigureBackground.Color = new ScottPlot.Color(255, 255, 255);
-            fp.Plot.DataBackground.Color = new ScottPlot.Color(255, 255, 255);
-            fp.Plot.Axes.Color(new ScottPlot.Color(UiTheme.BorderSubtle.R, UiTheme.BorderSubtle.G, UiTheme.BorderSubtle.B));
-            fp.Plot.Grid.MajorLineColor = new ScottPlot.Color(UiTheme.BorderSubtle.R, UiTheme.BorderSubtle.G, UiTheme.BorderSubtle.B, 60);
-            var darkMuted = ControlPaint.Dark(UiTheme.MutedForeground, 0.4f);
-            fp.Plot.Axes.Bottom.TickLabelStyle.ForeColor = new ScottPlot.Color(darkMuted.R, darkMuted.G, darkMuted.B);
-            fp.Plot.Axes.Left.TickLabelStyle.ForeColor = new ScottPlot.Color(darkMuted.R, darkMuted.G, darkMuted.B);
-            fp.Plot.Title(title, 11);
-            // Hook click
-            fp.MouseDown += (s, e) =>
+            if (title.Contains("Уровень") && _lastStats != null && _lastStats.Total > 0)
             {
-                if (e.Button != MouseButtons.Left) return;
-                HandlePlotClick(fp, e.Location);
-            };
-            return fp;
-        }
-
-        private void HandlePlotClick(FormsPlot fp, Point pt)
-        {
-            if (fp == _plotLevel && _lastStats != null)
-            {
-                // Pie: simple top/bottom half for Critical/Error
-                var rect = fp.ClientRectangle;
-                bool isLeft = pt.X < rect.Width / 2;
-                // For 2 slices, left vs right is not accurate but give toggle
-                // Use X to pick: if pie has 2 slices, pick larger side
-                string key = _lastStats.Critical >= _lastStats.Error ? (isLeft ? "Critical" : "Error") : (isLeft ? "Error" : "Critical");
-                // Better: pick by total proportion not needed; just toggle between
-                if (_lastStats.Total == 0) return;
-                // Determine which slice is under cursor by angle (approx)
-                // Fallback: if click left half -> Critical else Error
+                string key = _lastStats.Critical >= _lastStats.Error ? "Critical" : "Error";
                 OnChartClick?.Invoke("Level", key);
             }
-            else if (fp == _plotHost && _hostKeys.Count > 0)
+            else if (title.Contains("хостов") && _hostKeys.Count > 0)
             {
-                // Horizontal bars: Y determines index
-                var plot = fp.Plot;
-                var coord = plot.GetCoordinates(new ScottPlot.Pixel(pt.X, pt.Y));
-                // Bars are horizontal, Y is index
-                int idx = (int)Math.Round(coord.Y);
-                if (idx >= 0 && idx < _hostKeys.Count)
-                    OnChartClick?.Invoke("Host", _hostKeys[idx]);
+                OnChartClick?.Invoke("Host", _hostKeys[0]);
             }
-            else if (fp == _plotSource && _sourceKeys.Count > 0)
+            else if (title.Contains("источников") && _sourceKeys.Count > 0)
             {
-                var plot = fp.Plot;
-                var coord = plot.GetCoordinates(new ScottPlot.Pixel(pt.X, pt.Y));
-                int idx = (int)Math.Round(coord.Y);
-                if (idx >= 0 && idx < _sourceKeys.Count)
-                    OnChartClick?.Invoke("Source", _sourceKeys[idx]);
+                OnChartClick?.Invoke("Source", _sourceKeys[0]);
             }
-            else if (fp == _plotTime && _timeBuckets.Count > 0)
+            else if (title.Contains("Динамика") && _timeBuckets.Count > 0)
             {
-                var plot = fp.Plot;
-                var coord = plot.GetCoordinates(new ScottPlot.Pixel(pt.X, pt.Y));
-                int idx = (int)Math.Round(coord.X);
-                if (idx >= 0 && idx < _timeBuckets.Count)
-                {
-                    string key = _timeBuckets[idx].ToString("yyyy-MM-dd HH:mm");
-                    OnChartClick?.Invoke("Time", key);
-                }
+                OnChartClick?.Invoke("Time", _timeBuckets[0].ToString("yyyy-MM-dd HH:mm"));
             }
         }
 
@@ -189,163 +141,198 @@ namespace ShadowRDP.Controls
             UpdateTime(stats);
         }
 
-        private void StylePlot(ScottPlot.Plot plot)
-        {
-            plot.FigureBackground.Color = new ScottPlot.Color(255, 255, 255);
-            plot.DataBackground.Color = new ScottPlot.Color(255, 255, 255);
-            plot.Axes.Color(new ScottPlot.Color(UiTheme.BorderSubtle.R, UiTheme.BorderSubtle.G, UiTheme.BorderSubtle.B));
-            plot.Grid.MajorLineColor = new ScottPlot.Color(UiTheme.BorderSubtle.R, UiTheme.BorderSubtle.G, UiTheme.BorderSubtle.B, 60);
-            var dm = ControlPaint.Dark(UiTheme.MutedForeground, 0.4f);
-            plot.Axes.Bottom.TickLabelStyle.ForeColor = new ScottPlot.Color(dm.R, dm.G, dm.B);
-            plot.Axes.Left.TickLabelStyle.ForeColor = new ScottPlot.Color(dm.R, dm.G, dm.B);
-            plot.Axes.Bottom.TickLabelStyle.FontSize = 9;
-            plot.Axes.Left.TickLabelStyle.FontSize = 9;
-        }
+        private Panel GetInner(Panel card) => card.Controls.OfType<Panel>().FirstOrDefault(p => p.Tag != null) ?? card;
 
         private void UpdateLevel(DashboardStats s)
         {
-            var plot = _plotLevel.Plot;
-            plot.Clear();
-            StylePlot(plot);
+            var inner = GetInner(_pnlLevel);
+            inner.Controls.Clear();
             if (s.Total == 0)
             {
-                plot.Title("Уровень — нет данных", 10);
-                _plotLevel.Refresh();
+                inner.Controls.Add(new Label { Text = "Уровень — нет данных", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.MutedForeground, Font = new Font("Segoe UI", 9f) });
                 return;
             }
-            double[] values = { s.Critical, s.Error };
-            string[] labels = { $"Critical {s.Critical}", $"Error {s.Error}" };
-            var pie = plot.Add.Pie(values);
-            for (int i = 0; i < pie.Slices.Count; i++)
+            var lbl = new Label { Text = $"Уровень ({s.Total})", Dock = DockStyle.Top, Height = 16, Font = new Font("Segoe UI", 7f, FontStyle.Bold), ForeColor = UiTheme.MutedForeground, TextAlign = ContentAlignment.MiddleCenter };
+            inner.Controls.Add(lbl);
+
+            var donut = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(8) };
+            donut.Paint += (ss, ee) =>
             {
-                pie.Slices[i].Label = labels[i];
-                pie.Slices[i].LabelFontSize = 9;
-                pie.Slices[i].LabelFontColor = new ScottPlot.Color(255, 255, 255);
-            }
-            if (pie.Slices.Count >= 2)
-            {
-                pie.Slices[0].FillColor = new ScottPlot.Color(176, 122, 114);
-                pie.Slices[1].FillColor = new ScottPlot.Color(41, 106, 160);
-            }
-            plot.Title($"Уровень ({s.Total})", 10);
-            plot.Axes.AutoScale();
-            _plotLevel.Refresh();
+                ee.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var g = ee.Graphics;
+                int size = Math.Min(donut.Width, donut.Height) - 16;
+                var rect = new Rectangle((donut.Width - size) / 2, (donut.Height - size) / 2, size, size);
+                double total = s.Critical + s.Error;
+                if (total == 0) total = 1;
+                float start = -90;
+                float sweepCrit = (float)(s.Critical / total * 360);
+                float sweepErr = 360 - sweepCrit;
+                using var brCrit = new SolidBrush(Color.FromArgb(176, 122, 114));
+                using var brErr = new SolidBrush(Color.FromArgb(41, 106, 160));
+                g.FillPie(brCrit, rect, start, sweepCrit);
+                g.FillPie(brErr, rect, start + sweepCrit, sweepErr);
+                var innerRect = new Rectangle(rect.X + size / 4, rect.Y + size / 4, size / 2, size / 2);
+                using var brWhite = new SolidBrush(Color.White);
+                g.FillEllipse(brWhite, innerRect);
+                // labels inside donut hole
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                // v3.9.3AQ — чёткий ClearType цифры (голый DrawString пикселил).
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                g.DrawString($"{s.Critical}", new Font("Segoe UI", 7f, FontStyle.Bold), Brushes.Black, innerRect, sf);
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
+            };
+            donut.Click += (ss, ee) => OnChartClick?.Invoke("Level", s.Critical >= s.Error ? "Critical" : "Error");
+            inner.Controls.Add(donut);
+
+            var legend = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 18, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.White };
+            legend.Controls.Add(new Label { Text = $"● Critical {s.Critical}", AutoSize = true, Font = new Font("Segoe UI", 7f), ForeColor = Color.FromArgb(176, 122, 114), Margin = new Padding(4, 0, 4, 0) });
+            legend.Controls.Add(new Label { Text = $"● Error {s.Error}", AutoSize = true, Font = new Font("Segoe UI", 7f), ForeColor = Color.FromArgb(41, 106, 160), Margin = new Padding(4, 0, 4, 0) });
+            inner.Controls.Add(legend);
         }
 
         private void UpdateHost(DashboardStats s)
         {
-            var plot = _plotHost.Plot;
-            plot.Clear();
-            StylePlot(plot);
+            var inner = GetInner(_pnlHost);
+            inner.Controls.Clear();
             _hostKeys = s.ByHost.Select(x => x.Key).ToList();
             if (_hostKeys.Count == 0)
             {
-                plot.Title("Хосты — нет данных", 10);
-                _plotHost.Refresh();
+                inner.Controls.Add(new Label { Text = "Хосты — нет данных", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.MutedForeground });
                 return;
             }
-            double[] values = s.ByHost.Select(x => (double)x.Count).ToArray();
-            double[] positions = Enumerable.Range(0, values.Length).Select(i => (double)i).ToArray();
-            string[] labels = s.ByHost.Select(x => x.Key.Length > 12 ? x.Key.Substring(0, 12) + "…" : x.Key).ToArray();
-            var bars = plot.Add.Bars(values);
-            bars.Horizontal = true;
-            foreach (var bar in bars.Bars)
+            var lbl = new Label { Text = $"Хосты топ-{_hostKeys.Count}", Dock = DockStyle.Top, Height = 16, Font = new Font("Segoe UI", 7f, FontStyle.Bold), ForeColor = UiTheme.MutedForeground, TextAlign = ContentAlignment.MiddleCenter };
+            inner.Controls.Add(lbl);
+
+            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Color.White, Padding = new Padding(4, 2, 4, 2) };
+            double max = s.ByHost.Max(x => x.Count);
+            if (max == 0) max = 1;
+            foreach (var item in s.ByHost)
             {
-                bar.Size = 0.6;
-                bar.FillColor = new ScottPlot.Color(41, 106, 160); // Host blue #296AA0
-                bar.LineColor = new ScottPlot.Color(30, 80, 120);
-                bar.Label = bar.Value.ToString();
+                var row = new Panel { Height = 18, Dock = DockStyle.Top, BackColor = Color.White, Margin = new Padding(0, 2, 0, 2) };
+                var barBg = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(246, 241, 231), Margin = new Padding(70, 4, 30, 4) };
+                var barFill = new Panel { Dock = DockStyle.Left, Width = (int)(70 + (barBg.Width - 100) * item.Count / max), BackColor = Color.FromArgb(41, 106, 160) };
+                // Actually compute width relative to panel: use barBg width
+                barFill.Width = (int)(barBg.Width * item.Count / max);
+                barBg.Controls.Add(barFill);
+                var lblName = new Label { Text = item.Key.Length > 12 ? item.Key.Substring(0, 12) + "…" : item.Key, AutoSize = false, Width = 68, Dock = DockStyle.Left, Font = new Font("Segoe UI", 7f), ForeColor = Color.FromArgb(51, 65, 85), TextAlign = ContentAlignment.MiddleLeft };
+                var lblVal = new Label { Text = item.Count.ToString(), AutoSize = false, Width = 28, Dock = DockStyle.Right, Font = new Font("Consolas", 7f), ForeColor = Color.FromArgb(41, 106, 160), TextAlign = ContentAlignment.MiddleRight };
+                row.Controls.Add(barBg);
+                row.Controls.Add(lblVal);
+                row.Controls.Add(lblName);
+                string key = item.Key;
+                row.Click += (ss, ee) => OnChartClick?.Invoke("Host", key);
+                lblName.Click += (ss, ee) => OnChartClick?.Invoke("Host", key);
+                list.Controls.Add(row);
             }
-            bars.ValueLabelStyle.FontSize = 9;
-            bars.ValueLabelStyle.Bold = true;
-            plot.Axes.Left.SetTicks(positions, labels);
-            plot.Axes.Left.TickLabelStyle.FontSize = 8;
-            plot.Axes.Margins(left: 0, right: 0.15);
-            plot.Title($"Хосты топ-{values.Length}", 10);
-            plot.Axes.AutoScale();
-            _plotHost.Refresh();
+            inner.Controls.Add(list);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachPanel(list);
         }
 
         private void UpdateSource(DashboardStats s)
         {
-            var plot = _plotSource.Plot;
-            plot.Clear();
-            StylePlot(plot);
+            var inner = GetInner(_pnlSource);
+            inner.Controls.Clear();
             _sourceKeys = s.BySource.Select(x => x.Key).ToList();
             if (_sourceKeys.Count == 0)
             {
-                plot.Title("Источники — нет данных", 10);
-                _plotSource.Refresh();
+                inner.Controls.Add(new Label { Text = "Источники — нет данных", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.MutedForeground });
                 return;
             }
-            double[] values = s.BySource.Select(x => (double)x.Count).ToArray();
-            var bars = plot.Add.Bars(values);
-            bars.Horizontal = true;
-            foreach (var bar in bars.Bars)
+            var lbl = new Label { Text = $"Источники топ-{_sourceKeys.Count}", Dock = DockStyle.Top, Height = 16, Font = new Font("Segoe UI", 7f, FontStyle.Bold), ForeColor = UiTheme.MutedForeground, TextAlign = ContentAlignment.MiddleCenter };
+            inner.Controls.Add(lbl);
+
+            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Color.White, Padding = new Padding(4, 2, 4, 2) };
+            double max = s.BySource.Max(x => x.Count);
+            if (max == 0) max = 1;
+            foreach (var item in s.BySource)
             {
-                bar.FillColor = new ScottPlot.Color(0xF5, 0x9E, 0x0B); // Source amber #F59E0B
-                bar.LineColor = new ScottPlot.Color(0xB4, 0x53, 0x09);
-                bar.Size = 0.6;
-                bar.Label = bar.Value.ToString();
+                var row = new Panel { Height = 18, Dock = DockStyle.Top, BackColor = Color.White, Margin = new Padding(0, 2, 0, 2) };
+                var barBg = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(246, 241, 231), Margin = new Padding(70, 4, 30, 4) };
+                var barFill = new Panel { Dock = DockStyle.Left, Width = (int)(100 * item.Count / max), BackColor = Color.FromArgb(245, 158, 11) };
+                barFill.Width = (int)(barBg.Width * item.Count / max);
+                barBg.Controls.Add(barFill);
+                var lblName = new Label { Text = item.Key.Length > 14 ? item.Key.Substring(0, 14) + "…" : item.Key, AutoSize = false, Width = 68, Dock = DockStyle.Left, Font = new Font("Segoe UI", 7f), ForeColor = Color.FromArgb(51, 65, 85) };
+                var lblVal = new Label { Text = item.Count.ToString(), AutoSize = false, Width = 28, Dock = DockStyle.Right, Font = new Font("Consolas", 7f), ForeColor = Color.FromArgb(245, 158, 11), TextAlign = ContentAlignment.MiddleRight };
+                row.Controls.Add(barBg);
+                row.Controls.Add(lblVal);
+                row.Controls.Add(lblName);
+                string key = item.Key;
+                row.Click += (ss, ee) => OnChartClick?.Invoke("Source", key);
+                list.Controls.Add(row);
             }
-            bars.ValueLabelStyle.FontSize = 9;
-            bars.ValueLabelStyle.Bold = true;
-            double[] pos = Enumerable.Range(0, values.Length).Select(i => (double)i).ToArray();
-            string[] labs = s.BySource.Select(x => x.Key.Length > 14 ? x.Key.Substring(0, 14) + "…" : x.Key).ToArray();
-            plot.Axes.Left.SetTicks(pos, labs);
-            plot.Axes.Left.TickLabelStyle.FontSize = 8;
-            plot.Axes.Margins(left: 0, right: 0.15);
-            plot.Title($"Источники топ-{values.Length}", 10);
-            plot.Axes.AutoScale();
-            _plotSource.Refresh();
+            inner.Controls.Add(list);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachPanel(list);
         }
 
         private void UpdateTime(DashboardStats s)
         {
-            var plot = _plotTime.Plot;
-            plot.Clear();
-            StylePlot(plot);
+            var inner = GetInner(_pnlTime);
+            inner.Controls.Clear();
             _timeBuckets = s.TimeSeries.Select(x => x.Bucket).ToList();
             if (_timeBuckets.Count == 0)
             {
-                plot.Title("Динамика — нет данных", 10);
-                _plotTime.Refresh();
+                inner.Controls.Add(new Label { Text = "Динамика — нет данных", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.MutedForeground });
                 return;
             }
-            double[] xs = Enumerable.Range(0, s.TimeSeries.Count).Select(i => (double)i).ToArray();
-            double[] ys = s.TimeSeries.Select(x => (double)x.Count).ToArray();
-            var scatter = plot.Add.Scatter(xs, ys);
-            scatter.LineWidth = 2.5f;
-            scatter.Color = new ScottPlot.Color(16, 185, 129); // Time green #10B981
-            scatter.MarkerSize = 7;
-            scatter.MarkerShape = ScottPlot.MarkerShape.FilledCircle;
-            // X labels as time
-            string[] xLabs = s.TimeSeries.Select(x => x.Bucket.ToString(s.Period == "30 мин" || s.Period == "1 час" ? "HH:mm" : "dd HH:mm")).ToArray();
-            double[] xPos = xs;
-            // Only show every Nth label to avoid overlap
-            int step = Math.Max(1, xLabs.Length / 4);
-            var tickPos = new List<double>();
-            var tickLabs = new List<string>();
-            for (int i = 0; i < xLabs.Length; i += step)
+            var lbl = new Label { Text = $"Динамика ({s.Period})", Dock = DockStyle.Top, Height = 16, Font = new Font("Segoe UI", 7f, FontStyle.Bold), ForeColor = UiTheme.MutedForeground, TextAlign = ContentAlignment.MiddleCenter };
+            inner.Controls.Add(lbl);
+
+            var chart = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(4) };
+            chart.Paint += (ss, ee) =>
             {
-                tickPos.Add(xPos[i]);
-                tickLabs.Add(xLabs[i]);
-            }
-            plot.Axes.Bottom.SetTicks(tickPos.ToArray(), tickLabs.ToArray());
-            plot.Axes.Bottom.TickLabelStyle.Rotation = -20;
-            plot.Axes.Bottom.TickLabelStyle.FontSize = 8;
-            plot.Title($"Динамика ({s.Period})", 10);
-            plot.Axes.AutoScale();
-            _plotTime.Refresh();
+                ee.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                int w = chart.Width, h = chart.Height;
+                int n = s.TimeSeries.Count;
+                if (n == 0) return;
+                double max = s.TimeSeries.Max(x => x.Count);
+                if (max == 0) max = 1;
+                var pts = new PointF[n];
+                for (int i = 0; i < n; i++)
+                {
+                    float x = (float)i / Math.Max(1, n - 1) * (w - 10) + 5;
+                    float y = h - 14 - (float)(s.TimeSeries[i].Count / max * (h - 24));
+                    pts[i] = new PointF(x, y);
+                }
+                // grid
+                using var penGrid = new Pen(Color.FromArgb(232, 221, 208), 1) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dot };
+                for (int i = 0; i < 3; i++)
+                {
+                    int y = 8 + i * (h - 24) / 3;
+                    ee.Graphics.DrawLine(penGrid, 5, y, w - 5, y);
+                }
+                // line + dots
+                using var pen = new Pen(Color.FromArgb(240, 160, 80), 2.5f) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+                if (n > 1) ee.Graphics.DrawLines(pen, pts);
+                foreach (var p in pts)
+                {
+                    ee.Graphics.FillEllipse(new SolidBrush(Color.FromArgb(240, 160, 80)), p.X - 3, p.Y - 3, 6, 6);
+                    ee.Graphics.DrawEllipse(new Pen(Color.White, 1), p.X - 3, p.Y - 3, 6, 6);
+                }
+                // x labels
+                int step = Math.Max(1, n / 4);
+                using var fnt = new Font("Consolas", 6f);
+                for (int i = 0; i < n; i += step)
+                {
+                    string lab = s.TimeSeries[i].Bucket.ToString(s.Period == "30 мин" || s.Period == "1 час" ? "HH:mm" : "dd HH:mm");
+                    // v3.9.3AQ — чёткий ClearType подписей.
+                    ee.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                    ee.Graphics.DrawString(lab, fnt, Brushes.Gray, pts[i].X - 12, h - 10);
+                    ee.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
+                }
+            };
+            chart.Click += (ss, ee) =>
+            {
+                if (_timeBuckets.Count > 0) OnChartClick?.Invoke("Time", _timeBuckets[0].ToString("yyyy-MM-dd HH:mm"));
+            };
+            inner.Controls.Add(chart);
         }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            try { _plotLevel?.Refresh(); } catch { }
-            try { _plotHost?.Refresh(); } catch { }
-            try { _plotSource?.Refresh(); } catch { }
-            try { _plotTime?.Refresh(); } catch { }
+            try { Invalidate(true); } catch { }
         }
     }
 }

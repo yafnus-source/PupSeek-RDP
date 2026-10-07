@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,6 +29,9 @@ namespace ShadowRDP.Forms
         private readonly DataGridView _grid;
         private readonly Label _statusLabel;
         private CancellationTokenSource? _cts;
+        // v4.5.4 — персистентность как в OpenFilesForm: размер окна + ширины
+        // колонок (сохраняем на resize/close, чтобы переживало выход).
+        private readonly System.Windows.Forms.Timer _saveDebounce = new() { Interval = 400 };
 
         public FindUserDialog(string currentComputer, string? initialUser = null)
             : this(currentComputer, initialUser, autoStart: false) { }
@@ -42,17 +46,29 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(640, 506);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = ShadowRDP.Helpers.UiTheme.Background;
+            BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
 
-            // Header
-            var headerPanel = Helpers.UiHeader.Create("Поиск пользователя", null, "search");
-            headerPanel.Dock = DockStyle.Top;
-            Controls.Add(headerPanel);
+            // ——— 1. Hero (стиль OpenFilesForm v4.3.3) ———
+            var hero = Helpers.UiModal.Hero("Поиск пользователя", "qwinsta по компьютерам домена", "search");
 
-            // Top row
-            var lblUser = new Label { Text = "Пользователь:", Location = new Point(16, 84), Size = new Size(90, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _userBox = new TextBox { Location = new Point(110, 82), Size = new Size(180, 22) };
+            // ——— 2. Content: params card + results card ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground };
+
+            var cardParams = Helpers.UiModal.Card(0, 0, 100, 100, "Параметры поиска", "search");
+            content.Controls.Add(cardParams);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { cardParams.Region?.Dispose(); cardParams.Region = null; } catch { }
+
+            var cardResults = Helpers.UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            content.Controls.Add(cardResults);
+            try { cardResults.Region?.Dispose(); cardResults.Region = null; } catch { }
+
+
+            // Поиск живёт в hero справа (как фильтр в OpenFiles): белый бокс
+            // + подсказка. Позиция — от реальной ширины hero (Shown/Resize).
+            var searchWrapper = Helpers.UiSearchBox.Create("Поиск…", _ => { }, width: 300, height: 27, background: Color.White);
+            _userBox = Helpers.UiSearchBox.GetBox(searchWrapper);
             // Pre-populate with the user from the row that was right-clicked —
             // typical flow is "I see this user, where else are they logged in?".
             // Strip "DOMAIN\" prefix because qwinsta matches on bare sAMAccountName.
@@ -64,9 +80,14 @@ namespace ShadowRDP.Forms
             {
                 if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; await OnSearchAsync(); }
             };
+            var searchHint = new Label { Text = "(имя или часть имени пользователя)", Location = new Point(70, 48), Size = new Size(300, 18), Font = new Font("Segoe UI", 8F), ForeColor = Color.FromArgb(210, 228, 238), TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent };
+            hero.Controls.Add(searchWrapper);
+            hero.Controls.Add(searchHint);
 
-            var lblScope = new Label { Text = "Где искать:", Location = new Point(300, 84), Size = new Size(80, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _scopeCombo = new ComboBox { Location = new Point(384, 82), Size = new Size(220, 22), DropDownStyle = ComboBoxStyle.DropDownList };
+            // Scope — белое rounded-поле в карточке параметров.
+            _scopeCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+            var scopeWrap = Helpers.UiModal.Field(_scopeCombo, width: 340);
+            scopeWrap.Location = new Point(16, 68);
             _scopeCombo.Items.AddRange(new object[]
             {
                 $"Только на {_currentComputer}",
@@ -74,43 +95,29 @@ namespace ShadowRDP.Forms
                 "Все компьютеры из адресной книги"
             });
             _scopeCombo.SelectedIndex = 0;
+            cardParams.Controls.Add(Helpers.UiModal.FieldLabel("Где искать:", 16, 50));
+            cardParams.Controls.Add(scopeWrap);
 
-            _searchBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Найти");
-            _searchBtn.Location = new Point(614, 80);
-            _searchBtn.Click += async (s, e) => await OnSearchAsync();
-            _cancelBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Прервать");
-            _cancelBtn.Location = new Point(710, 80);
-            _cancelBtn.Enabled = false;
-            _cancelBtn.Click += (s, e) => OnCancel();
-
-            Controls.AddRange(new Control[] { lblUser, _userBox, lblScope, _scopeCombo, _searchBtn, _cancelBtn });
-
-            _grid = new DataGridView
+            // === Grid (unified white style) inside its card ===
+            _grid = new DoubleBufferedDataGridView
             {
-                Location = new Point(16, 116),
-                Size = new Size(788, 480),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.Background,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F)
-                },
-                RowTemplate = { Height = 24 }
+                MultiSelect = true,
             };
-_grid.EnableHeadersVisualStyles = false;
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computer", HeaderText = "Компьютер", FillWeight = 120 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "UserName", HeaderText = "Пользователь", FillWeight = 100 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "SessionId", HeaderText = "ID", FillWeight = 40 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "State", HeaderText = "Состояние", FillWeight = 80 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computer", HeaderText = "Компьютер", FillWeight = 120, MinimumWidth = 90 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "UserName", HeaderText = "Пользователь", FillWeight = 100, MinimumWidth = 95 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "SessionId", HeaderText = "ID", FillWeight = 40, MinimumWidth = 50 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "State", HeaderText = "Состояние", FillWeight = 80, MinimumWidth = 90 });
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
+            // Чётные строки светлее RowBase — как в OpenFilesForm, тему не трогаем.
+            _grid.DefaultCellStyle.BackColor = Color.FromArgb(0xFD, 0xFB, 0xF7);
+            cardResults.Controls.Add(_grid);
+            RoundCorners(_grid, 7);
+            cardResults.Resize += (s, e) => { FitCardChild(cardResults, _grid); try { cardResults.Invalidate(true); } catch { } };
+            _grid.Resize += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            _grid.ColumnWidthChanged += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
 
             // v3.9.0 — right-click menu shown on demand as a themed popup.
             _grid.CellMouseDown += (sender, args) =>
@@ -128,36 +135,202 @@ _grid.EnableHeadersVisualStyles = false;
                 menu.Show(this, Control.MousePosition);
             };
 
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
-            Controls.Add(_grid);
-
+            // ——— 3. Status bar (thin strip above the footer) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = ShadowRDP.Helpers.UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(ShadowRDP.Helpers.UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _statusLabel = new Label
             {
-                Location = new Point(16, 606),
-                Size = new Size(700, 22),
+                Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Font = new Font("Segoe UI", 8F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(16, 0, 0, 0),
                 Text = "Введите имя пользователя и нажмите «Найти»."
             };
-            Controls.Add(_statusLabel);
+            statusPanel.Controls.Add(_statusLabel);
 
-            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(714, 604);
+            // ——— 4. Footer with action buttons ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = ShadowRDP.Helpers.UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(ShadowRDP.Helpers.UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+            _searchBtn = Helpers.UiButtons.MakeCompactFilled("Найти", w("Найти"));
+            _searchBtn.Location = new Point(16, 15);
+            _searchBtn.Click += async (s, e) => await OnSearchAsync();
+            _cancelBtn = Helpers.UiButtons.MakeCompactFilled("Прервать", w("Прервать"));
+            _cancelBtn.Location = new Point(16 + _searchBtn.Width + 8, 15);
+            _cancelBtn.Enabled = false;
+            _cancelBtn.Click += (s, e) => OnCancel();
+            _closeBtn = Helpers.UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
             _closeBtn.Click += (s, e) => Close();
-            Controls.Add(_closeBtn);
+            footer.Controls.AddRange(new Control[] { _searchBtn, _cancelBtn, _closeBtn });
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
             // CancelButton requires IButtonControl; Label doesn't implement it.
 
-            // When invoked from a context menu where a user is already
-            // selected, auto-start the search immediately on form open.
-            if (autoStart && !string.IsNullOrEmpty(initialSam))
+            // Dock order: content Fill first, hero Top, then the two Bottom
+            // strips (footer added last docks first → very bottom, status
+            // above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            var dpiScale = Helpers.UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
+
+            // Restore window size + grid column widths; save on close AND
+            // whenever the user resizes the window or drags a column (mirror
+            // of OpenFilesForm).
+            ShadowRDP.Services.WindowStateStore.Register(this, "findUser");
+            LoadColumnWidths();
+            FormClosing += (s, e) => SaveColumnWidths();
+            Resize += (s, e) => { _saveDebounce.Stop(); _saveDebounce.Start(); };
+            _grid.ColumnWidthChanged += (s, e) => { _saveDebounce.Stop(); _saveDebounce.Start(); };
+            _saveDebounce.Tick += (s, e) =>
             {
-                Shown += async (s, e) =>
+                _saveDebounce.Stop();
+                if (IsDisposed) return;
+                SaveColumnWidths();
+                ShadowRDP.Services.WindowStateStore.Save(this, "findUser");
+            };
+
+            content.Resize += (s, e) => LayoutContent();
+            hero.Resize += (s, e) => PositionSearch();
+            Shown += async (s, e) =>
+            {
+                LayoutContent();
+                PositionSearch();
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+                try { BeginInvoke(new Action(() => { try { Refresh(); } catch { } })); } catch { }
+                // When invoked from a context menu where a user is already
+                // selected, auto-start the search immediately on form open.
+                if (autoStart && !string.IsNullOrEmpty(initialSam))
                 {
                     // Tiny delay so the form finishes painting before the
                     // (blocking) search starts.
                     await Task.Delay(50);
                     await OnSearchAsync();
+                }
+            };
+
+            // Params card (fixed height) on top, results card fills the rest;
+            // search sits at the hero's right edge (no anchors — they capture
+            // garbage mid-layout; positions come from the real width).
+            void LayoutContent()
+            {
+                int W = content.ClientSize.Width, H = content.ClientSize.Height;
+                cardParams.Bounds = new Rectangle(14, 14, Math.Max(100, W - 28), 112);
+                int y2 = 14 + 112 + 12;
+                cardResults.Bounds = new Rectangle(14, y2, Math.Max(100, W - 28), Math.Max(100, H - y2 - 14));
+            }
+            LayoutContent();
+
+            void PositionSearch()
+            {
+                int x = Math.Max(16, hero.Width - 316);
+                searchWrapper.Location = new Point(x, 18);
+                searchHint.Location = new Point(x, 48);
+            }
+            PositionSearch();
+        }
+
+        // Child of a headerless card: uniform 14px padding on all sides.
+        private static void FitCardChild(Panel card, Control child)
+        {
+            child.Bounds = new Rectangle(14, 14,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 28));
+        }
+
+        // Скругление углов: режем Region контрола по скруглённому rect.
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
+        }
+
+        // === Per-form column width persistence (mirror of OpenFilesForm) ===
+        private const string ColumnWidthsFormKey = "findUser";
+
+        private void LoadColumnWidths()
+        {
+            try
+            {
+                var path = ShadowRDP.AppPaths.ColumnWidthsPath;
+                if (!File.Exists(path)) return;
+                var json = File.ReadAllText(path);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty(ColumnWidthsFormKey, out var formEntry)) return;
+                foreach (var prop in formEntry.EnumerateObject())
+                {
+                    if (!_grid.Columns.Contains(prop.Name)) continue;
+                    int w2 = prop.Value.GetInt32();
+                    if (w2 < 40) continue;  // sanity floor
+                    // Restore via FillWeight (proportion), not Width: in Fill
+                    // mode any subsequent grid resize redistributes columns by
+                    // FillWeight, silently discarding explicit Widths.
+                    _grid.Columns[prop.Name]!.FillWeight = w2;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"FindUser LoadColumnWidths failed: {ex.Message}");
+            }
+        }
+
+        private void SaveColumnWidths()
+        {
+            try
+            {
+                Dictionary<string, Dictionary<string, int>> data;
+                var path = ShadowRDP.AppPaths.ColumnWidthsPath;
+                if (File.Exists(path))
+                {
+                    var existing = File.ReadAllText(path);
+                    data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, int>>>(existing)
+                        ?? new Dictionary<string, Dictionary<string, int>>();
+                }
+                else
+                {
+                    data = new Dictionary<string, Dictionary<string, int>>();
+                }
+                var perForm = new Dictionary<string, int>();
+                foreach (DataGridViewColumn c in _grid.Columns)
+                {
+                    perForm[c.Name] = c.Width;
+                }
+                data[ColumnWidthsFormKey] = perForm;
+
+                var opts = new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 };
+                File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(data, opts));
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"FindUser SaveColumnWidths failed: {ex.Message}");
             }
         }
 

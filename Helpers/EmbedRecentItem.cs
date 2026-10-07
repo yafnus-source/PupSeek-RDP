@@ -62,9 +62,13 @@ namespace ShadowRDP.Helpers
             }
 
             // Program icon on the left.
+            // v3.9.3 — bicubic-масштаб иконки (был Default → пиксели).
             if (ProgramIcon != null)
             {
+                var imPrev = g.InterpolationMode;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 g.DrawImage(ProgramIcon, new Rectangle(4, midY, IconSize, IconSize));
+                g.InterpolationMode = imPrev;
             }
             else
             {

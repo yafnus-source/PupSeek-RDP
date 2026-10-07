@@ -91,8 +91,11 @@ namespace ShadowRDP.Helpers
         // === Palette: Light (original cream/indigo) ===
         public static readonly ThemePalette Light = new ThemePalette
         {
-            Background       = Color.FromArgb(245, 240, 235),
-            Card            = Color.FromArgb(250, 247, 244),
+            // v3.9.3CF — синяя тема: фон белый (был крем #F5F0EB).
+            Background       = Color.FromArgb(0xFF, 0xFF, 0xFF),
+            // v3.9.3CD — синяя тема: Card стальной светлый (был крем #FAF7F4):
+            // фон книги, хостов/статуса Событий, Web-секции.
+            Card            = Color.FromArgb(0xEC, 0xF1, 0xF7),
             Muted           = Color.FromArgb(237, 232, 226),
             HeaderBg        = Color.FromArgb(220, 215, 208),
             HoverRow        = Color.FromArgb(240, 236, 230),
@@ -111,15 +114,15 @@ namespace ShadowRDP.Helpers
             DangerBorder    = Color.FromArgb(254, 202, 202),
             Border          = Color.FromArgb(225, 220, 215),
             BorderSubtle    = Color.FromArgb(235, 230, 225),
-            StatusOnline    = Color.FromArgb(16, 185, 129),
+            StatusOnline    = Color.FromArgb(240, 160, 80),
             StatusActive    = Color.FromArgb(99, 102, 241),
             StatusOffline   = Color.FromArgb(214, 211, 209),
             HeaderBar       = Color.FromArgb(41, 106, 160),
             MenuIconBrown   = Color.FromArgb(146, 64, 14),
-            Sidebar         = Color.FromArgb(30, 58, 95),
-            SidebarItemHover= Color.FromArgb(42, 79, 122),
-            SidebarGroupBg  = Color.FromArgb(10, 26, 46),
-            SidebarSubFg     = Color.FromArgb(176, 196, 222),
+            Sidebar         = Color.FromArgb(0x16, 0x2B, 0x41),
+            SidebarItemHover= Color.FromArgb(0x24, 0x46, 0x6B),
+            SidebarGroupBg  = Color.FromArgb(0x0E, 0x1E, 0x30),
+            SidebarSubFg     = Color.FromArgb(0xB9, 0xC9, 0xDE),
             RowBase          = Color.FromArgb(245, 240, 235),
             RowAlt           = Color.FromArgb(250, 247, 244),
             SidebarTab       = Color.FromArgb(41, 106, 160),
@@ -130,8 +133,8 @@ namespace ShadowRDP.Helpers
             PillActiveBg     = Color.FromArgb(233, 234, 252),
             PillActiveFg     = Color.FromArgb(91, 95, 240),
             PillActiveBorder = Color.FromArgb(91, 95, 240),
-            GridHeaderBg     = Color.FromArgb(237, 232, 226),
-            GridHeaderFg     = Color.FromArgb(120, 113, 108),
+            GridHeaderBg     = Color.White,
+            GridHeaderFg     = Color.FromArgb(28, 25, 23),
             OutlineBorder    = Color.FromArgb(0x41, 0x6A, 0xA0),
             OutlineFg        = Color.FromArgb(41, 106, 160),
             GridSelectionFore= Color.FromArgb(91, 95, 240),
@@ -145,7 +148,8 @@ namespace ShadowRDP.Helpers
             Card            = Color.FromArgb(0xF2, 0xEF, 0xE0),
             Muted           = Color.FromArgb(0xDB, 0xD6, 0xC0),
             HeaderBg        = Color.FromArgb(0xCD, 0xC6, 0xAC),
-            HoverRow        = Color.FromArgb(0xE2, 0xDD, 0xC9),
+            // v3.9.3BG — ховер #E8ECE8 во всех таблицах.
+            HoverRow        = Color.FromArgb(0xE8, 0xE8, 0xE8),
             MutedHover      = Color.FromArgb(0xD2, 0xCC, 0xB2),
             Foreground      = Color.FromArgb(0x2B, 0x2A, 0x20),
             MutedForeground = Color.FromArgb(0x7E, 0x7A, 0x5E),
@@ -161,7 +165,6 @@ namespace ShadowRDP.Helpers
             DangerBorder    = Color.FromArgb(0xE0, 0xC2, 0xB8),
             Border          = Color.FromArgb(0xD4, 0xCF, 0xBB),
             BorderSubtle    = Color.FromArgb(0xE2, 0xDD, 0xC9),
-            StatusOnline    = Color.FromArgb(0x5F, 0x9E, 0x6E),
             StatusActive    = Color.FromArgb(0xA2, 0xAD, 0x9E),
             StatusOffline   = Color.FromArgb(0xC9, 0xC3, 0xAE),
             HeaderBar       = Color.FromArgb(0xA2, 0xAD, 0x9E),
@@ -177,11 +180,11 @@ namespace ShadowRDP.Helpers
             MenuBackground   = Color.FromArgb(0xFF, 0xFF, 0xFF),
             MenuIcon         = Color.FromArgb(0xA2, 0xAD, 0x9E),
             MenuIconNeutral  = Color.FromArgb(0xA2, 0xAD, 0x9E),
-            PillActiveBg     = Color.FromArgb(0xEA, 0xE4, 0xF0),
-            PillActiveFg     = Color.FromArgb(0x7B, 0x6F, 0xA8),
-            PillActiveBorder = Color.FromArgb(0x7B, 0x6F, 0xA8),
-            GridHeaderBg     = Color.FromArgb(0xD7, 0xDC, 0xD5),
-            GridHeaderFg     = Color.FromArgb(0x3A, 0x3A, 0x39),
+            PillActiveBg     = Color.FromArgb(0xF0, 0xA0, 0x50),
+            PillActiveFg     = Color.White,
+            PillActiveBorder = Color.FromArgb(0xF0, 0xA0, 0x50),
+            GridHeaderBg     = Color.White,
+            GridHeaderFg     = Color.FromArgb(43, 42, 32),
             OutlineBorder    = Color.FromArgb(0x72, 0x6D, 0x61),
             OutlineFg        = Color.FromArgb(0x72, 0x6D, 0x61),
             GridSelectionFore= Color.FromArgb(0x2B, 0x2A, 0x20),
@@ -239,6 +242,9 @@ namespace ShadowRDP.Helpers
                             if (dict.TryGetValue("PillActiveBg", out var b) && !string.IsNullOrWhiteSpace(b)) _pillBg = HexToColor(b);
                             if (dict.TryGetValue("PillActiveFg", out var f) && !string.IsNullOrWhiteSpace(f)) _pillFg = HexToColor(f);
                             if (dict.TryGetValue("PillActiveBorder", out var bo) && !string.IsNullOrWhiteSpace(bo)) _pillBorder = HexToColor(bo);
+                            if (dict.TryGetValue("HeroBg", out var hb) && !string.IsNullOrWhiteSpace(hb)) _heroBg = HexToColor(hb);
+                            if (dict.TryGetValue("RdpHeaderBg", out var rh) && !string.IsNullOrWhiteSpace(rh)) _rdpHeaderBg = HexToColor(rh);
+                            if (dict.TryGetValue("DialogHeaderBg", out var dh) && !string.IsNullOrWhiteSpace(dh)) _dialogHeaderBg = HexToColor(dh);
                         }
                     }
                 }
@@ -246,26 +252,50 @@ namespace ShadowRDP.Helpers
             catch { }
         }
 
-        // Persist here only the pill colours (no other surface customisation).
-        public static void SetPillColors(Color bg, Color fg, Color border)
+        // Persist here only custom colours (pills + hero, no other surface).
+        private static void SaveCustomColors()
         {
-            _pillBg = bg;
-            _pillFg = fg;
-            _pillBorder = border;
             try
             {
                 var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (_pillBg.HasValue) dict["PillActiveBg"] = ColorToHex(_pillBg.Value);
                 if (_pillFg.HasValue) dict["PillActiveFg"] = ColorToHex(_pillFg.Value);
                 if (_pillBorder.HasValue) dict["PillActiveBorder"] = ColorToHex(_pillBorder.Value);
+                if (_heroBg.HasValue) dict["HeroBg"] = ColorToHex(_heroBg.Value);
+                if (_rdpHeaderBg.HasValue) dict["RdpHeaderBg"] = ColorToHex(_rdpHeaderBg.Value);
+                if (_dialogHeaderBg.HasValue) dict["DialogHeaderBg"] = ColorToHex(_dialogHeaderBg.Value);
                 File.WriteAllText(AppPaths.ColorsPath,
                     JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
 
+        public static void SetPillColors(Color bg, Color fg, Color border)
+        {
+            _pillBg = bg;
+            _pillFg = fg;
+            _pillBorder = border;
+            SaveCustomColors();
+            try { PillColorsChanged?.Invoke(); } catch { }
+        }
+        // v3.9.3CY — сброс кастомных цветов пил (null = палитра темы).
+        public static void ResetPillColors()
+        {
+            _pillBg = null;
+            _pillFg = null;
+            _pillBorder = null;
+            SaveCustomColors();
+            try { PillColorsChanged?.Invoke(); } catch { }
+        }
+        public static event Action? PillColorsChanged;
+
         public static string ColorToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-        public static Color HexToColor(string h)
+        // v3.9.3CY — тёмный/светлый текст на произвольном фоне (пилы, свотчи).
+        public static Color ContrastText(Color c)
+        {
+            var lum = c.R * 0.299 + c.G * 0.587 + c.B * 0.114;
+            return lum > 150 ? Color.FromArgb(0x2B, 0x2A, 0x20) : Color.White;
+        }        public static Color HexToColor(string h)
         {
             try
             {
@@ -287,7 +317,89 @@ namespace ShadowRDP.Helpers
         }
 
         // === Current-palette accessors (existing call sites keep working) ===
+        // v3.9.3BH — HeroBg: пользовательский цвет hero (как пилы через
+        // colors.json); по умолчанию HeaderBar текущей темы. HeroFg —
+        // авоконтраст текста (тёмный на светлом фоне).
+        private static Color? _heroBg;
+        public static Color HeroBg => _heroBg ?? Current.HeaderBar;
+        public static Color HeroFg
+        {
+            get
+            {
+                var bg = HeroBg;
+                double lum = (0.299 * bg.R + 0.587 * bg.G + 0.114 * bg.B) / 255.0;
+                return lum > 0.6 ? Current.Foreground : Color.White;
+            }
+        }
+        public static event Action? HeroColorChanged;
+        public static void SetHeroColor(Color bg)
+        {
+            _heroBg = bg;
+            SaveCustomColors();
+            try { HeroColorChanged?.Invoke(); } catch { }
+        }
+        public static void ResetHeroColor()
+        {
+            _heroBg = null;
+            SaveCustomColors();
+            try { HeroColorChanged?.Invoke(); } catch { }
+        }
+        // v3.9.3CM — эксперимент: цвет области шапки RDP (как hero в Даше).
+        // По умолчанию Card (как было); текст — авоконтраст; персист в colors.json.
+        private static Color? _rdpHeaderBg;
+        public static Color RdpHeaderBg => _rdpHeaderBg ?? Card;
+        public static Color RdpHeaderFg
+        {
+            get
+            {
+                var bg = RdpHeaderBg;
+                double lum = (0.299 * bg.R + 0.587 * bg.G + 0.114 * bg.B) / 255.0;
+                return lum > 0.6 ? Current.Foreground : Color.White;
+            }
+        }
+        public static event Action? RdpHeaderColorChanged;
+        public static void SetRdpHeaderColor(Color bg)
+        {
+            _rdpHeaderBg = bg;
+            SaveCustomColors();
+            try { RdpHeaderColorChanged?.Invoke(); } catch { }
+        }
+        public static void ResetRdpHeaderColor()
+        {
+            _rdpHeaderBg = null;
+            SaveCustomColors();
+            try { RdpHeaderColorChanged?.Invoke(); } catch { }
+        }
+        // v3.9.3CY — хедер всплывающих окон: НЕ зависит от hero. По умолчанию
+        // синий HeaderBar темы (решение пользователя). Авоконтраст текста.
+        private static Color? _dialogHeaderBg;
+        public static Color DialogHeaderBg => _dialogHeaderBg ?? Current.HeaderBar;
+        public static Color DialogHeaderFg
+        {
+            get
+            {
+                var bg = DialogHeaderBg;
+                double lum = (0.299 * bg.R + 0.587 * bg.G + 0.114 * bg.B) / 255.0;
+                return lum > 0.6 ? Current.Foreground : Color.White;
+            }
+        }
+        public static event Action? DialogHeaderColorChanged;
+        public static void SetDialogHeaderColor(Color bg)
+        {
+            _dialogHeaderBg = bg;
+            SaveCustomColors();
+            try { DialogHeaderColorChanged?.Invoke(); } catch { }
+        }
+        public static void ResetDialogHeaderColor()
+        {
+            _dialogHeaderBg = null;
+            SaveCustomColors();
+            try { DialogHeaderColorChanged?.Invoke(); } catch { }
+        }
         public static Color Background        => Current.Background;
+        // v3.9.3CJ — диалоги в синей теме: фон #ECF1F7, карточки белые.
+        public static Color DialogBackground => CurrentName != "Olive" ? Color.FromArgb(0xEC, 0xF1, 0xF7) : Background;
+        public static Color DialogCard       => CurrentName != "Olive" ? Color.White : Card;
         public static Color Card             => Current.Card;
         public static Color Muted            => Current.Muted;
         public static Color HeaderBg         => Current.HeaderBg;
@@ -326,6 +438,9 @@ namespace ShadowRDP.Helpers
         public static Color PillActiveBg     => _pillBg ?? Current.PillActiveBg;
         public static Color PillActiveFg     => _pillFg ?? Current.PillActiveFg;
         public static Color PillActiveBorder => _pillBorder ?? Current.PillActiveBorder;
+        // v3.9.3 — пользователь задал свои цвета пил (через «Настройки цвета»):
+        // пилы видов Даша тогда следуют за настройкой, иначе остаются рыжими.
+        public static bool PillColorsCustomized => _pillBg.HasValue || _pillFg.HasValue || _pillBorder.HasValue;
         public static Color GridHeaderBg     => Current.GridHeaderBg;
         public static Color GridHeaderFg     => Current.GridHeaderFg;
         public static Color OutlineBorder    => Current.OutlineBorder;

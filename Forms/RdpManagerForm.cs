@@ -155,15 +155,59 @@ namespace ShadowRDP.Forms
         // default RDP-session view.
         private Label _bookTab = null!;
         private Label _passwordsTab = null!;
-        private Label _dashboardTab = null!;
+        private Label _zabbixAgentTab = null!;
+        // v4.7 — вкладки модулей (бывшая жёсткая TODO.шная): кнопки и хосты
+        // строятся динамически из включённых модулей (ModuleManager).
+        private Panel _modulesPanel = null!;
+        private readonly System.Collections.Generic.Dictionary<string, Label> _moduleTabButtons = new(System.StringComparer.OrdinalIgnoreCase);
+        private readonly System.Collections.Generic.Dictionary<string, Panel> _moduleHosts = new(System.StringComparer.OrdinalIgnoreCase);
+        private readonly System.Collections.Generic.Dictionary<string, Control> _moduleForms = new(System.StringComparer.OrdinalIgnoreCase);
+        private string? _activeModuleId;
         private Panel _bookHost = null!;
-        private Panel _dashboardHost = null!;
+        private Panel _dashHost = null!;
         private AddressBookForm? _bookForm;
-        private Forms.DashboardForm? _dashboardForm;
+        private Forms.ZabbixAgentDashboardForm? _dashForm;
         private SidebarTab _activeTab = SidebarTab.Sessions;
 
         internal enum SidebarTab { Sessions, Book, Dashboard }
-        internal void ShowDashboard() => SwitchTab(SidebarTab.Dashboard);
+
+        // v3.9.3K — SHA256 запущенного exe (первые 8). Синхронно: 78МБ
+        // читаются ~0.3-1с, зато хеш в заголовке с первой секунды.
+        // Пути-кандидаты по надёжности; чтение с FileShare.ReadWrite,
+        // чтобы не конфликтовать с образом в памяти. Неудача — в лог.
+        internal static string ComputeOwnHash()
+        {
+            string asmLoc = "";
+            try { asmLoc = System.Reflection.Assembly.GetExecutingAssembly().Location ?? ""; } catch { }
+            string[] candidates = new string[]
+            {
+                System.Environment.ProcessPath ?? "",
+                Application.ExecutablePath ?? "",
+                asmLoc
+            };
+            foreach (var path in candidates)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) continue;
+                    using var sha = System.Security.Cryptography.SHA256.Create();
+                    using var fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete);
+                    var h = sha.ComputeHash(fs);
+                    return BitConverter.ToString(h).Replace("-", "").Substring(0, 8);
+                }
+                catch (Exception ex)
+                {
+                    try { Logger.Warn("BuildHash: " + path + ": " + ex.GetType().Name + ": " + ex.Message); } catch { }
+                }
+            }
+            try { Logger.Warn("BuildHash: все кандидаты недоступны"); } catch { }
+            return "????????";
+        }
+        // v4.8 — единый дашборд: шимы открывают его сразу на нужной вьюхе.
+        internal void ShowDashboard() => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events);
+        internal void ShowZabbixAgent() => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor);
+        // v4.7 — навигация на вкладку модуля по id ("todo").
+        internal void ShowModule(string id) => SwitchToModule(id);
 
         private RdpManagerForm()
         {
@@ -171,7 +215,10 @@ namespace ShadowRDP.Forms
             // the title bar (used to live in MainForm). Icon uses StatusIcon
             // (red = admin, green = unprivileged) for the same visual cue.
             var isAdmin = Services.AdminElevation.IsAdministrator();
-            Text = $"Pup Seek RDP — Менеджер   [{(isAdmin ? "Администратор" : "без прав")}]";
+            // v3.9.3K — хеш сборки СИНХРОННО до показа окна (асинхронный
+            // вариант терялся молча: пользователь никогда не видел хеш).
+            string buildHash = ComputeOwnHash();
+            Text = $"Pup Seek RDP — Менеджер   [{(isAdmin ? "Администратор" : "без прав")}]   [{buildHash}]";
             ClientSize = new Size(1200, 800);
             MinimumSize = new Size(900, 500);
             StartPosition = FormStartPosition.CenterScreen;
@@ -181,6 +228,10 @@ namespace ShadowRDP.Forms
             BackColor = Helpers.UiTheme.Background;
             try { Icon = Services.StatusIcon.Create(isAdmin); }
             catch (Exception ex) { Logger.Warn($"StatusIcon failed: {ex.Message}"); }
+
+            // v4.9.4 — любое изменение TODO (голосовой ввод, автосинк
+            // календаря, ручные правки) обновляет бейдж-счётчик в сайдбаре.
+            try { Services.TodoStore.DataChanged += OnTodoDataChanged; } catch { }
 
             // v3.0.1: persist window size. FormClosed won't fire (X-button
             // is intercepted to hide-to-tray), so we live-save on Resize/Move
@@ -243,13 +294,16 @@ namespace ShadowRDP.Forms
                 Visible = false  // Sessions view is the default
             };
             _mainArea.Controls.Add(_bookHost);
-            _dashboardHost = new Panel
+            _dashHost = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Helpers.UiTheme.Background,
                 Visible = false
             };
-            _mainArea.Controls.Add(_dashboardHost);
+            _mainArea.Controls.Add(_dashHost);
+
+            // v4.7 — секция вкладок модулей (Dock=Top, высота по контенту):
+            // кнопки строятся из включённых модулей (бывшая TODO.шная).
 
             // v3.0.5: sidebar separator removed — main area now directly
             // touches the sidebar. Was a 1px Dock=Left panel (UiTheme.Border).
@@ -320,21 +374,8 @@ namespace ShadowRDP.Forms
                 if (_wheelRouter != null)
                     Application.RemoveMessageFilter(_wheelRouter);
             };
-            // v2.1.91: right-click on empty sidebar area → "+ Сессия" menu.
-            // Same handler as the "+" button in header — opens
-            // CustomSessionEditForm to add SSH/Web shortcut.
-            _sidebarList.MouseDown += (s, e) =>
-            {
-                if (e.Button != MouseButtons.Right) return;
-                // Hit-test: if click landed on a child (session item or
-                // group header), let that child handle it.
-                var hit = _sidebarList.GetChildAtPoint(e.Location);
-                if (hit != null) return;
-                var menu = new Helpers.ThemedContextMenu();
-                menu.AddHeader("Боковая панель");
-                menu.AddItem("+  Сессия…", "add", () => AddSessionViaSidebar());
-                menu.Show(this, _sidebarList.PointToScreen(e.Location));
-            };
+            // v4.9.34 — меню на пустом месте сайдбара убрано: "+ Сессия…"
+// живёт пунктами в контекстных меню самих сессий.
             // v2.2.25: _sidebarList is now inside _sidebarScrollHost (added
             // in the constructor above). No direct add to sidebar.
 
@@ -343,21 +384,22 @@ namespace ShadowRDP.Forms
             // opens the KeePass vault manager form (same UI as from tray).
             // Sessions are still visible in the sidebar as tabs; this button
             // is a shortcut, not a tab toggle.
-            // v4.0 — Дашбоард (Zabbix-like) tab: sits BELOW Инструменты.
-            // Added FIRST so with DockStyle.Top it ends up at the bottom of the nav stack.
-            _dashboardTab = Helpers.UiButtons.MakeFilled("Дашбоард", "dashboard",
-                Color.FromArgb(0x48, 0x30, 0x2F), width: 166, radius: 0);
-            _dashboardTab.Dock = DockStyle.Top;
-            _dashboardTab.Height = 36;
-            _dashboardTab.Margin = Padding.Empty;
-            sidebar.Controls.Add(_dashboardTab);
+            // v4.8 — единый Дашборд (внутри пил Events/Monitor/Web) — на месте Z.
+            // v3.9.3CC — синяя тема: тёмно-синий вместо бордо.
+            bool isBlue = ShadowRDP.Helpers.UiTheme.CurrentName != "Olive";
+            _zabbixAgentTab = Helpers.UiButtons.MakeFilled("Дашборд", "dashboard",
+                isBlue ? Color.FromArgb(0x24, 0x46, 0x6B) : Color.FromArgb(0x48, 0x30, 0x2F), width: 166, radius: 0);
+            _zabbixAgentTab.Dock = DockStyle.Top;
+            _zabbixAgentTab.Height = 36;
+            _zabbixAgentTab.Margin = Padding.Empty;
+            sidebar.Controls.Add(_zabbixAgentTab);
 
             // v3.9 — "Инструменты" dropdown, placed in the sidebar BELOW
             // "Пароли" with the same filled nav-button look as Книга/Пароли.
             // Added BEFORE Пароли/Книга so with DockStyle.Top it ends up at
             // the bottom of the three (under Пароли).
             _toolsTab = Helpers.UiButtons.MakeFilled("Инструменты", "gear",
-                Color.FromArgb(0x56, 0x5C, 0x30), width: 166, radius: 0);
+                isBlue ? Color.FromArgb(0x2E, 0x6D, 0xA4) : Color.FromArgb(0x56, 0x5C, 0x30), width: 166, radius: 0);
             _toolsTab.Dock = DockStyle.Top;
             _toolsTab.Height = 36;
             _toolsTab.Margin = Padding.Empty;
@@ -369,6 +411,20 @@ namespace ShadowRDP.Forms
             _passwordsTab.Height = 36;
             _passwordsTab.Margin = Padding.Empty;
             sidebar.Controls.Add(_passwordsTab);  // Top second
+
+            // v4.7 — контейнер кнопок модулей на месте бывшей TODO.шной
+            // (в тон Книге, между Паролями и Книгой). Высота = 36px × N.
+            _modulesPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 0,
+                Margin = Padding.Empty,
+                BackColor = sidebarBg,
+                Visible = false
+            };
+            sidebar.Controls.Add(_modulesPanel);
+            RebuildModuleTabs();
+            try { Services.ModuleManager.StateChanged += OnModuleStateChanged; } catch { }
 
             // Book tab — sits ABOVE СЕССИИ. Styled like the RDP Manager
             // button: filled #296AA0, white text + white icon. Click →
@@ -418,10 +474,9 @@ namespace ShadowRDP.Forms
                 sidebar.Controls.Add(container);
             }
 
-            // Click handlers — Book/Dashboard switch the main area; Пароли opens
-            // the KeePass vault manager form (non-modal singleton).
+            // Click handlers — Book/Dashboard/ZabbixAgent switch the main area; Пароли opens
             _bookTab.Click += (s, e) => SwitchTab(SidebarTab.Book);
-            _dashboardTab.Click += (s, e) => SwitchTab(SidebarTab.Dashboard);
+            _zabbixAgentTab.Click += (s, e) => SwitchTab(SidebarTab.Dashboard);
             _passwordsTab.Click += (s, e) => OpenPasswordVault();
 
             // Active-tab arrow — small left-pointing triangle at the
@@ -437,7 +492,8 @@ namespace ShadowRDP.Forms
             body.Controls.Add(sidebar);       // Left — docks before Fill
 
             // Header separator (Dock.Top, 1px).
-            var headerSep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Helpers.UiTheme.Border };
+            // v3.9.3CO — убран: светлая граница под областью шапки.
+            // var headerSep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Helpers.UiTheme.Border };
 
             // === Header (Dock.Top) ===
             // v2.3: 48 → 36 (−6 top + −6 bottom per user request). Button
@@ -446,7 +502,8 @@ namespace ShadowRDP.Forms
             {
                 Dock = DockStyle.Top,
                 Height = 36,
-                BackColor = Helpers.UiTheme.Card
+                // v3.9.3CM — эксперимент: цвет области выбирается (как hero в Даше).
+                BackColor = Helpers.UiTheme.RdpHeaderBg
             };
 
             // v2.1.48 — replaced the old programmatic monitor icon with
@@ -469,21 +526,34 @@ namespace ShadowRDP.Forms
                 Location = new Point(52, 10),
                 AutoSize = true,
                 Font = new Font("Segoe UI Semibold", 10F),
-                ForeColor = Helpers.UiTheme.Foreground,
-                BackColor = Helpers.UiTheme.Card
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent
             };
             header.Controls.Add(title);
+            _hdrTitle = title;
 
             // Status badge.
             _statusBadge = new Label
             {
-                Text = " ● Подключено",
+                Text = "",
+                Tag = "Подключено",
                 Location = new Point(170, 10),
-                AutoSize = true,
+                AutoSize = false,
+                Size = new Size(110, 20),
                 Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.FromArgb(5, 150, 105),
-                BackColor = Color.FromArgb(236, 253, 245),
-                Padding = new Padding(6, 2, 6, 2)
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _statusBadge.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var dot = new SolidBrush(Color.FromArgb(5, 150, 105));
+                e.Graphics.FillEllipse(dot, 0, 6, 8, 8);
+                TextRenderer.DrawText(e.Graphics, _statusBadge.Tag as string ?? "", _statusBadge.Font,
+                    new Rectangle(13, 0, _statusBadge.Width - 13, _statusBadge.Height),
+                    Helpers.UiTheme.RdpHeaderFg,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             };
             header.Controls.Add(_statusBadge);
 
@@ -494,24 +564,34 @@ namespace ShadowRDP.Forms
             {
                 Text = "",
                 Visible = false,
-                AutoSize = true,
+                AutoSize = false,
+                Size = new Size(10, 22),
+                Location = new Point(0, 8),
                 Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.FromArgb(0x63, 0x71, 0xF1),  // indigo-500
-                BackColor = Color.FromArgb(0xEE, 0xF2, 0xFF),  // indigo-50
-                Padding = new Padding(6, 2, 6, 2)
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
             };
+            _sessionNameLbl.Paint += (s, e) => PaintHeaderFact(_sessionNameLbl, e.Graphics, "computer");
+            _sessionNameLbl.Cursor = Cursors.Hand;
+            _sessionNameLbl.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) JumpToPillSession(); };
             header.Controls.Add(_sessionNameLbl);
 
             _sessionIpLbl = new Label
             {
                 Text = "",
                 Visible = false,
-                AutoSize = true,
+                AutoSize = false,
+                Size = new Size(10, 22),
+                Location = new Point(0, 8),
                 Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.White,
-                BackColor = ShadowRDP.Helpers.UiTheme.HeaderBar,  // matches Книга button
-                Padding = new Padding(6, 2, 6, 2)
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
             };
+            _sessionIpLbl.Paint += (s, e) => PaintHeaderFact(_sessionIpLbl, e.Graphics, "globe");
+            _sessionIpLbl.Cursor = Cursors.Hand;
+            _sessionIpLbl.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) JumpToPillSession(); };
             header.Controls.Add(_sessionIpLbl);
 
             // v3.5.4 — terminal indicator pill (shows "🖥️ PowerShell" or "🖥️ CMD").
@@ -519,11 +599,18 @@ namespace ShadowRDP.Forms
             {
                 Text = "",
                 Visible = false,
-                AutoSize = true,
+                AutoSize = false,
+                Size = new Size(10, 22),
+                Location = new Point(0, 8),
                 Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(0x3C, 0x3C, 0x3C),
-                Padding = new Padding(6, 2, 6, 2)
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _terminalLbl.Paint += (s, e) =>
+            {
+                string key = _terminalLbl.Text.Contains("Power", StringComparison.OrdinalIgnoreCase) ? "powershell" : "terminal";
+                PaintHeaderFact(_terminalLbl, e.Graphics, key);
             };
             header.Controls.Add(_terminalLbl);
 
@@ -827,6 +914,8 @@ namespace ShadowRDP.Forms
                 {
                     var iconH = psBtn.Font.Height;
                     iconW = (int)Math.Round(icon.Width * (double)iconH / icon.Height);
+                    // v3.9.3 — bicubic-масштаб иконки (был Default → пиксели).
+                    e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     e.Graphics.DrawImage(icon, new Rectangle(6, (psBtn.Height - iconH) / 2, iconW, iconH));
                 }
                 var textRect = new Rectangle(icon != null ? 6 + iconW + 4 : 0, 0,
@@ -880,6 +969,8 @@ namespace ShadowRDP.Forms
                 {
                     var iconH = (int)Math.Round(cmdBtn.Font.Height * 0.8);
                     iconW = (int)Math.Round(icon.Width * (double)iconH / icon.Height);
+                    // v3.9.3 — bicubic-масштаб иконки (был Default → пиксели).
+                    e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     e.Graphics.DrawImage(icon, new Rectangle(6, (cmdBtn.Height - iconH) / 2, iconW, iconH));
                 }
                 var textRect = new Rectangle(icon != null ? 6 + iconW + 4 : 0, 0,
@@ -904,6 +995,9 @@ namespace ShadowRDP.Forms
             // back. Arbitrary programs are NOT embedded (MMC only).
             _toolTip = new ToolTip { ShowAlways = true, InitialDelay = 300, AutoPopDelay = 10000 };
             _headerPanel = header;
+            // v3.9.3CY — выбор цвета области перенесён в «Инструменты → Настройки цвета» (ПКМ убран).
+            Helpers.UiTheme.RdpHeaderColorChanged += ApplyRdpHeaderColors;
+            header.Disposed += (s, e) => { try { Helpers.UiTheme.RdpHeaderColorChanged -= ApplyRdpHeaderColors; } catch { } };
 
             // v3.9 D — header "Встроить ММС" removed: legacy embedBtn/embedMenu (ContextMenuStrip popup)
             // caused first-click miss due to toolsMenu.Close()+BeginInvoke race and handle warming.
@@ -933,8 +1027,27 @@ namespace ShadowRDP.Forms
             toolsMenu.AddItem("Сессия", "add", () => addSession());
             toolsMenu.AddItem("В книгу", "book", () => addToBook());
             toolsMenu.AddSeparator();
+            // v4.7 — менеджер встраиваемых модулей (TODO.шная и будущие).
+            toolsMenu.AddItem("Модули…", "tasks", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { new Forms.ModuleManagerForm().Show(); } catch { }
+                }));
+            });
+            toolsMenu.AddSeparator();
             toolsMenu.AddItem("Сменить пароль", "key", () => changePwd());
             toolsMenu.AddItem("Тема", "sun", () => switchTheme());
+            // v3.9.3CY — все настройки цвета программы в одном окне.
+            toolsMenu.AddItem("Настройки цвета…", "info", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.ColorSettingsForm.Show(this); } catch { }
+                }));
+            });
             _toolsTab.Click += (s, e) => toolsMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)));
 
             // Recompute X position — right-anchored buttons.
@@ -951,9 +1064,8 @@ namespace ShadowRDP.Forms
             };
 
             // Add controls to form in REVERSE dock order:
-            // Fill (body) first, then Top (headerSep, header).
+            // Fill (body) first, then Top (header).
             Controls.Add(body);       // Fill
-            Controls.Add(headerSep);  // Top — 1px line
             Controls.Add(header);     // Top — 48px header
 
             // v4.0 — dashboard poller + balloon wiring (LAN-only, 1 user, 30min)
@@ -993,6 +1105,34 @@ namespace ShadowRDP.Forms
                 };
             }
             catch (Exception ex) { try { Logger.Warn($"Dashboard poller start failed: {ex.Message}"); } catch { } }
+            try { Services.ZabbixAgentPollerService.Start(); } catch (Exception ex) { try { Logger.Warn($"ZabbixAgent poller start failed: {ex.Message}"); } catch { } }
+            // v4.7 — ICMP-пинг хостов даша Z раз в час (колонка «Пинг»: OK/FAIL).
+            try { Services.HostPingService.Start(); } catch (Exception ex) { try { Logger.Warn($"HostPing start failed: {ex.Message}"); } catch { } }
+            // v4.6 — web-мониторинг даша Z (ряд WEB): старт поллера + баллун о крахе.
+            try
+            {
+                Services.WebMonitorPollerService.Start();
+                Services.WebMonitorPollerService.OnWebDown += pt =>
+                {
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            string detail = pt.StatusCode > 0 ? $"HTTP {pt.StatusCode} за {pt.Ms}мс" : $"{pt.Error}";
+                            try { ShadowRdpAppContext.ShowBalloon($"Ресурс недоступен — {pt.Url}", detail, ToolTipIcon.Warning); }
+                            catch
+                            {
+                                using var ni = new NotifyIcon { Visible = true, Icon = Icon, BalloonTipTitle = $"Ресурс недоступен — {pt.Url}", BalloonTipText = detail };
+                                ni.ShowBalloonTip(4000);
+                            }
+                            try { if (Services.EventDashboardStore.LoadSettings().NotifySound) System.Media.SystemSounds.Exclamation.Play(); } catch { }
+                        }));
+                    }
+                    catch { }
+                };
+            }
+            catch (Exception ex) { try { Logger.Warn($"WebMonitor poller start failed: {ex.Message}"); } catch { } }
+            try { Services.FtpUploadService.Start(); } catch (Exception ex) { try { Logger.Warn($"FtpUploadService start failed: {ex.Message}"); } catch { } }
 
             FormClosing += (s, e) =>
             {
@@ -1042,6 +1182,9 @@ namespace ShadowRDP.Forms
         private bool _isDragging;
         private bool _suppressClick;     // swallow the Click raised after a drag
         private string _dragGroup = "";  // group key of the dragged item
+        // v4.9.28 — drop target group under cursor (may differ from
+        // _dragGroup → cross-group move). Reset on MouseDown.
+        private string _dropGroup = "";
         private int _dropIndicatorY = -1; // insertion-slot Y in _sidebarList coords (-1 = hidden)
 
         // v3.8.x — next free SortOrder within a group. Numbering is shared
@@ -1059,23 +1202,27 @@ namespace ShadowRDP.Forms
             return max + 1;
         }
 
-        public void AddSession(string computer, string? ip, string? group = null, bool autoOpen = true, int sortOrder = -1)
+        public void AddSession(string computer, string? ip, string? group = null, bool autoOpen = true, int sortOrder = -1, string? displayName = null, string? notes = null, bool transient = false)
         {
             var target = !string.IsNullOrEmpty(ip) ? ip : computer;
 
             var sess = new RdpSession
             {
                 Computer = computer,
+                DisplayName = displayName ?? "",
+                Notes = notes ?? "",
                 Target = target,
                 Ip = ip ?? "",
                 Group = group ?? "",
                 Client = null,
                 AutoOpen = autoOpen,
+                Transient = transient,
                 // v3.8.x — new sessions append to the bottom of their group.
                 SortOrder = sortOrder >= 0 ? sortOrder : NextSortOrder(group ?? "")
             };
             _sessions.Add(sess);
-            if (!_batchRender) RenderSidebar();
+            // v3.9.3 — transient: вкладка без следа (не в сайдбар, не на диск).
+            if (!transient && !_batchRender) RenderSidebar();
 
             if (autoOpen)
             {
@@ -1107,7 +1254,7 @@ namespace ShadowRDP.Forms
 
             if (!_batchRender)
             {
-                PersistSessions();
+                if (!transient) PersistSessions();
                 RaiseSessionListChanged();
             }
         }
@@ -1216,7 +1363,7 @@ namespace ShadowRDP.Forms
                     // them on demand by clicking the tab.
                     // v3.8.x: restore SortOrder so a reordered sidebar
                     // survives restart.
-                    AddSession(e.Computer, e.Ip, e.Group, autoOpen: e.AutoOpen, sortOrder: e.SortOrder);
+                    AddSession(e.Computer, e.Ip, e.Group, autoOpen: e.AutoOpen, sortOrder: e.SortOrder, displayName: e.DisplayName, notes: e.Notes);
                     // v2.2.28: restore per-session creds from cache.
                     if (_rdpPerSessionCreds.TryGetValue(e.Computer, out var cached))
                     {
@@ -1281,16 +1428,18 @@ namespace ShadowRDP.Forms
         private void SwitchTab(SidebarTab tab)
         {
             _activeTab = tab;
+            _activeModuleId = null;
+            HideModuleHosts();
 
             if (tab == SidebarTab.Book)
                 EnsureBookEmbedded();
             else if (tab == SidebarTab.Dashboard)
-                EnsureDashboardEmbedded();
+                EnsureDashEmbedded();
 
             _bookHost.Visible = (tab == SidebarTab.Book);
-            _dashboardHost.Visible = (tab == SidebarTab.Dashboard);
+            _dashHost.Visible = (tab == SidebarTab.Dashboard);
             if (tab == SidebarTab.Book) _bookHost.BringToFront();
-            else if (tab == SidebarTab.Dashboard) _dashboardHost.BringToFront();
+            else if (tab == SidebarTab.Dashboard) _dashHost.BringToFront();
 
             if (tab == SidebarTab.Sessions)
             {
@@ -1311,17 +1460,202 @@ namespace ShadowRDP.Forms
             Logger.Info("RDP Manager: AddressBookForm embedded into _bookHost");
         }
 
-        private void EnsureDashboardEmbedded()
+        // v4.8 — единый дашборд (Events/Monitor/Web внутри одной формы).
+        private void EnsureDashEmbedded()
         {
-            if (_dashboardForm != null && !_dashboardForm.IsDisposed) return;
-            _dashboardForm = new Forms.DashboardForm();
-            _dashboardForm.TopLevel = false;
-            _dashboardForm.FormBorderStyle = FormBorderStyle.None;
-            _dashboardForm.Dock = DockStyle.Fill;
-            _dashboardForm.Visible = true;
-            _dashboardHost.Controls.Add(_dashboardForm);
-            _dashboardForm.Show();
-            Logger.Info("RDP Manager: DashboardForm embedded into _dashboardHost");
+            if (_dashForm != null && !_dashForm.IsDisposed) return;
+            _dashForm = new Forms.ZabbixAgentDashboardForm();
+            _dashForm.TopLevel = false;
+            _dashForm.FormBorderStyle = FormBorderStyle.None;
+            _dashForm.Dock = DockStyle.Fill;
+            _dashForm.Visible = true;
+            _dashHost.Controls.Add(_dashForm);
+            _dashForm.Show();
+            Logger.Info("RDP Manager: unified dashboard embedded into _dashHost");
+        }
+
+        // v4.8 — открыть единый дашборд сразу на нужной вьюхе.
+        internal void OpenDash(Forms.ZabbixAgentDashboardForm.DashView view)
+        {
+            SwitchTab(SidebarTab.Dashboard);
+            try { _dashForm?.SwitchView(view); } catch { }
+        }
+
+        public static void OpenModule(string id)
+        {
+            OpenOrRestore();
+            try { Instance.SwitchToModule(id); } catch { }
+        }
+
+        // v4.7 — навигация/встраивание вкладок модулей (обобщённая бывшая
+        // EnsureTodoEmbedded). Хосты модулей создаются лениво, скрываются
+        // при переключении на штатные вкладки (HideModuleHosts).
+        internal void SwitchToModule(string id)
+        {
+            ShadowRDP.Models.AppModule? m = null;
+            try { m = Services.ModuleManager.Get(id); } catch { }
+            if (m == null) return;
+            try { if (!Services.ModuleManager.IsEnabled(m.Id)) return; } catch { return; }
+            EnsureModuleEmbedded(m.Id);
+            _activeModuleId = m.Id;
+            foreach (var kv in _moduleHosts)
+                kv.Value.Visible = string.Equals(kv.Key, m.Id, System.StringComparison.OrdinalIgnoreCase);
+            _bookHost.Visible = false;
+            _dashHost.Visible = false;
+            try { _moduleHosts[m.Id].BringToFront(); } catch { }
+            UpdateTabVisuals();
+        }
+
+        private void HideModuleHosts()
+        {
+            try
+            {
+                foreach (var kv in _moduleHosts)
+                    kv.Value.Visible = false;
+            }
+            catch { }
+        }
+
+        private void EnsureModuleEmbedded(string id)
+        {
+            ShadowRDP.Models.AppModule? m = null;
+            try { m = Services.ModuleManager.Get(id); } catch { }
+            if (m == null) return;
+            try
+            {
+                if (_moduleForms.TryGetValue(id, out var f) && f != null && !f.IsDisposed) return;
+            }
+            catch { }
+            Control? content = null;
+            try { content = m.CreateTabContent(); } catch { }
+            if (content == null) return;
+            try
+            {
+                if (content is Form cf)
+                {
+                    cf.TopLevel = false;
+                    cf.FormBorderStyle = FormBorderStyle.None;
+                    cf.Dock = DockStyle.Fill;
+                    cf.Visible = true;
+                }
+                else
+                {
+                    content.Dock = DockStyle.Fill;
+                    content.Visible = true;
+                }
+                if (!_moduleHosts.TryGetValue(id, out var host) || host == null || host.IsDisposed)
+                {
+                    host = new Panel { Dock = DockStyle.Fill, BackColor = Helpers.UiTheme.Background, Visible = false };
+                    _moduleHosts[id] = host;
+                    _mainArea.Controls.Add(host);
+                }
+                host.Controls.Clear();
+                host.Controls.Add(content);
+                _moduleForms[id] = content;
+                if (content is Form cf2) { try { cf2.Show(); } catch { } }
+                Logger.Info($"RDP Manager: module '{id}' embedded");
+            }
+            catch { }
+        }
+
+        private void RebuildModuleTabs()
+        {
+            try
+            {
+                if (_modulesPanel == null || _modulesPanel.IsDisposed) return;
+                foreach (Control c in _modulesPanel.Controls) { try { c.Dispose(); } catch { } }
+                _modulesPanel.Controls.Clear();
+                _moduleTabButtons.Clear();
+                System.Collections.Generic.List<ShadowRDP.Models.AppModule> enabled;
+                try { enabled = new System.Collections.Generic.List<ShadowRDP.Models.AppModule>(Services.ModuleManager.GetEnabled()); }
+                catch { return; }
+                // Dock=Top: добавляем в обратном порядке, чтобы визуальный
+                // порядок совпал с порядком каталога.
+                for (int i = enabled.Count - 1; i >= 0; i--)
+                {
+                    var m = enabled[i];
+                    if (m == null || !m.ShowInSidebar) continue;
+                    string text;
+                    try { text = m.SidebarText(); } catch { text = m.Name; }
+                    var btn = Helpers.UiButtons.MakeFilled(text, m.IconKey,
+                        ShadowRDP.Helpers.UiTheme.SidebarTab, width: 166, radius: 0);
+                    btn.Dock = DockStyle.Top;
+                    btn.Height = 36;
+                    btn.Margin = Padding.Empty;
+                    var mid = m.Id;
+                    btn.Click += (s, e) => SwitchToModule(mid);
+                    _modulesPanel.Controls.Add(btn);
+                    _moduleTabButtons[mid] = btn;
+                }
+                int vis = _moduleTabButtons.Count;
+                _modulesPanel.Height = vis * 36;
+                _modulesPanel.Visible = vis > 0;
+            }
+            catch { }
+        }
+
+        // v4.9.4 — TodoStore.DataChanged → освежить тексты модулей в сайдбаре
+        // (бейдж TODO) из любого потока через BeginInvoke.
+        private void OnTodoDataChanged()
+        {
+            try
+            {
+                if (IsDisposed || Disposing) return;
+                if (InvokeRequired) { try { BeginInvoke(new Action(OnTodoDataChanged)); } catch { } return; }
+                RefreshModuleButtons();
+            }
+            catch { }
+        }
+
+        private void RefreshModuleButtons()
+        {
+            try
+            {
+                foreach (var kv in _moduleTabButtons)
+                {
+                    ShadowRDP.Models.AppModule? m = null;
+                    try { m = Services.ModuleManager.Get(kv.Key); } catch { }
+                    if (m == null) continue;
+                    string text;
+                    try { text = m.SidebarText(); } catch { text = m.Name; }
+                    if (kv.Value.Text != text) kv.Value.Text = text;
+                    try { kv.Value.Invalidate(); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        private void OnModuleStateChanged(string id, bool enabled)
+        {
+            if (IsDisposed || Disposing) return;
+            try
+            {
+                if (InvokeRequired) { try { BeginInvoke(new Action(() => OnModuleStateChanged(id, enabled))); } catch { } return; }
+                RebuildModuleTabs();
+                if (!enabled)
+                {
+                    try
+                    {
+                        if (_moduleHosts.TryGetValue(id, out var host) && host != null && !host.IsDisposed)
+                            host.Visible = false;
+                        if (_moduleForms.TryGetValue(id, out var f) && f != null && !f.IsDisposed)
+                        {
+                            try { host?.Controls.Remove(f); } catch { }
+                            try { f.Dispose(); } catch { }
+                        }
+                        _moduleForms.Remove(id);
+                    }
+                    catch { }
+                    // Выключили активный модуль — вернуться на сессии.
+                    if (string.Equals(_activeModuleId, id, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        _activeModuleId = null;
+                        SwitchTab(SidebarTab.Sessions);
+                    }
+                    else RefreshModuleButtons();
+                }
+            }
+            catch { }
         }
 
         // Updates the visual state of both sidebar tabs based on _activeTab.
@@ -1333,8 +1667,9 @@ namespace ShadowRDP.Forms
         private void UpdateTabVisuals()
         {
             _bookTab.Invalidate();
-            _dashboardTab.Invalidate();
+            _zabbixAgentTab.Invalidate();
             _passwordsTab.Invalidate();
+            RefreshModuleButtons();
         }
 
         // v3.7.1 — sidebar "Пароли" button opens the KeePass vault manager
@@ -1502,11 +1837,15 @@ namespace ShadowRDP.Forms
         {
             try
             {
-                RdpSessionStore.Save(_sessions.Select(s =>
+                // v3.9.3 — transient-сессии (подключения из книги) на диск
+                // не пишутся: ни следа после закрытия.
+                RdpSessionStore.Save(_sessions.Where(s => !s.Transient).Select(s =>
                     new RdpSessionStore.Entry {
                         Computer = s.Computer,
                         Ip = string.IsNullOrEmpty(s.Ip) ? null : s.Ip,
                         Group = string.IsNullOrEmpty(s.Group) ? null : s.Group,
+                        DisplayName = string.IsNullOrEmpty(s.DisplayName) ? null : s.DisplayName,
+                        Notes = string.IsNullOrEmpty(s.Notes) ? null : s.Notes,
                         AutoOpen = s.AutoOpen,
                         SortOrder = s.SortOrder
                     }));
@@ -1541,7 +1880,7 @@ namespace ShadowRDP.Forms
                     : $"addressbook_{groupFilter}.csv",
                 DefaultExt = "csv"
             };
-            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, sfd) != DialogResult.OK) return;
             try
             {
                 Services.BookCsvExporter.ExportToCsv(entries, groupFilter, columns, sfd.FileName);
@@ -1571,10 +1910,10 @@ namespace ShadowRDP.Forms
                 FileName = "sessions.json",
                 DefaultExt = "json"
             };
-            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, sfd) != DialogResult.OK) return;
             try
             {
-                var rdp = _sessions.Select(s => new RdpSessionStore.Entry
+                var rdp = _sessions.Where(s => !s.Transient).Select(s => new RdpSessionStore.Entry
                 {
                     Computer = s.Computer,
                     Ip = string.IsNullOrEmpty(s.Ip) ? null : s.Ip,
@@ -1582,7 +1921,7 @@ namespace ShadowRDP.Forms
                     AutoOpen = s.AutoOpen
                 });
                 Services.SessionExportService.Write(sfd.FileName, rdp, _customSessions);
-                Logger.Info($"RDP Manager: exported {_sessions.Count} RDP + {_customSessions.Count} custom session(s) to {sfd.FileName}");
+                Logger.Info($"RDP Manager: exported {rdp.Count()} RDP + {_customSessions.Count} custom session(s) to {sfd.FileName}");
                 MessageBox.Show(this, $"Экспортировано в:\n{sfd.FileName}", "Экспорт сессий",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -1602,7 +1941,7 @@ namespace ShadowRDP.Forms
                 DefaultExt = "csv",
                 Title = "Импорт книги из CSV"
             };
-            if (ofd.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, ofd) != DialogResult.OK) return;
 
             List<Models.AddressBookEntry> imported;
             try
@@ -1658,7 +1997,7 @@ namespace ShadowRDP.Forms
                 DefaultExt = "json",
                 Title = "Импорт сессий из JSON"
             };
-            if (ofd.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, ofd) != DialogResult.OK) return;
 
             List<RdpSessionStore.Entry> importedRdp;
             List<Models.CustomSession> importedCustom;
@@ -1719,6 +2058,12 @@ namespace ShadowRDP.Forms
         {
             _activeSession = active;
             UpdateSessionInfoPills(active);
+            // v3.9.3CT — прячем всё, что может лежать поверх клиента:
+            // дашборд, книгу, модули, SFTP (было: из Даши переход не виден).
+            try { if (_dashHost != null && !_dashHost.IsDisposed) _dashHost.Visible = false; } catch { }
+            try { if (_bookHost != null && !_bookHost.IsDisposed) _bookHost.Visible = false; } catch { }
+            try { HideModuleHosts(); } catch { }
+            try { if (_activeSftpForm != null && !_activeSftpForm.IsDisposed) _activeSftpForm.Hide(); } catch { }
             // v2.1.93: also hide all custom (SSH/Web) placeholder panels —
             // when the user clicks an RDP session item after viewing a Web
             // session, the WebView2 panel was staying visible because it
@@ -1778,6 +2123,9 @@ namespace ShadowRDP.Forms
         private Label _sessionNameLbl = null!;
         private Label _sessionIpLbl = null!;
         private Label _terminalLbl = null!;
+        private Label _hdrTitle = null!;
+        // v3.9.3CO — сессия за фактами шапки (клик → в её окно).
+        private RdpSession? _pillSession;
         private Controls.ConsoleSessionControl? _activeConsole;
 
         // === v2.1.49 — Sidebar rendering with groups ===
@@ -1873,13 +2221,15 @@ namespace ShadowRDP.Forms
                 LayoutHeaderLeftBlock();
                 return;
             }
-            _sessionNameLbl.Text = name!;
+            _sessionNameLbl.Tag = name!;
             _sessionNameLbl.Visible = true;
+            SizeHeaderFact(_sessionNameLbl);
 
             if (!string.IsNullOrWhiteSpace(target))
             {
-                _sessionIpLbl.Text = target!;
+                _sessionIpLbl.Tag = target!;
                 _sessionIpLbl.Visible = true;
+                SizeHeaderFact(_sessionIpLbl);
             }
             else
             {
@@ -1891,24 +2241,38 @@ namespace ShadowRDP.Forms
 
         private void UpdateSessionInfoPills(RdpSession? sess)
         {
+            _pillSession = sess;
             if (sess == null || string.IsNullOrWhiteSpace(sess.Computer))
             {
                 UpdateSessionInfoPills(null, null);
                 return;
             }
-            UpdateSessionInfoPills($"💻 {sess.Computer}", $"🌐 {sess.Ip}");
+            UpdateSessionInfoPills(SessName(sess), sess.Ip);
+        }
+
+        // v3.9.3CO — клик по Name/IP: в окно открытой сессии этой записи.
+        private void JumpToPillSession()
+        {
+            try
+            {
+                var sess = _pillSession;
+                if (sess == null)
+                {
+                    Logger.Info("RDP Manager: pill click — no session attached");
+                    return;
+                }
+                Logger.Info($"RDP Manager: pill click → {sess.Computer}");
+                ActivateSession(sess);
+            }
+            catch (Exception ex) { Logger.Warn("RDP Manager: pill click failed: " + ex.Message); }
         }
 
         // v3.5.4 — show which terminal (PowerShell / CMD) is active.
         private void ShowTerminalIndicator(string title)
         {
-            _terminalLbl.Text = $"🖥️ {title}";
+            _terminalLbl.Tag = title;
             _terminalLbl.Visible = true;
-            // Match pill color to the calling button.
-            if (title.Contains("Power", StringComparison.OrdinalIgnoreCase))
-                _terminalLbl.BackColor = Color.FromArgb(0x01, 0x24, 0x56);  // PS button blue
-            else
-                _terminalLbl.BackColor = Color.FromArgb(0x3C, 0x3C, 0x3C);  // CMD button dark gray
+            SizeHeaderFact(_terminalLbl);
             LayoutHeaderLeftBlock();
         }
 
@@ -1916,6 +2280,61 @@ namespace ShadowRDP.Forms
         {
             _terminalLbl.Visible = false;
             LayoutHeaderLeftBlock();
+        }
+
+        // v3.9.3CM — эксперимент: факты шапки текстом с иконкой (без фонов),
+        // цвет текста — от фона области (как в Даше).
+        private void PaintHeaderFact(Label lbl, Graphics g, string iconKey)
+        {
+            try
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                bool light = Helpers.UiTheme.RdpHeaderFg.ToArgb() != Color.White.ToArgb();
+                Image? glyph = null;
+                try
+                {
+                    var raw = Helpers.MenuIcons.Get(iconKey);
+                    glyph = light ? Helpers.MenuIcons.Darken(raw) : Helpers.UiButtons.TintWhite(raw);
+                }
+                catch { }
+                if (glyph != null)
+                    g.DrawImage(glyph, new Rectangle(0, (lbl.Height - 16) / 2, 16, 16));
+                string txt = lbl.Tag as string ?? "";
+                TextRenderer.DrawText(g, txt, lbl.Font,
+                    new Rectangle(20, 0, Math.Max(0, lbl.Width - 20), lbl.Height),
+                    Helpers.UiTheme.RdpHeaderFg,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            }
+            catch { }
+        }
+
+        private static void SizeHeaderFact(Label lbl)
+        {
+            try
+            {
+                int tw = TextRenderer.MeasureText(lbl.Tag as string ?? "", lbl.Font).Width;
+                lbl.Size = new Size(20 + tw + 2, 22);
+            }
+            catch { }
+        }
+
+        private void ApplyRdpHeaderColors()
+        {
+            try
+            {
+                if (_headerPanel != null && !_headerPanel.IsDisposed)
+                    _headerPanel.BackColor = Helpers.UiTheme.RdpHeaderBg;
+                if (_hdrTitle != null && !_hdrTitle.IsDisposed)
+                    _hdrTitle.ForeColor = Helpers.UiTheme.RdpHeaderFg;
+                foreach (var lbl in new[] { _statusBadge, _sessionNameLbl, _sessionIpLbl, _terminalLbl })
+                {
+                    if (lbl == null || lbl.IsDisposed) continue;
+                    lbl.ForeColor = Helpers.UiTheme.RdpHeaderFg;
+                    lbl.BackColor = Color.Transparent;
+                    try { lbl.Invalidate(); } catch { }
+                }
+            }
+            catch { }
         }
 
         // v3.6.8 — lays out the header's left block left→right: session
@@ -1926,16 +2345,21 @@ namespace ShadowRDP.Forms
         // Менеджер / Подключено / Сеанс / IP).
         private void LayoutHeaderLeftBlock()
         {
-            int x = _statusBadge.Right + 8;
+            // v3.9.3CO — факты вплотную к «Подключено» (было +8/+6).
+            // v3.9.3CP — Name/IP на 5px левее и 2px выше; наверх z-порядка.
+            // v3.9.3CT — ещё на 5px левее.
+            int x = _statusBadge.Right - 6;
             if (_sessionNameLbl.Visible)
             {
-                _sessionNameLbl.Location = new Point(x, 10);
-                x = _sessionNameLbl.Right + 6;
+                _sessionNameLbl.Location = new Point(x, 8);
+                try { _sessionNameLbl.BringToFront(); } catch { }
+                x = _sessionNameLbl.Right + 4;
             }
             if (_sessionIpLbl.Visible)
             {
-                _sessionIpLbl.Location = new Point(x, 10);
-                x = _sessionIpLbl.Right + 6;
+                _sessionIpLbl.Location = new Point(x, 8);
+                try { _sessionIpLbl.BringToFront(); } catch { }
+                x = _sessionIpLbl.Right + 4;
             }
             // v3.9 — each open console (CMD/PS/MMC…) gets its own header pill,
             // laid out left→right and persisting while the console is open
@@ -1963,12 +2387,12 @@ namespace ShadowRDP.Forms
         // (host or host:port).
         private void UpdateSessionInfoPills(Models.CustomSession? sess)
         {
+            _pillSession = null;
             if (sess == null || string.IsNullOrWhiteSpace(sess.Name))
             {
                 UpdateSessionInfoPills(null, null);
                 return;
             }
-            string nameIcon = sess.Kind == Models.SessionKind.Web ? "🌐" : "🖥️";
             string target = sess.Target ?? "";
             if (sess.Kind == Models.SessionKind.Web && !string.IsNullOrWhiteSpace(target))
             {
@@ -1979,7 +2403,7 @@ namespace ShadowRDP.Forms
                 }
                 catch { /* leave target as-is */ }
             }
-            UpdateSessionInfoPills($"{nameIcon} {sess.Name}", $"🔗 {target}");
+            UpdateSessionInfoPills(sess.Name, target);
         }
 
         // v2.3.10 — Returns a copy of `src` where each RGB channel is
@@ -2024,11 +2448,20 @@ namespace ShadowRDP.Forms
                 Size = new Size(size, size),
                 // v3.0.16: shift 3px up per user request (was vertical-centre).
                 Location = new Point(itemWidth - size - rightPad, (itemHeight - size) / 2 - 3),
-                BackColor = color
+                BackColor = Color.Transparent
             };
-            using var path = new System.Drawing.Drawing2D.GraphicsPath();
-            path.AddEllipse(0, 0, size, size);
-            dot.Region = new System.Drawing.Region(path);
+            // v4.8.1 — круг гладкой отрисовкой (был Region: лесенка).
+            var dotColor = color;
+            dot.Paint += (s, e) =>
+            {
+                try
+                {
+                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    using var br = new SolidBrush(dotColor);
+                    e.Graphics.FillEllipse(br, 0, 0, size - 1, size - 1);
+                }
+                catch { }
+            };
             return dot;
         }
 
@@ -2043,7 +2476,9 @@ namespace ShadowRDP.Forms
 
                 // v2.1.83: combine RDP + custom sessions for grouping.
                 // Both share the Group field, so they mix naturally.
+                // v3.9.3 — transient-сессии в сайдбар не попадают.
                 var orderedGroups = _sessions
+                    .Where(s => !s.Transient)
                     .Select(s => s.Group ?? "")
                     .Concat(_customSessions.Select(c => c.Group ?? ""))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -2056,7 +2491,7 @@ namespace ShadowRDP.Forms
                 {
                     var group = orderedGroups[gi];
                     var rdpInGroup = _sessions
-                        .Where(s => string.Equals(s.Group ?? "", group, StringComparison.OrdinalIgnoreCase))
+                        .Where(s => !s.Transient && string.Equals(s.Group ?? "", group, StringComparison.OrdinalIgnoreCase))
                         .ToList();
                     var customInGroup = _customSessions
                         .Where(c => string.Equals(c.Group ?? "", group, StringComparison.OrdinalIgnoreCase))
@@ -2272,14 +2707,14 @@ namespace ShadowRDP.Forms
                 isConnected ? Helpers.UiTheme.StatusOnline : Color.FromArgb(0x70, 0x80, 0x95),
                 6, itemHeight, itemWidth));
 
-            // Computer name — top line.
+            // Computer name — top line (v4.9.34: DisplayName иначе Computer).
             // v2.3.9: white text on dark sidebar; on active (Card) keep dark.
             // v2.3.11: width shortened so the right-edge dot doesn't overlap.
             bool isActive = _activeSession == sess;
             var name = new Label
             {
                 Name = "nameLbl",
-                Text = sess.Computer,
+                Text = SessName(sess),
                 Location = new Point(30, 5),
                 Size = new Size(itemWidth - 30 - 24, 16),
                 Font = new Font("Segoe UI", 9F),
@@ -2359,6 +2794,8 @@ namespace ShadowRDP.Forms
                     sub.AddItem("Да", "on_green", () => SetSessionAutoOpen(sess, true), null, sess.AutoOpen);
                     sub.AddItem("Нет", "off_red", () => SetSessionAutoOpen(sess, false), null, !sess.AutoOpen);
                 });
+                // v4.9.29 — редактирование данных сессии (имя, IP, группа).
+                menu.AddItem("Редактировать запись…", "info", () => EditRdpSession(sess));
                 menu.AddSeparator();
                 menu.AddSubmenu("Группа", "list", sub =>
                 {
@@ -2386,6 +2823,9 @@ namespace ShadowRDP.Forms
                 menu.AddSeparator();
                 menu.AddItem("Перезапустить сеанс", "restart", () => RestartSession(sess));
                 menu.AddItem("Закрыть", "delete", () => CloseSession(sess));
+                menu.AddSeparator();
+                // v4.9.34 — "+ Сессия" пунктом меню (меню пустой области убрано).
+                menu.AddItem("+  Сессия…", "add", () => AddSessionViaSidebar());
                 var ctl = (Control)s;
                 menu.Show(this, ctl.PointToScreen(new Point(e.X, e.Y)));
             };
@@ -2513,6 +2953,7 @@ namespace ShadowRDP.Forms
                 DefaultCellStyle = {
                     BackColor = Helpers.UiTheme.Background,
                     ForeColor = Helpers.UiTheme.Foreground,
+                    // v3.9.3BI — выбор #E8ECE8.
                     SelectionBackColor = Helpers.UiTheme.AccentSoft,
                     SelectionForeColor = Helpers.UiTheme.Accent
                 }
@@ -2534,6 +2975,8 @@ namespace ShadowRDP.Forms
             grid.Columns.Add(colParam);
             grid.Columns.Add(colValue);
             body.Controls.Add(grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(grid);
 
             // Populate rows.
             grid.Rows.Add("Название", sess.Name);
@@ -2555,11 +2998,10 @@ namespace ShadowRDP.Forms
                 BackColor = Helpers.UiTheme.Background
             };
             dlg.Controls.Add(footer);
-            var okBtn = Helpers.UiButtons.MakeFilled("OK", null,
-                ShadowRDP.Helpers.UiTheme.HeaderBar, width: 96, radius: 1);
-            okBtn.Location = new Point((footer.Width - 96) / 2, 10);
+            var okBtn = Helpers.UiButtons.MakeCompactFilled("OK", 100);
+            okBtn.Location = new Point((footer.Width - 100) / 2, 10);
             footer.Controls.Add(okBtn);
-            footer.Resize += (s, e) => okBtn.Location = new Point((footer.Width - 96) / 2, 10);
+            footer.Resize += (s, e) => okBtn.Location = new Point((footer.Width - 100) / 2, 10);
             var hiddenOk = new Button
             {
                 Visible = true,
@@ -2572,7 +3014,7 @@ namespace ShadowRDP.Forms
             okBtn.Click += (_, _) => dlg.DialogResult = DialogResult.OK;
             hiddenOk.Click += (_, _) => dlg.DialogResult = DialogResult.OK;
 
-            dlg.ShowDialog(this);
+            ShadowRDP.Helpers.UiModal.ShowDimmed(this, dlg);
         }
 
         // v2.2.19 — Explicitly add a computer as an RDP session tab in the
@@ -2607,6 +3049,36 @@ namespace ShadowRDP.Forms
             if (_activeTab != SidebarTab.Sessions) SwitchTab(SidebarTab.Sessions);
             AddSession(computer, ip, group: null);
             Logger.Info($"RDP session added for '{computer}' (ip={ip ?? "none"}) from Address Book menu");
+        }
+
+        // v4.9.34 — отображаемое имя сессии (DisplayName иначе Computer).
+        private static string SessName(RdpSession s) =>
+            string.IsNullOrWhiteSpace(s.DisplayName) ? s.Computer : s.DisplayName;
+
+        // v4.9.34 — создание RDP-сессии из диалога "+ Сессия" (RDP-ветка):
+        // сразу в нужную группу + активация вкладки сессий.
+        // Reuse-or-create: существующая сессия обновляется значениями
+        // диалога (чтобы не плодить дубликаты "передобавлением").
+        public void AddRdpSessionFull(string computer, string? ip, string group, string? displayName, string? notes)
+        {
+            EnsureVisible();
+            if (_activeTab != SidebarTab.Sessions) SwitchTab(SidebarTab.Sessions);
+            var existing = _sessions.FirstOrDefault(s =>
+                string.Equals(s.Computer, computer, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.DisplayName = displayName ?? "";
+                existing.Group = group ?? "";
+                existing.Notes = notes ?? "";
+                if (!string.IsNullOrEmpty(ip)) { existing.Ip = ip; existing.Target = ip; }
+                Logger.Info($"RDP Manager: reused RDP session '{computer}' (group='{group}') via +Сессия");
+                PersistSessions();
+                RenderSidebar();
+                ShowSession(existing);
+                return;
+            }
+            AddSession(computer, ip, group: group, displayName: displayName, notes: notes);
+            Logger.Info($"RDP Manager: added RDP session '{computer}' (group='{group}') via +Сессия");
         }
 
         // v2.1.98 — Bring the RDP Manager window to front (show if hidden,
@@ -2690,6 +3162,19 @@ namespace ShadowRDP.Forms
         // from the Address Book context menu. Creates a new RdpSession
         // (or reuses existing) with Group="" (БЕЗ ГРУППЫ), prompts for
         // shared creds if not cached, connects via AxHost.
+        // v3.9.3 — показать существующую сессию (постоянную или transient).
+        // Возвращает true, если такая есть и активирована.
+        public bool TryShowSession(string computer)
+        {
+            var s = _sessions.FirstOrDefault(x =>
+                string.Equals(x.Computer, computer, StringComparison.OrdinalIgnoreCase));
+            if (s == null) return false;
+            EnsureVisible();
+            if (_activeTab != SidebarTab.Sessions) SwitchTab(SidebarTab.Sessions);
+            ShowSession(s);
+            return true;
+        }
+
         public void LaunchRdpForComputer(string computer)
         {
             // Reuse existing session if one exists for this computer.
@@ -2720,8 +3205,9 @@ namespace ShadowRDP.Forms
             Logger.Info($"RDP launched for '{computer}' (ip={ip ?? "none"}) from Address Book");
         }
 
-        // v2.1.91 — Shared handler for the "+" button in header AND the
-        // right-click "+ Сессия…" item on the empty sidebar area. Opens
+        // v2.1.91 — Shared handler for the "+" button in header (v4.9.34:
+        // пункт "+ Сессия…" также в контекстных меню сессий; отдельное
+        // меню на пустой области сайдбара убрано). Opens
         // CustomSessionEditForm to add a new SSH/Web shortcut.
         private void AddSessionViaSidebar()
         {
@@ -2925,6 +3411,9 @@ namespace ShadowRDP.Forms
                     });
                 });
                 menu.AddItem("Удалить", "delete", () => DeleteCustomSession(sess));
+                menu.AddSeparator();
+                // v4.9.34 — "+ Сессия" пунктом меню (меню пустой области убрано).
+                menu.AddItem("+  Сессия…", "add", () => AddSessionViaSidebar());
                 var ctl = (Control)s;
                 menu.Show(this, ctl.PointToScreen(new Point(e.X, e.Y)));
             };
@@ -2967,6 +3456,7 @@ namespace ShadowRDP.Forms
                 if (item.Tag is RdpSession rs) _dragGroup = rs.Group ?? "";
                 else if (item.Tag is Models.CustomSession cs) _dragGroup = cs.Group ?? "";
                 else return;
+                _dropGroup = _dragGroup;
                 _dragControl = item;
                 _dragStartScreenY = Cursor.Position.Y;
                 _isDragging = false;
@@ -3010,7 +3500,34 @@ namespace ShadowRDP.Forms
                 EndDrag(item);
                 if (wasDragging)
                 {
+                    // v4.9.28 — перенос в другую группу: меняем Group +
+                    // сохраняем (раньше менялся только порядок внутри
+                    // исходной группы и после рестарта всё возвращалось).
+                    try
+                    {
+                        if (!string.Equals(_dropGroup, group, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (item.Tag is RdpSession rs)
+                            {
+                                rs.Group = _dropGroup;
+                                rs.SortOrder = NextSortOrder(_dropGroup);
+                            }
+                            else if (item.Tag is Models.CustomSession cs)
+                            {
+                                cs.Group = _dropGroup;
+                                cs.SortOrder = NextSortOrder(_dropGroup);
+                            }
+                            Logger.Info($"RDP Manager: drag '{(item.Tag is RdpSession r2 ? r2.Computer : (item.Tag as Models.CustomSession)?.Name)}' → group '{_dropGroup}'");
+                        }
+                    }
+                    catch { }
                     CommitReorder(group);
+                    try
+                    {
+                        if (!string.Equals(_dropGroup, group, StringComparison.OrdinalIgnoreCase))
+                            CommitReorder(_dropGroup);
+                    }
+                    catch { }
                     // Click already ran before this MouseUp and either consumed
                     // _suppressClick or never fired — clear any leftover so the
                     // next real click isn't eaten.
@@ -3040,6 +3557,23 @@ namespace ShadowRDP.Forms
             return list;
         }
 
+        // v4.9.28 — группа под курсором (для межгруппового переноса):
+        // заголовок группы (Tag = string) или сессия (её Group).
+        // Ниже всех — последняя группа. Нет контролов — исходная группа.
+        private string ResolveDropGroup(int cursorY)
+        {
+            string last = _dragGroup;
+            foreach (Control c in _sidebarList.Controls)
+            {
+                if (c.Tag is string g) last = g ?? "";
+                else if (c.Tag is RdpSession rs) last = rs.Group ?? "";
+                else if (c.Tag is Models.CustomSession cs) last = cs.Group ?? "";
+                else continue;
+                if (cursorY < c.Bottom) return last;
+            }
+            return last;
+        }
+
         // v3.8.x — recompute the insertion slot from the cursor, live-reorder
         // via SetChildIndex and reposition the 2px indicator line.
         private void UpdateDragSlot(Control item)
@@ -3050,6 +3584,8 @@ namespace ShadowRDP.Forms
             // Cursor Y in _sidebarList coords — PointToClient accounts for the
             // manual scroll offset because Location shifts with it.
             int cursorY = _sidebarList.PointToClient(Cursor.Position).Y;
+            // v4.9.28 — запоминаем целевую группу (коммит в MouseUp).
+            try { _dropGroup = ResolveDropGroup(cursorY); } catch { _dropGroup = _dragGroup; }
 
             // Count how many same-group items sit above the cursor (dragged
             // item excluded) and grab the first item below it.
@@ -3189,7 +3725,7 @@ namespace ShadowRDP.Forms
                 Filter = "Консоли MMC (*.msc)|*.msc|Все файлы (*.*)|*.*",
                 InitialDirectory = _lastEmbedDir ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
             };
-            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, dlg) != DialogResult.OK) return;
             _lastEmbedDir = System.IO.Path.GetDirectoryName(dlg.FileName);
             var entry = new Models.EmbeddedAppEntry
             {
@@ -3587,16 +4123,18 @@ namespace ShadowRDP.Forms
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 var r = new Rectangle(0, 0, pill.Width, pill.Height);
-                using var path = Helpers.UiButtons.TabRect(r, 4);
+                // v3.9.3CV — без скругления (как табы консолей).
                 bool isActive = ReferenceEquals(es, _activeEmbedded);
                 using var brush = new SolidBrush(isActive ? activeBg : (isHovered ? hoverBg : normalBg));
-                e.Graphics.FillPath(brush, path);
+                e.Graphics.FillRectangle(brush, r);
                 using var pen = new Pen(borderColor, 1);
-                e.Graphics.DrawPath(pen, path);
+                e.Graphics.DrawRectangle(pen, r.X, r.Y, r.Width - 1, r.Height - 1);
                 var icon = GetEmbedIcon(es.Entry.Path);
                 var iconY = (tabH - iconW) / 2;
                 if (icon != null)
                 {
+                    // v3.9.3 — bicubic-масштаб системной иконки (был Default).
+                    e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     e.Graphics.DrawImage(icon, new Rectangle(6, iconY, iconW, iconW));
                 }
                 else
@@ -3681,10 +4219,11 @@ namespace ShadowRDP.Forms
                 Margin = Padding.Empty,
                 BackColor = Color.Transparent
             };
-            var normalBg = Color.FromArgb(0xFA, 0xF7, 0xF4);
-            var hoverBg = Color.FromArgb(0xF0, 0xEB, 0xE4);
-            var activeBg = Color.FromArgb(0xED, 0xE8, 0xE2);
-            var borderColor = Color.FromArgb(0xFA, 0xF7, 0xF4);
+            // v3.9.3CU — табы консолей: без скругления, #F5E3B3 (актив темнее).
+            var normalBg = Color.FromArgb(0xF5, 0xE3, 0xB3);
+            var hoverBg = Color.FromArgb(0xEF, 0xDA, 0xA4);
+            var activeBg = Color.FromArgb(0xE8, 0xCF, 0x93);
+            var borderColor = Color.FromArgb(0xD9, 0xC3, 0x86);
             var textColor = Color.FromArgb(0x1C, 0x19, 0x17);
             var closeColor = Color.FromArgb(0x78, 0x71, 0x6C);
             var closeHoverColor = Color.FromArgb(0xDC, 0x26, 0x26);
@@ -3696,12 +4235,11 @@ namespace ShadowRDP.Forms
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 var r = new Rectangle(0, 0, pill.Width, pill.Height);
-                using var path = Helpers.UiButtons.TabRect(r, 4);
                 bool isActive = ReferenceEquals(session, _activeConsole);
                 using var brush = new SolidBrush(isActive ? activeBg : (isHovered ? hoverBg : normalBg));
-                e.Graphics.FillPath(brush, path);
+                e.Graphics.FillRectangle(brush, r);
                 using var pen = new Pen(borderColor, 1);
-                e.Graphics.DrawPath(pen, path);
+                e.Graphics.DrawRectangle(pen, r.X, r.Y, r.Width - 1, r.Height - 1);
                 using var dotBrush = new SolidBrush(accent);
                 e.Graphics.FillEllipse(dotBrush, new Rectangle(8, (tabH - iconW) / 2, iconW, iconW));
                 var txtRect = new Rectangle(8 + iconW + 5, 0, closeRect.X - (8 + iconW + 5), tabH);
@@ -4344,7 +4882,7 @@ namespace ShadowRDP.Forms
             primaryBtn.Location = new Point(popup.ClientSize.Width - primaryBtn.Width - 12, 70);
             popup.Controls.Add(primaryBtn);
 
-            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 80,
+            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
                 bgOverride: Helpers.UiTheme.MutedForeground);
             cancelBtn.Location = new Point(primaryBtn.Left - cancelBtn.Width - 8, 70);
             popup.Controls.Add(cancelBtn);
@@ -4697,6 +5235,37 @@ namespace ShadowRDP.Forms
             RenderSidebar();
         }
 
+        // v4.9.29 — «Редактировать запись»: имя компьютера, IP, группа.
+        // Target пересчитывается как в AddSession (IP иначе имя).
+        // Активная сессия продолжает работать на старом подключении до
+        // перезапуска; переподключение подхватит новые данные.
+        private void EditRdpSession(RdpSession sess)
+        {
+            var knownGroups = _sessions.Select(x => x.Group ?? "")
+                .Concat(_customSessions.Select(x => x.Group ?? ""))
+                .Where(g => !string.IsNullOrEmpty(g))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.ToUpperInvariant());
+            var res = Forms.RdpSessionEditForm.Edit(this, sess.DisplayName, sess.Computer, sess.Ip, sess.Group ?? "", sess.Notes, knownGroups);
+            if (res == null) return;
+            var (displayName, computer, ip, group, notes) = res.Value;
+            if (!string.Equals(sess.Computer, computer, StringComparison.OrdinalIgnoreCase)
+                && _sessions.Any(s => !ReferenceEquals(s, sess) && string.Equals(s.Computer, computer, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(this, $"Сессия '{computer}' уже существует.", "Редактировать запись", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            sess.DisplayName = displayName ?? "";
+            sess.Computer = computer;
+            sess.Ip = ip ?? "";
+            sess.Target = !string.IsNullOrEmpty(ip) ? ip : computer;
+            sess.Group = group ?? "";
+            sess.Notes = notes ?? "";
+            Logger.Info($"RDP Manager: session edited → '{computer}' (name='{displayName}', ip={ip}, group='{group}')");
+            PersistSessions();
+            RenderSidebar();
+        }
+
         // v3.0.8 — "Автозагрузка ▶" submenu: Да (on_green) / Нет (off_red),
         // radio-style — the item matching sess.AutoOpen is Checked. Toggle
         // only affects the next RestoreSessions (app restart); a live session
@@ -4772,6 +5341,9 @@ namespace ShadowRDP.Forms
         private sealed class RdpSession
         {
             public string Computer { get; set; } = "";
+            // v4.9.34 — отображаемое название ("" = Computer). Заметки.
+            public string DisplayName { get; set; } = "";
+            public string Notes { get; set; } = "";
             public string Target { get; set; } = "";
             public string Ip { get; set; } = "";
             public string Group { get; set; } = "";  // v2.1.49 — user-defined group, "" = Без группы
@@ -4790,6 +5362,9 @@ namespace ShadowRDP.Forms
             // v3.8.x — drag&drop sidebar ordering. Explicit position within the
             // session's group (RDP + custom sessions share the numbering).
             public int SortOrder { get; set; }
+            // v3.9.3 — transient: подключение из книги без следа (вкладка
+            // открывается, но в сайдбар и на диск запись НЕ попадает).
+            public bool Transient { get; set; }
         }
 
         // v2.1.53 — Public DTO for outside callers (tray menu, global

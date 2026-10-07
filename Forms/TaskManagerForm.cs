@@ -6,6 +6,7 @@ using System.Management;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ShadowRDP.Controls;
+using ShadowRDP.Helpers;
 using ShadowRDP.Services;
 
 namespace ShadowRDP.Forms
@@ -13,6 +14,10 @@ namespace ShadowRDP.Forms
     // "Диспетчер задач" for a remote PC. Lists running processes via
     // Win32_Process with Name / PID / Memory. Kill button terminates the
     // selected PID via Win32_Process.Terminate.
+    //
+    // v4.3.3 — редизайн в стиле FTP-эталона (как «Открытые файлы»):
+    // градиентный hero (поиск справа), таблица в карточке, действия
+    // в футере. Вся логика (опрос WMI, фильтр, снятие задач) без изменений.
     //
     // CPU time would require sampling two snapshots and subtracting — too
     // expensive for the typical use case (just check what's running).
@@ -25,6 +30,9 @@ namespace ShadowRDP.Forms
         private readonly Label _closeBtn;
         private readonly Label _statusLabel;
         private readonly TextBox _filterBox;
+        private readonly Panel _filterWrapper;
+        private readonly Label _lblHint;
+        private readonly System.Windows.Forms.Timer _filterDebounce;
 
         public TaskManagerForm(string computer)
         {
@@ -34,69 +42,48 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(560, 506);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = ShadowRDP.Helpers.UiTheme.Background;
+            BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
-            // Header
-            var headerPanel = Helpers.UiHeader.Create($"Диспетчер задач — {_computer}", _computer, "tasks");
-            headerPanel.Dock = DockStyle.Top;
-            Controls.Add(headerPanel);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero("Диспетчер задач", computer, "tasks");
 
-            // Filter row
-            var lblFilter = new Label { Text = "Фильтр:", Location = new Point(16, 84), Size = new Size(50, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _filterBox = new TextBox { Location = new Point(70, 82), Size = new Size(220, 22) };
-            _filterBox.TextChanged += (s, e) => ApplyFilter();
-            var lblHint = new Label { Text = "(по имени процесса)", Location = new Point(296, 84), Size = new Size(120, 22), ForeColor = Color.Gray, TextAlign = ContentAlignment.MiddleLeft };
-            Controls.AddRange(new Control[] { lblFilter, _filterBox, lblHint });
+            // Search lives in the hero (right side): white box, no anchors —
+            // position comes from the real hero width (Shown/Resize).
+            _filterWrapper = Helpers.UiSearchBox.Create("Поиск…", txt => { _filterDebounce.Stop(); _filterDebounce.Start(); }, width: 364, height: 27, background: Color.White);
+            _filterWrapper.Location = new Point(70, 18);
+            _filterWrapper.Size = new Size(364, 27);
+            _filterBox = Helpers.UiSearchBox.GetBox(_filterWrapper);
+            _lblHint = new Label { Text = "(по имени процесса)", Location = new Point(70, 48), Size = new Size(364, 18), Font = new Font("Segoe UI", 8F), ForeColor = Color.FromArgb(210, 228, 238), TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent };
+            hero.Controls.Add(_filterWrapper);
+            hero.Controls.Add(_lblHint);
 
-            // Top-right button cluster. Anchored Top|Right so the cluster
-            // tracks the right edge when the user resizes the dialog. Layout
-            // (right-to-left): Close(90) · 6 · Kill(120) · 6 · Refresh(90).
-            // Total cluster width = 312, fits inside 780-16=764.
-            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(674, 80);
-            _closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _closeBtn.Click += (s, e) => Close();
-            _killBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Снять задачу", ShadowRDP.Helpers.UiButtons.Role.Danger);
-            _killBtn.Location = new Point(548, 80);
-            _killBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _killBtn.Click += OnKillClicked;
-            _refreshBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Обновить");
-            _refreshBtn.Location = new Point(452, 80);
-            _refreshBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _refreshBtn.Click += async (s, e) => await LoadAsync();
-            Controls.AddRange(new Control[] { _refreshBtn, _killBtn, _closeBtn });
+            // ——— 2. Content: single card with the grid ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground, Padding = new Padding(14) };
+            var cardGrid = UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            cardGrid.Dock = DockStyle.Fill;
+            content.Controls.Add(cardGrid);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { cardGrid.Region?.Dispose(); cardGrid.Region = null; } catch { }
 
-            _grid = new DataGridView
+            _grid = new DoubleBufferedDataGridView
             {
-                Location = new Point(16, 116),
-                Size = new Size(748, 480),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.Background,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                DefaultCellStyle = {
-                    SelectionBackColor = ShadowRDP.Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = ShadowRDP.Helpers.UiTheme.Card
-                },
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F)
-                },
-                RowTemplate = { Height = 22 }
             };
-_grid.EnableHeadersVisualStyles = false;
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Имя процесса", FillWeight = 200 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "PID", HeaderText = "PID", FillWeight = 60 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Memory", HeaderText = "Память, МБ", FillWeight = 80 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Description", HeaderText = "Описание", FillWeight = 200 });
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
+            cardGrid.Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
+            RoundCorners(_grid, 7);
+            cardGrid.Resize += (s, e) => { FitCardChild(cardGrid, _grid); try { cardGrid.Invalidate(true); } catch { } };
+            _grid.Resize += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            _grid.ColumnWidthChanged += (s, e) => { try { _grid.Invalidate(); } catch { } };
             _grid.SelectionChanged += (s, e) => _killBtn.Enabled = _grid.SelectedRows.Count > 0;
 
             // v3.9.0 — right-click menu shown as a themed popup.
@@ -113,22 +100,109 @@ _grid.EnableHeadersVisualStyles = false;
                 menu.Show(this, Control.MousePosition);
             };
 
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
-            Controls.Add(_grid);
-
+            // ——— 3. Status bar (thin strip above the footer) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = ShadowRDP.Helpers.UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _statusLabel = new Label
             {
-                Location = new Point(16, 606),
-                Size = new Size(748, 22),
+                Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Font = new Font("Segoe UI", 8F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(16, 0, 0, 0),
                 Text = "Загрузка..."
             };
-            Controls.Add(_statusLabel);
-            // CancelButton requires IButtonControl; Label doesn't implement it,
-            // so ESC won't auto-close. User can click Закрыть label or X.
+            statusPanel.Controls.Add(_statusLabel);
 
-            Shown += async (s, e) => await LoadAsync();
+            // ——— 4. Footer with action buttons ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = ShadowRDP.Helpers.UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+            _refreshBtn = UiButtons.MakeCompactFilled("Обновить", w("Обновить"));
+            _refreshBtn.Location = new Point(16, 15);
+            _refreshBtn.Click += async (s, e) => await LoadAsync();
+            _killBtn = UiButtons.MakeCompactFilled("Снять задачу", w("Снять задачу"), danger: true);
+            _killBtn.Location = new Point(16 + _refreshBtn.Width + 8, 15);
+            _killBtn.Click += OnKillClicked;
+            _closeBtn = UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
+            _closeBtn.Click += (s, e) => Close();
+            footer.Controls.AddRange(new Control[] { _refreshBtn, _killBtn, _closeBtn });
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
+
+            // Filter row lives in the hero now; keep the debounce wiring.
+            _filterDebounce = new System.Windows.Forms.Timer { Interval = 120 };
+            _filterDebounce.Tick += (s, e) => { _filterDebounce.Stop(); if (IsDisposed) return; ApplyFilter(); };
+            FormClosed += (s, e) => { try { _filterDebounce.Stop(); _filterDebounce.Dispose(); } catch { } };
+
+            // Dock order: content Fill first, hero Top, then the two Bottom
+            // strips (footer added last docks first → very bottom, status
+            // above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
+
+            content.Resize += (s, e) => PositionSearch();
+            hero.Resize += (s, e) => PositionSearch();
+            Shown += async (s, e) =>
+            {
+                PositionSearch();
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+                // Поиск не активен при открытии: фокус на сетку.
+                ActiveControl = _grid;
+                _grid.Focus();
+                try { BeginInvoke(new Action(() => { try { Refresh(); } catch { } })); } catch { }
+                await LoadAsync();
+            };
+
+            // Search at the hero's right edge (no anchors — they capture
+            // garbage mid-layout; positions come from the real width).
+            void PositionSearch()
+            {
+                int x = Math.Max(16, hero.Width - 380);
+                _filterWrapper.Location = new Point(x, 18);
+                _lblHint.Location = new Point(x, 48);
+            }
+            PositionSearch();
+        }
+
+        // Child of a card: uniform 14px padding on all sides.
+        private static void FitCardChild(Panel card, Control child)
+        {
+            child.Bounds = new Rectangle(14, 14,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 28));
+        }
+
+        // Скругление углов: режем Region контрола по скруглённому rect.
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
         }
 
         private async Task LoadAsync()

@@ -1,0 +1,34 @@
+Вкладка TODO.шная в PupSeek RDP (десктоп, Windows)
+================================================
+Код вкладки живёт в исходниках PupSeek RDP, которые разрабатываются
+параллельно (папка C:\temp\Clo\cpro — там работает другой ИИ).
+Этот комплект содержит только телефон + сервер. Десктоп уже собран:
+
+  EXE: C:\temp\Clo\cpro\bin\Release\net8.0-windows\win-x64\PupSeekRDP.exe
+
+Ключевые файлы десктопа (для разработчика):
+  Forms/TodoForm.cs ............ вкладка: таблица, фильтры, поиск, ПКМ-меню
+  Services/TodoStore.cs ........ todo.json + настройки + tombstones удалённых
+  Services/TodoSyncService.cs .. опрос сервера каждые 15с (таймаут 30с, 3 попытки),
+                                 удаление на сервере, balloon-уведомления
+  Models/TodoItem.cs ........... модель TodoItem + TodoSyncSettings
+  Helpers/TodoPairDialog.cs .... диалог "Подключить телефон" с QR
+  Helpers/TodoQrDialog.cs ...... генерация QR (QRCoder)
+  AppPaths.cs .................. пути TodoPath / TodoSettingsPath
+
+Данные десктопа:
+  %PROGRAMDATA%\PupSeekRDP\todo.json .......... задачи
+  %PROGRAMDATA%\PupSeekRDP\todo_settings.json . ApiUrl/ApiToken/deletedIds
+  %PROGRAMDATA%\PupSeekRDP\debug.log .......... лог (искать "Todo", "poll added")
+
+Настройки подключения (todo_settings.json):
+  apiUrl ......... https://pupseek.ru/monitor/todo/
+  apiToken ....... "" (пусто — на сервере $TODO_TOKEN тоже пустой)
+  pollIntervalSeconds: 15, useFileWatcher: true
+
+Откат десктопа (если вкладка что-то сломала):
+  Снимок: C:\temp\Clo\snapshot_v3.9.0_pre-todo_20260907\source
+  1) rmdir /S /Q "C:\temp\Clo\prod\3.9.0.0\source"
+  2) xcopy /E /I /Y "C:\temp\Clo\snapshot_v3.9.0_pre-todo_20260907\source" "C:\temp\Clo\prod\3.9.0.0\source"
+  3) del "%PROGRAMDATA%\PupSeekRDP\todo.json" + todo_settings.json
+  Остальные json (addressbook, dashboard_events) не трогать.

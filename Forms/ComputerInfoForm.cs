@@ -5,13 +5,17 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ShadowRDP.Controls;
+using ShadowRDP.Helpers;
 using ShadowRDP.Services;
 
 namespace ShadowRDP.Forms
 {
     // "Отчёт о компьютере" dialog. Mirror of Show-ComputerInfo from the .ps1.
     //
-    // Layout: header (computer name + subtitle + separator), then a DataGridView
+    // v4.3.3 — redesigned in the FTP sample-modal style: gradient hero band,
+    // report grid inside a rounded section card, action buttons in the footer.
+    //
+    // Layout: hero (computer name + subtitle), then a DataGridView
     // with two columns "Параметр" / "Значение" rendered as Excel-like banded
     // rows with section headers spanning both columns in accent blue.
     //
@@ -34,79 +38,153 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(560, 440);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = ShadowRDP.Helpers.UiTheme.Background;
+            BackColor = UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
-            // === Header (v2.2.15: blue #296AA0 bar + white text/icon) ===
-            var headerPanel = Helpers.UiHeader.Create(computer, "Отчёт о компьютере", "info", Color.FromArgb(0x56, 0x5C, 0x30));
-            headerPanel.Dock = DockStyle.Top;
-            Controls.Add(headerPanel);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero(computer, "Отчёт о компьютере", "computer");
+
+            // ——— 2. Content: report grid inside a section card ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };
+            var card = UiModal.Card(0, 0, 100, 100, "Параметры", "list");
+            card.Dock = DockStyle.Fill;
+            content.Controls.Add(card);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { card.Region?.Dispose(); card.Region = null; } catch { }
 
             // === Grid ===
-            _grid = new DataGridView
+            _grid = new Controls.DoubleBufferedDataGridView
             {
-                Location = new Point(24, 76),
-                Size = new Size(752, 540),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AllowUserToResizeRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.FixedSingle,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = Color.FromArgb(0xFB, 0xF7, 0xEE),
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                ColumnHeadersHeight = 30,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F),
-                    Alignment = DataGridViewContentAlignment.MiddleLeft
-                },
-                DefaultCellStyle = {
-                    Font = new Font("Segoe UI", 9.5F),
-                    SelectionBackColor = ShadowRDP.Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = ShadowRDP.Helpers.UiTheme.Accent
-                },
-                RowTemplate = { Height = 26 }
+                MultiSelect = false,
             };
-_grid.EnableHeadersVisualStyles = false;
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Property", HeaderText = "Параметр", FillWeight = 110 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "Значение", FillWeight = 200 });
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
-            Controls.Add(_grid);
+            UiGridStyle.ApplyUnified(_grid, 36, 36);
+            card.Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
+            RoundCorners(_grid, 7);
+            // Полный Invalidate на каждый шаг ресайза: иначе при живом
+            // изменении размера окна остаются застойные вертикальные штрихи
+            // (неперерисованные полосы после Fill-перераскладки колонок).
+            card.Resize += (s, e) => { FitCardChild(card, _grid); try { card.Invalidate(true); } catch { } };
+            _grid.Resize += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            _grid.ColumnWidthChanged += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            FitCardChild(card, _grid);
 
-            // === Buttons ===
-            _refreshBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Обновить");
-            _refreshBtn.Location = new Point(24, 640);
-            _refreshBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            // ——— 3. Footer with action buttons ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+
+            _refreshBtn = ActionButton("Обновить", w("Обновить"));
+            _refreshBtn.Location = new Point(16, 15);
             _refreshBtn.Click += async (s, e) => await OnRefreshClickedAsync();
-            Controls.Add(_refreshBtn);
-
-            _copyBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Копировать в Excel");
-            _copyBtn.Location = new Point(144, 640);
-            _copyBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            _copyBtn = ActionButton("Копировать в Excel", w("Копировать в Excel"));
+            _copyBtn.Location = new Point(16 + _refreshBtn.Width + 8, 15);
             _copyBtn.Click += (s, e) => OnCopyClicked();
-            Controls.Add(_copyBtn);
-
-            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(666, 640);
-            _closeBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            _closeBtn = ActionButton("Закрыть", w("Закрыть"));
             _closeBtn.Click += (s, e) => Close();
-            Controls.Add(_closeBtn);
-            // CancelButton requires IButtonControl; Label doesn't implement it.
+            footer.Controls.AddRange(new Control[] { _refreshBtn, _copyBtn, _closeBtn });
+            // CancelButton requires IButtonControl; Label doesn't implement it
+            // (Esc handled via KeyDown above).
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
+
+            // Dock order: content Fill first, hero Top, footer Bottom last —
+            // the last added docks first, so the footer hugs the bottom edge.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
 
             // Restore last-used window size — saved on close via FormClosed.
             WindowStateStore.Register(this, "computerInfo");
 
-            Shown += async (s, e) => await LoadAsync();
+            Shown += async (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+                try { BeginInvoke(new Action(() => { try { Refresh(); } catch { } })); } catch { }
+                await LoadAsync();
+            };
+        }
+
+        // Child of a card: padded area below the card header (header ends ~y44).
+        private static void FitCardChild(Panel card, Control child)
+        {
+            child.Bounds = new Rectangle(14, 52,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 66));
+        }
+
+        // Скругление углов: режем Region контрола по скруглённому rect.
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
+        }
+
+        // Локальная filled-кнопка: тот же вид, что MakeCompactFilled, но текст
+        // рисуется из lbl.Text — смена Text ("Скопировано!") реально видна.
+        private static Label ActionButton(string text, int width, Color? bgOverride = null)
+        {
+            Color bg = bgOverride ?? UiTheme.HeaderBar;
+            Color hover = ControlPaint.Dark(bg, 0.08f);
+            var fill = new SolidBrush(bg);
+            var lbl = new Label
+            {
+                Text = text,
+                AutoSize = false,
+                Size = new Size(width, 22),
+                Font = new Font("Segoe UI Semibold", 9F),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                BackColor = Color.Transparent
+            };
+            lbl.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
+                using var path = UiButtons.RoundedRect(r, 1);
+                if (lbl.Enabled) e.Graphics.FillPath(fill, path);
+                else { using var dis = new SolidBrush(Color.FromArgb(0xE2, 0xE4, 0xE8)); e.Graphics.FillPath(dis, path); }
+                var fg = lbl.Enabled ? Color.White : Color.FromArgb(0x8A, 0x8E, 0x94);
+                TextRenderer.DrawText(e.Graphics, lbl.Text, lbl.Font, r, fg,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+            };
+            lbl.MouseEnter += (s, e) => { if (lbl.Enabled) { fill.Color = hover; lbl.Invalidate(); } };
+            lbl.MouseLeave += (s, e) => { if (lbl.Enabled) { fill.Color = bg; lbl.Invalidate(); } };
+            lbl.EnabledChanged += (s, e) => lbl.Invalidate();
+            return lbl;
         }
 
         // Render the report into the grid. Sections get accent-blue backcolor
@@ -208,28 +286,6 @@ _grid.EnableHeadersVisualStyles = false;
                 t.Start();
             }
             catch { }
-        }
-
-        private static NeoButton MakeAccentButton(string text, int x, int y, int w, int h)
-        {
-            return new NeoButton
-            {
-                Text = text,
-                Location = new Point(x, y),
-                Size = new Size(w, h),
-                Accent = true
-            };
-        }
-
-        private static NeoButton MakeOutlineButton(string text, int x, int y, int w, int h)
-        {
-            return new NeoButton
-            {
-                Text = text,
-                Location = new Point(x, y),
-                Size = new Size(w, h),
-                Accent = false
-            };
         }
     }
 }

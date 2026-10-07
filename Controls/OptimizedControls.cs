@@ -29,6 +29,10 @@ namespace ShadowRDP.Controls
         private const int WM_CHAR = 0x0102;
         private const int WM_PAINT = 0x000F;
 
+        // Поисковые поля: при true каретка (|) показывается при фокусе
+        // (мигание — нативное), при false — классическое скрытие.
+        public bool ShowCaretOnFocus { get; set; } = false;
+
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
@@ -44,7 +48,12 @@ namespace ShadowRDP.Controls
                 case WM_CHAR:
                     if (IsHandleCreated && Focused)
                     {
-                        try { HideCaret(Handle); } catch { }
+                        try
+                        {
+                            if (ShowCaretOnFocus) ShowCaret(Handle);
+                            else HideCaret(Handle);
+                        }
+                        catch { }
                     }
                     break;
                 case WM_KILLFOCUS:
@@ -75,6 +84,44 @@ namespace ShadowRDP.Controls
         {
             using var b = new System.Drawing.SolidBrush(BackgroundColor);
             pevent.Graphics.FillRectangle(b, ClientRectangle);
+        }
+
+        // v4.4.0 — колесо в WndProc, а не в фильтре сообщений: на части машин
+        // драйверы мыши/тачпада шлют WM_MOUSEWHEEL напрямую SendMessage в окно
+        // под курсором, минуя очередь (IMessageFilter такие не видит —
+        // доказано пустым wheel_diag.log при живых REG). WndProc видит оба
+        // пути доставки. Перехватываем ТОЛЬКО когда системные полосы спрятаны
+        // (ScrollBars==None — режим ShadowScroll.AttachGrid): нативный путь
+        // там мёртв, скроллим сами построчно/попиксельно. Во всех остальных
+        // случаях — штатный base (поведение прочих гридов не меняется).
+        // На упоре (дальше некуда) — base, чтобы колесо всплыло родителю.
+        public event EventHandler? WheelScrolled;
+
+        private const int WM_MOUSEWHEEL = 0x020A;
+        private const int WM_MOUSEHWHEEL = 0x020E;
+
+        protected override void WndProc(ref Message m)
+        {
+            if ((m.Msg == WM_MOUSEWHEEL || m.Msg == WM_MOUSEHWHEEL) && ScrollBars == ScrollBars.None)
+            {
+                if (TryWheelScroll(m)) { m.Result = IntPtr.Zero; return; }
+            }
+            base.WndProc(ref m);
+        }
+
+        private bool TryWheelScroll(Message m)
+        {
+            // Логика — общая (GridWheelScroller), здесь только событие
+            // для обновления overlay-полос ShadowScroll.
+            bool handled = false;
+            try { handled = GridWheelScroller.TryScroll(this, m); }
+            catch { handled = false; }
+            if (handled)
+            {
+                try { WheelScrolled?.Invoke(this, EventArgs.Empty); }
+                catch { }
+            }
+            return handled;
         }
     }
 }

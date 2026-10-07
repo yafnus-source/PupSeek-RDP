@@ -1,25 +1,26 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 using ShadowRDP.Controls;
 using ShadowRDP.Services;
 
 namespace ShadowRDP.Helpers
 {
-    // v3.7.0 — Unlock dialog for the KeePass vault. Asks for the .kdbx
-    // path (Browse…, or create-new if missing), an optional key-file, and
-    // the master password. Returns the choice on OK, null on cancel.
+    // v4.3.3 — окно в стиле FTP-эталона (hero + карточки + футер).
+    // Unlock dialog for the KeePass vault. Asks for the .kdbx
+    // path (Browse…), an optional key-file, and the master password.
+    // Returns the choice on OK, null on cancel.
     //
     // The caller (KeePassVault) is responsible for opening the database and
     // persisting keepass.json — this dialog never touches the password.
     //
-    // v3.7.1 — redesign: blue UiHeader bar (matches the vault manager),
-    // consistent indented field rows (label 120px / input fills to browse),
-    // master-password field stretches to match path fields, action buttons
-    // right-aligned (Cancel + Open) — was a centered pair that read as
-    // uncommitted. Dialog widened 520→580, deepened 264→350 to fit the
-    // header and give the form room to breathe.
+    // Layout (600×580):
+    //   hero:    Хранилище паролей
+    //   card 1:  База данных ... [путь] [Обзор…] / [ключ] [Обзор…]
+    //   card 2:  Мастер-пароль .. [пароль] + подсказка + свитч
+    //   footer:                          [Открыть] [Отмена]
     public static class KeePassUnlockDialog
     {
         public sealed class Result
@@ -35,7 +36,7 @@ namespace ShadowRDP.Helpers
             using var dlg = new Form
             {
                 Text = "Хранилище паролей (KeePass)",
-                ClientSize = new Size(580, 350),
+                    Size = new Size(600, 556),
                 StartPosition = owner == null
                     ? FormStartPosition.CenterScreen
                     : FormStartPosition.CenterParent,
@@ -48,132 +49,106 @@ namespace ShadowRDP.Helpers
                 // previous non-elevated instance's splash). Matches the
                 // shared RdpPasswordPrompt behaviour.
                 TopMost = true,
-                Font = new Font("Segoe UI", 9F),
-                BackColor = UiTheme.Card
+                BackColor = UiTheme.DialogBackground,
+                AutoScroll = false
             };
+            dlg.KeyPreview = true;
 
-            // === Blue header (matches KeePassVaultForm / report dialogs) ===
-            var header = UiHeader.Create("Хранилище паролей", "KeePass (.kdbx) — зашифрованная база", "shield",
-                Color.FromArgb(0x56, 0x5C, 0x30), Color.White);
-            dlg.Controls.Add(header);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero("Хранилище паролей", "KeePass (.kdbx) — зашифрованная база", "shield");
 
-            // Field rows: label (120) + input (340) + browse button (76).
-            // All three rows share the same Y-offset pattern, just shifted
-            // by 34px each. Header occupies 76px so rows start at Y=92.
-            const int LabelX = 20;
-            const int LabelW = 120;
-            const int InputX = 144;
-            const int InputW = 332;
-            const int BrowseX = 484;
-            const int BrowseW = 76;
+            // ——— 2. Section cards ———
+            const int ClientW = 584; // ширина клиента при outer 600 (рамки ~16px)
 
-            var lblDb = new Label
-            {
-                Text = "База (.kdbx):",
-                Location = new Point(LabelX, 96),
-                Size = new Size(LabelW, 22),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = UiTheme.Foreground
-            };
-            dlg.Controls.Add(lblDb);
+            // Card #1: База данных
+            var cardDb = UiModal.Card(14, 14, 556, 160, "База данных", "book");
+            var lDb = UiModal.FieldLabel("База (.kdbx)", 16, 46);
+            var wDb = UiModal.Field(new TextBox(), 380);
+            wDb.Location = new Point(16, 62);
+            var btnBrowseDb = UiButtons.MakeCompactFilled("Обзор…", 76);
+            btnBrowseDb.Location = new Point(402, 66);
+            var lKey = UiModal.FieldLabel("Файл-ключ", 16, 100);
+            var wKey = UiModal.Field(new TextBox(), 380);
+            wKey.Location = new Point(16, 116);
+            var btnBrowseKey = UiButtons.MakeCompactFilled("Обзор…", 76);
+            btnBrowseKey.Location = new Point(402, 120);
+            var txtDb = (TextBox)wDb.Controls[0];
+            var txtKey = (TextBox)wKey.Controls[0];
+            if (!string.IsNullOrEmpty(current.DbPath)) txtDb.Text = current.DbPath;
+            if (!string.IsNullOrEmpty(current.KeyFilePath)) txtKey.Text = current.KeyFilePath;
 
-            var tbDb = new TextBox
-            {
-                Location = new Point(InputX, 94),
-                Size = new Size(InputW, 26),
-                Font = new Font("Segoe UI", 10F)
-            };
-            if (!string.IsNullOrEmpty(current.DbPath)) tbDb.Text = current.DbPath;
-            dlg.Controls.Add(tbDb);
-
-            // v3.8.x — "Обзор" buttons: white bg, 1px #BFBFBF border,
-            // gray text. Height 25 = field height minus 1px at the bottom;
-            // both buttons share the same X (BrowseX) and sit top-aligned
-            // with the База / Файл-ключ fields, so they line up horizontally.
-            var btnBrowseDb = UiButtons.MakeCompactOutlined("Обзор…", BrowseW, height: 25);
-            btnBrowseDb.Location = new Point(BrowseX, 94);
-            dlg.Controls.Add(btnBrowseDb);
-
-            var lblKey = new Label
-            {
-                Text = "Файл-ключ:",
-                Location = new Point(LabelX, 130),
-                Size = new Size(LabelW, 22),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = UiTheme.Foreground
-            };
-            dlg.Controls.Add(lblKey);
-
-            var tbKey = new TextBox
-            {
-                Location = new Point(InputX, 128),
-                Size = new Size(InputW, 26),
-                Font = new Font("Segoe UI", 10F)
-            };
-            if (!string.IsNullOrEmpty(current.KeyFilePath)) tbKey.Text = current.KeyFilePath;
-            dlg.Controls.Add(tbKey);
-
-            var btnBrowseKey = UiButtons.MakeCompactOutlined("Обзор…", BrowseW, height: 25);
-            btnBrowseKey.Location = new Point(BrowseX, 128);
-            dlg.Controls.Add(btnBrowseKey);
-
-            var lblPass = new Label
-            {
-                Text = "Мастер-пароль:",
-                Location = new Point(LabelX, 164),
-                Size = new Size(LabelW, 22),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = UiTheme.Foreground
-            };
-            dlg.Controls.Add(lblPass);
-
-            // v3.7.1 — master password field stretches to match path fields
-            // (was 304px, ended mid-form; looked orphaned next to the long
-            // path fields above). Now aligned with tbDb/tbKey right edge.
-            var tbPass = new TextBox
-            {
-                Location = new Point(InputX, 162),
-                Size = new Size(InputW + BrowseW + 8, 26),
-                UseSystemPasswordChar = true,
-                Font = new Font("Segoe UI", 10F)
-            };
-            dlg.Controls.Add(tbPass);
-
+            // Card #2: Мастер-пароль
+            var cardPass = UiModal.Card(14, 14 + 160 + 12, 556, 176, "Мастер-пароль", "key");
+            var lPass = UiModal.FieldLabel("Мастер-пароль", 16, 46);
+            var txtPass = new TextBox { UseSystemPasswordChar = true };
+            var wPass = UiModal.Field(txtPass, 524);
+            wPass.Location = new Point(16, 62);
             var hint = new Label
             {
                 Text = "Мастер-пароль не сохраняется на диск.\nЕсли файл базы не существует — он будет создан.",
-                Location = new Point(LabelX, 196),
-                Size = new Size(540, 36),
+                Location = new Point(16, 100),
+                AutoSize = false,
+                Size = new Size(524, 30),
                 ForeColor = UiTheme.MutedForeground,
-                Font = new Font("Segoe UI", 8.5F)
+                Font = new Font("Segoe UI", 8.5F),
+                BackColor = Color.Transparent
             };
-            dlg.Controls.Add(hint);
-
-            var chkAuto = new CheckBox
+            var chkAuto = new UiToggle
             {
                 Text = "Разблокировать при старте приложения",
-                Location = new Point(LabelX, 240),
-                Size = new Size(400, 24),
-                ForeColor = UiTheme.Foreground,
-                Checked = current.AutoUnlockAtStartup
+                Checked = current.AutoUnlockAtStartup,
+                Location = new Point(16, 140),
+                Width = 300
             };
-            dlg.Controls.Add(chkAuto);
 
-            // v3.7.1 — buttons switched to compact filled style (same shape
-            // as the "+ Сессия" / "+ В книгу" toolbar buttons). Cancel gets
-            // MutedForeground bg via the new bgOverride param so it reads as
-            // a secondary action without a separate visual language.
-            // v3.7.1 — Cancel shifted −5px (372→367), Open −10px (484→474),
-            // then both again −10px (367→357, 474→464) per user request —
-            // pair was hugging the right edge too tight.
-            var okBtn = UiButtons.MakeCompactFilled("Открыть", 96);
-            okBtn.Location = new Point(464, 308);
-            dlg.Controls.Add(okBtn);
-
-            var cancelBtn = UiButtons.MakeCompactFilled("Отмена", 96,
+            // ——— 3. Footer (Открыть / Отмена) ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var okBtn = UiButtons.MakeCompactFilled("Открыть", 100);
+            okBtn.Location = new Point(ClientW - 233, 15);
+            okBtn.Click += (_, _) => Submit();
+            var cancelBtn = UiButtons.MakeCompactFilled("Отмена", 100,
                 bgOverride: UiTheme.MutedForeground);
-            cancelBtn.Location = new Point(357, 308);
-            dlg.Controls.Add(cancelBtn);
+            cancelBtn.Location = new Point(ClientW - 125, 15);
+            cancelBtn.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
+            var hiddenOk = new Button { Visible = true, TabStop = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+            var hiddenCancel = new Button { DialogResult = DialogResult.Cancel, Visible = true, TabStop = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+            footer.Controls.Add(okBtn);
+            footer.Controls.Add(cancelBtn);
+            footer.Controls.Add(hiddenOk);
+            footer.Controls.Add(hiddenCancel);
+            dlg.AcceptButton = hiddenOk;
+            dlg.CancelButton = hiddenCancel;
+
+            Result? result = null;
+            void Submit()
+            {
+                var db = txtDb.Text.Trim();
+                if (string.IsNullOrEmpty(db))
+                {
+                    MessageBox.Show(dlg, "Укажите путь к базе .kdbx.",
+                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    txtDb.Focus();
+                    return;
+                }
+                var key = txtKey.Text.Trim();
+                if (!string.IsNullOrEmpty(key) && !File.Exists(key))
+                {
+                    MessageBox.Show(dlg, "Файл-ключ не найден.",
+                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    txtKey.Focus();
+                    return;
+                }
+                if (string.IsNullOrEmpty(txtPass.Text) && string.IsNullOrEmpty(key))
+                {
+                    MessageBox.Show(dlg, "Укажите мастер-пароль или файл-ключ.",
+                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    txtPass.Focus();
+                    return;
+                }
+                result = new Result { DbPath = db, KeyFilePath = key, Password = txtPass.Text, AutoUnlockAtStartup = chkAuto.Checked };
+                dlg.DialogResult = DialogResult.OK;
+            }
 
             void BrowseDb()
             {
@@ -182,13 +157,13 @@ namespace ShadowRDP.Helpers
                     Title = "Выберите базу KeePass (.kdbx)",
                     Filter = "База KeePass (*.kdbx)|*.kdbx|Все файлы (*.*)|*.*"
                 };
-                if (!string.IsNullOrEmpty(tbDb.Text))
+                if (!string.IsNullOrEmpty(txtDb.Text))
                 {
-                    var dir = Path.GetDirectoryName(Path.GetFullPath(tbDb.Text));
+                    var dir = Path.GetDirectoryName(Path.GetFullPath(txtDb.Text));
                     if (Directory.Exists(dir)) ofd.InitialDirectory = dir;
                 }
                 if (ofd.ShowDialog(dlg) == DialogResult.OK)
-                    tbDb.Text = ofd.FileName;
+                    txtDb.Text = ofd.FileName;
             }
 
             void BrowseKey()
@@ -199,74 +174,16 @@ namespace ShadowRDP.Helpers
                     Filter = "Файл-ключ (*.key)|*.key|Все файлы (*.*)|*.*"
                 };
                 if (ofd.ShowDialog(dlg) == DialogResult.OK)
-                    tbKey.Text = ofd.FileName;
+                    txtKey.Text = ofd.FileName;
             }
 
             btnBrowseDb.Click += (_, _) => BrowseDb();
             btnBrowseKey.Click += (_, _) => BrowseKey();
-
-            Result? result = null;
-            void Submit()
-            {
-                var db = tbDb.Text.Trim();
-                if (string.IsNullOrEmpty(db))
-                {
-                    MessageBox.Show(dlg, "Укажите путь к базе .kdbx.",
-                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    tbDb.Focus();
-                    return;
-                }
-                var key = tbKey.Text.Trim();
-                if (!string.IsNullOrEmpty(key) && !File.Exists(key))
-                {
-                    MessageBox.Show(dlg, "Файл-ключ не найден.",
-                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    tbKey.Focus();
-                    return;
-                }
-                if (string.IsNullOrEmpty(tbPass.Text) && string.IsNullOrEmpty(key))
-                {
-                    MessageBox.Show(dlg, "Укажите мастер-пароль или файл-ключ.",
-                        "Хранилище паролей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    tbPass.Focus();
-                    return;
-                }
-                result = new Result { DbPath = db, KeyFilePath = key, Password = tbPass.Text, AutoUnlockAtStartup = chkAuto.Checked };
-                dlg.DialogResult = DialogResult.OK;
-            }
-
             okBtn.Click += (_, _) => Submit();
             cancelBtn.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
-
-            var hiddenCancel = new Button
-            {
-                DialogResult = DialogResult.Cancel,
-                Visible = true,
-                TabStop = false,
-                Location = new Point(-200, -200),
-                Size = new Size(1, 1)
-            };
-            hiddenCancel.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
-            dlg.Controls.Add(hiddenCancel);
-            dlg.CancelButton = hiddenCancel;
-
-            var hiddenOk = new Button
-            {
-                Visible = true,
-                TabStop = false,
-                Location = new Point(-300, -300),
-                Size = new Size(1, 1)
-            };
             hiddenOk.Click += (_, _) => Submit();
-            dlg.Controls.Add(hiddenOk);
-            dlg.AcceptButton = hiddenOk;
+            hiddenCancel.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
 
-            // v3.8.x — field labels / checkbox blend with the dialog background
-            // (their default grey would show as blocks on the near-white bg).
-            foreach (Control c in dlg.Controls)
-                if (c is Label || c is CheckBox) c.BackColor = Color.Transparent;
-
-            dlg.KeyPreview = true;
             dlg.KeyDown += (_, ke) =>
             {
                 if (ke.KeyCode == Keys.Enter)
@@ -282,9 +199,63 @@ namespace ShadowRDP.Helpers
                 }
             };
 
-            dlg.Shown += (_, _) => tbPass.Focus();
+            // ——— assemble: hero (top) + footer (bottom) + scrollable content ———
+            // Widgets are CHILDREN of their card (relative coordinates), so the
+            // card paints its rounded fill first and the widgets render on top.
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiTheme.DialogBackground };
+            cardDb.Controls.AddRange(new Control[] { lDb, wDb, btnBrowseDb, lKey, wKey, btnBrowseKey });
+            cardPass.Controls.AddRange(new Control[] { lPass, wPass, hint, chkAuto });
+            content.Controls.AddRange(new Control[] { cardDb, cardPass });
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachPanel(content);
+            dlg.Controls.Add(content);
+            dlg.Controls.Add(hero);
+            dlg.Controls.Add(footer);
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            CenterEditor(wDb);
+            CenterEditor(wKey);
+            CenterEditor(wPass);
+            // v3.9.3Y — Field/Card гладкие сами; Region давал лесенку.
+            foreach (var c in new Control[] { wDb, wKey, wPass, cardDb, cardPass })
+            { try { c.Region?.Dispose(); c.Region = null; } catch { } }
+
+            var dpiScale = UiModal.ApplyDpiScale(dlg);
+            if (dpiScale > 1.001f)
+                dlg.ClientSize = new Size((int)Math.Round(dlg.ClientSize.Width * dpiScale), (int)Math.Round(dlg.ClientSize.Height * dpiScale));
+
+            // Финальные координаты — по факту, когда у панелей реальный размер.
+            // Форма FixedDialog — дальше ресайзов нет, позиции стоят мёртво.
+            dlg.Shown += (_, _) =>
+            {
+                okBtn.Location = new Point(footer.Width - 233, 15);
+                cancelBtn.Location = new Point(footer.Width - 125, 15);
+                txtPass.Focus();
+                try { dlg.BeginInvoke(new Action(() => { try { dlg.Refresh(); } catch { } })); } catch { }
+            };
+
+            return UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
+
+        // ComboBox/TextBox игнорируют заданный Height (высота от шрифта) —
+        // центрируем редактор в 30px-обёртке.
+        private static void CenterEditor(Panel wrap)
+        {
+            if (wrap.Controls.Count == 0) return;
+            var ed = wrap.Controls[0];
+            int pref = 0;
+            try
+            {
+                if (ed is ComboBox cb) pref = cb.PreferredHeight;
+                else if (ed is DateTimePicker dt) pref = dt.PreferredHeight;
+                else if (ed is NumericUpDown nud) pref = nud.PreferredHeight;
+                else if (ed is TextBox tb) pref = tb.PreferredHeight;
+                else return;
+            }
+            catch { return; }
+            if (pref < 1 || pref > wrap.Height - 4) return;
+            ed.Height = pref;
+            ed.Location = new Point(wrap.Padding.Left, (wrap.Height - pref) / 2);
+        }
+
     }
 }

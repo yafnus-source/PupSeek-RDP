@@ -37,7 +37,7 @@ namespace ShadowRDP
                 // OR press Esc (handled in KeyDown below) — both cancel
                 // the dialog and abort RDP launch.
                 Font = new Font("Segoe UI", 9F),
-                BackColor = Helpers.UiTheme.Background
+                BackColor = Helpers.UiTheme.DialogBackground
             };
 
             var lblTitle = new Label
@@ -94,18 +94,13 @@ namespace ShadowRDP
             // Was MakeFlat for Cancel (AutoSize=true, wider than OK on hover).
             // Now Cancel has MutedForeground (gray) bg so it reads as a
             // secondary button without visual mismatch.
-            var okBtn = Helpers.UiButtons.MakeFilled(
-                "OK",
-                null,
-                ShadowRDP.Helpers.UiTheme.HeaderBar,
-                width: 96,
-                radius: 5);
-            okBtn.Location = new Point(212, 158);
+            var okBtn = Helpers.UiButtons.MakeCompactFilled("OK", 100);
+            okBtn.Location = new Point(207, 163);
             dlg.Controls.Add(okBtn);
 
-            var cancelBtn = Helpers.UiButtons.MakeFilled("Отмена", null,
-                Helpers.UiTheme.MutedForeground, width: 96, radius: 1);
-            cancelBtn.Location = new Point(324, 158);
+            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
+                bgOverride: Helpers.UiTheme.MutedForeground);
+            cancelBtn.Location = new Point(315, 163);
             dlg.Controls.Add(cancelBtn);
 
             RdpCredentialStore.Creds? result = null;
@@ -190,7 +185,7 @@ namespace ShadowRDP
 
             dlg.Shown += (_, _) => tbLogin.Focus();
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return Helpers.UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
 
         // Convenience helper for the common case: "give me the creds to
@@ -231,7 +226,7 @@ namespace ShadowRDP
                 MinimizeBox = false,
                 TopMost = true,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = Helpers.UiTheme.Background
+                BackColor = Helpers.UiTheme.DialogBackground
             };
 
             var lblTitle = new Label
@@ -302,14 +297,13 @@ namespace ShadowRDP
             };
             dlg.Controls.Add(hint);
 
-            var okBtn = Helpers.UiButtons.MakeFilled(
-                "OK", null, ShadowRDP.Helpers.UiTheme.HeaderBar, width: 96, radius: 5);
-            okBtn.Location = new Point(264, 204);
+            var okBtn = Helpers.UiButtons.MakeCompactFilled("OK", 100);
+            okBtn.Location = new Point(247, 205);
             dlg.Controls.Add(okBtn);
 
-            var cancelBtn = Helpers.UiButtons.MakeFilled("Отмена", null,
-                Helpers.UiTheme.MutedForeground, width: 96, radius: 1);
-            cancelBtn.Location = new Point(368, 204);
+            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
+                bgOverride: Helpers.UiTheme.MutedForeground);
+            cancelBtn.Location = new Point(355, 205);
             dlg.Controls.Add(cancelBtn);
 
             RdpCredentialStore.Creds? result = null;
@@ -421,7 +415,7 @@ namespace ShadowRDP
 
             dlg.Shown += (_, _) => tbLogin.Focus();
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return Helpers.UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
 
         // v3.7.2 — Web variant of ShowForComputer. Same dialog UX (Login +
@@ -446,7 +440,7 @@ namespace ShadowRDP
                 MinimizeBox = false,
                 TopMost = true,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = Helpers.UiTheme.Background
+                BackColor = Helpers.UiTheme.DialogBackground
             };
 
             var lblTitle = new Label
@@ -515,13 +509,13 @@ namespace ShadowRDP
             };
             dlg.Controls.Add(hint);
 
-            var okBtn = Helpers.UiButtons.MakeCompactFilled("OK", 96);
-            okBtn.Location = new Point(264, 208);
+            var okBtn = Helpers.UiButtons.MakeCompactFilled("OK", 100);
+            okBtn.Location = new Point(247, 205);
             dlg.Controls.Add(okBtn);
 
-            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 96,
+            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
                 bgOverride: Helpers.UiTheme.MutedForeground);
-            cancelBtn.Location = new Point(368, 208);
+            cancelBtn.Location = new Point(355, 205);
             dlg.Controls.Add(cancelBtn);
 
             RdpCredentialStore.Creds? result = null;
@@ -622,7 +616,7 @@ namespace ShadowRDP
 
             dlg.Shown += (_, _) => tbLogin.Focus();
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return Helpers.UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
 
         // v2.1.53 — per-session credential prompt. Same dialog UI as Show,
@@ -648,7 +642,7 @@ namespace ShadowRDP
                 MaximizeBox = false,
                 MinimizeBox = false,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = Helpers.UiTheme.Background
+                BackColor = Helpers.UiTheme.DialogBackground
             };
 
             var lblTitle = new Label
@@ -705,14 +699,13 @@ namespace ShadowRDP
                 ShadowRDP.Helpers.UiTheme.HeaderBar,
                 width: 300,
                 radius: 5);
-            okBtn.Location = new Point(16, 162);
+            okBtn.Location = new Point(87, 173);
             dlg.Controls.Add(okBtn);
 
-            // v2.2.8: Cancel = MakeFilled gray, fixed 96×30 (was MakeFlat —
-            // wider than the 300px OK button on hover, looked mismatched).
-            var cancelBtn = Helpers.UiButtons.MakeFilled("Отмена", null,
-                Helpers.UiTheme.MutedForeground, width: 96, radius: 1);
-            cancelBtn.Location = new Point(326, 162);
+            // v2.2.8: Cancel = MakeCompactFilled gray 100x22.
+            var cancelBtn = Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
+                bgOverride: Helpers.UiTheme.MutedForeground);
+            cancelBtn.Location = new Point(395, 173);
             dlg.Controls.Add(cancelBtn);
 
             RdpCredentialStore.Creds? result = null;
@@ -766,7 +759,7 @@ namespace ShadowRDP
 
             dlg.Shown += (_, _) => tbLogin.Focus();
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return Helpers.UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
     }
 }

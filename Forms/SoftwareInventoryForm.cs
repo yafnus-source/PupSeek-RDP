@@ -17,10 +17,14 @@ namespace ShadowRDP.Forms
     // book for installed software via Remote Registry / StdRegProv WMI,
     // displays two views: aggregated (software → count → computers) and
     // per-computer (computer → software list). CSV export available.
+    //
+    // v4.3.3 — редизайн в стиле FTP-эталона: градиентный hero (поиск справа),
+    // обе таблицы-табы в одной карточке, действия в футере. Вся логика
+    // (скан, фильтр, экспорт, персистентность) без изменений.
     public class SoftwareInventoryForm : Form
     {
         private readonly TextBox _filterBox;
-        private readonly Label _lblFilter;
+        private readonly Panel _filterWrapper;
         private readonly Label _lblHint;
         private readonly Label _scanBtn;
         private readonly Label _cancelBtn;
@@ -38,98 +42,122 @@ namespace ShadowRDP.Forms
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         private const int WM_SETREDRAW = 0x000B;
-        private static Color RowAlt => ShadowRDP.Helpers.UiTheme.RowAlt;
-
-        private static Color RowBase => ShadowRDP.Helpers.UiTheme.RowBase;
-        private static readonly Color SelectionColor = Color.FromArgb(0xCC, 0xE4, 0xF7);
-        private static readonly Color Divider = Color.FromArgb(0xD9, 0xD9, 0xD9);
 
         public SoftwareInventoryForm()
         {
-            Text = "Инвентаризация ПО (домен)";
+            Text = "Инвентаризация SOFT (домен)";
             ClientSize = new Size(960, 660);
             MinimumSize = new Size(700, 500);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = UiTheme.Background;
+            BackColor = UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
-            var headerPanel = UiHeader.Create("Инвентаризация ПО", "все компьютеры из адресной книги", "list", Color.FromArgb(0x56, 0x5C, 0x30));
-            headerPanel.Dock = DockStyle.Top;
-            Controls.Add(headerPanel);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero("Инвентаризация SOFT", "все компьютеры из адресной книги", "computer");
 
-            // === Filter row ===
-            _lblFilter = new Label
-            {
-                Text = "Фильтр:",
-                Font = new Font("Segoe UI", 9F),
-                Location = new Point(16, 83),
-                Size = new Size(50, 22),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-            _filterBox = new TextBox { Location = new Point(70, 83), Size = new Size(260, 22) };
-            _filterBox.TextChanged += (s, e) => { _filterDebounce.Stop(); _filterDebounce.Start(); };
-            _lblHint = new Label { Text = "(по имени программы или компьютеру)", Location = new Point(336, 83), Size = new Size(230, 22), ForeColor = Color.Gray, TextAlign = ContentAlignment.MiddleLeft };
-            Controls.AddRange(new Control[] { _lblFilter, _filterBox, _lblHint });
+            // Search lives in the hero (right side): white box, no anchors —
+            // position comes from the real hero width (Shown/Resize).
+            _filterWrapper = Helpers.UiSearchBox.Create("Поиск…", txt => { _filterDebounce.Stop(); _filterDebounce.Start(); }, width: 364, height: 27, background: Color.White);
+            _filterWrapper.Location = new Point(70, 18);
+            _filterWrapper.Size = new Size(364, 27);
+            _filterBox = Helpers.UiSearchBox.GetBox(_filterWrapper);
+            _lblHint = new Label { Text = "(по имени программы или компьютеру)", Location = new Point(70, 48), Size = new Size(364, 18), Font = new Font("Segoe UI", 8F), ForeColor = Color.FromArgb(210, 228, 238), TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent };
+            hero.Controls.Add(_filterWrapper);
+            hero.Controls.Add(_lblHint);
 
-            var btnFont = new Font("Segoe UI Semibold", 9F);
-            _scanBtn = UiButtons.MakeCompactFilled("Сканировать", TextRenderer.MeasureText("Сканировать", btnFont).Width + 28);
-            _cancelBtn = UiButtons.MakeCompactFilled("Прервать", TextRenderer.MeasureText("Прервать", btnFont).Width + 28);
-            _exportBtn = UiButtons.MakeCompactFilled("Экспорт CSV", TextRenderer.MeasureText("Экспорт CSV", btnFont).Width + 28);
-            _exportBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _scanBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            LayoutButtons();
-            _scanBtn.Click += async (s, e) => await ScanAsync();
-            _cancelBtn.Enabled = false;
-            _cancelBtn.Click += (s, e) => OnCancel();
-            _exportBtn.Click += (s, e) => OnExportCsv();
-            Controls.AddRange(new Control[] { _scanBtn, _cancelBtn, _exportBtn });
+            // ——— 2. Content: single card with both tabs ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };
+            var cardTabs = UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            cardTabs.Dock = DockStyle.Fill;
+            cardTabs.Padding = new Padding(14);
+            content.Controls.Add(cardTabs);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { cardTabs.Region?.Dispose(); cardTabs.Region = null; } catch { }
 
             // === TabControl with two tabs ===
             _tabs = new TabControl
             {
-                Location = new Point(8, 115),
-                Size = new Size(936, 495),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Dock = DockStyle.Fill,
                 Font = new Font("Segoe UI", 9F)
             };
 
             // Tab 1: By Software (aggregated)
-            var tabSoftware = new TabPage("По ПО");
+            var tabSoftware = new TabPage("По ПО") { BackColor = Color.White };
             _gridBySoftware = CreateGrid();
             _gridBySoftware.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Программа", FillWeight = 160, MinimumWidth = 120 });
             _gridBySoftware.Columns.Add(new DataGridViewTextBoxColumn { Name = "Version", HeaderText = "Версия", FillWeight = 60, MinimumWidth = 60 });
             _gridBySoftware.Columns.Add(new DataGridViewTextBoxColumn { Name = "Count", HeaderText = "Кол-во машин", FillWeight = 40, MinimumWidth = 70 });
             _gridBySoftware.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computers", HeaderText = "Компьютеры", FillWeight = 200, MinimumWidth = 150 });
             tabSoftware.Controls.Add(_gridBySoftware);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_gridBySoftware);
             _tabs.TabPages.Add(tabSoftware);
 
             // Tab 2: By Computer (raw)
-            var tabComputer = new TabPage("По компьютерам");
+            var tabComputer = new TabPage("По компьютерам") { BackColor = Color.White };
             _gridByComputer = CreateGrid();
             _gridByComputer.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computer", HeaderText = "Компьютер", FillWeight = 80, MinimumWidth = 90 });
             _gridByComputer.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Программа", FillWeight = 160, MinimumWidth = 120 });
             _gridByComputer.Columns.Add(new DataGridViewTextBoxColumn { Name = "Version", HeaderText = "Версия", FillWeight = 60, MinimumWidth = 60 });
             tabComputer.Controls.Add(_gridByComputer);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_gridByComputer);
             _tabs.TabPages.Add(tabComputer);
 
-            Controls.Add(_tabs);
+            cardTabs.Controls.Add(_tabs);
 
-            // === Bottom row ===
+            // ——— 3. Status bar (thin strip above the footer) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _statusLabel = new Label
             {
-                Location = new Point(16, 618),
-                Size = new Size(650, 22),
+                Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+                Font = new Font("Segoe UI", 8F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(16, 0, 0, 0),
                 Text = "Нажмите «Сканировать»."
             };
-            _closeBtn = UiButtons.MakeCompactFilled("Закрыть", TextRenderer.MeasureText("Закрыть", btnFont).Width + 28);
-            _closeBtn.Location = new Point(842, 616);
-            _closeBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            statusPanel.Controls.Add(_statusLabel);
+
+            // ——— 4. Footer with action buttons ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+            _scanBtn = UiButtons.MakeCompactFilled("Сканировать", w("Сканировать"));
+            _scanBtn.Location = new Point(16, 15);
+            _scanBtn.Click += async (s, e) => await ScanAsync();
+            _cancelBtn = UiButtons.MakeCompactFilled("Прервать", w("Прервать"));
+            _cancelBtn.Location = new Point(16 + _scanBtn.Width + 8, 15);
+            _cancelBtn.Enabled = false;
+            _cancelBtn.Click += (s, e) => OnCancel();
+            _exportBtn = UiButtons.MakeCompactFilled("Экспорт CSV", w("Экспорт CSV"));
+            _exportBtn.Location = new Point(_cancelBtn.Left + _cancelBtn.Width + 8, 15);
+            _exportBtn.Click += (s, e) => OnExportCsv();
+            _closeBtn = UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
             _closeBtn.Click += (s, e) => Close();
-            Controls.AddRange(new Control[] { _statusLabel, _closeBtn });
+            footer.Controls.AddRange(new Control[] { _scanBtn, _cancelBtn, _exportBtn, _closeBtn });
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
+
+            // Dock order: content Fill first, hero Top, then the two Bottom
+            // strips (footer added last docks first → very bottom, status
+            // above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
 
             _filterDebounce.Tick += (s, e) =>
             {
@@ -137,22 +165,38 @@ namespace ShadowRDP.Forms
                 ApplyFilter();
             };
 
-            Resize += (s, e) => LayoutButtons();
-            Shown += async (s, e) => await ScanAsync();
-        }
+            content.Resize += (s, e) => LayoutContent();
+            hero.Resize += (s, e) => PositionSearch();
+            Shown += async (s, e) =>
+            {
+                LayoutContent();
+                PositionSearch();
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+                // v3.9.1 — поиск не активен при открытии окна: фокус на сетку,
+                // поле активируется только кликом мыши (как в остальных формах).
+                ActiveControl = _gridBySoftware;
+                _gridBySoftware.Focus();
+                try { BeginInvoke(new Action(() => { try { Refresh(); } catch { } })); } catch { }
+                await ScanAsync();
+            };
 
-        private void LayoutButtons()
-        {
-            int gap = 8;
-            int right = ClientSize.Width - 16;
-            int y = 83;
+            void LayoutContent()
+            {
+                // Single files card is already Dock=Fill in padded content —
+                // nothing to position manually.
+            }
+            LayoutContent();
 
-            right -= _exportBtn.Width;
-            _exportBtn.Location = new Point(right, y);
-            right -= gap + _cancelBtn.Width;
-            _cancelBtn.Location = new Point(right, y);
-            right -= gap + _scanBtn.Width;
-            _scanBtn.Location = new Point(right, y);
+            // Search at the hero's right edge (no anchors — they capture
+            // garbage mid-layout; positions come from the real width).
+            void PositionSearch()
+            {
+                int x = Math.Max(16, hero.Width - 380);
+                _filterWrapper.Location = new Point(x, 18);
+                _lblHint.Location = new Point(x, 48);
+            }
+            PositionSearch();
         }
 
         private DataGridView CreateGrid()
@@ -160,42 +204,17 @@ namespace ShadowRDP.Forms
             var grid = new DoubleBufferedDataGridView
             {
                 Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                AllowUserToResizeRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = RowBase,
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.None,
-                GridColor = Divider,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 MultiSelect = false,
-                Font = new Font("Segoe UI", 10F),
-                DefaultCellStyle = {
-                    BackColor = RowBase,
-                    SelectionBackColor = SelectionColor,
-                    SelectionForeColor = UiTheme.Foreground,
-                    Font = new Font("Segoe UI", 10F)
-                },
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = UiTheme.Muted,
-                    ForeColor = UiTheme.Foreground,
-                    SelectionBackColor = UiTheme.Muted,
-                    SelectionForeColor = UiTheme.Foreground,
-                    Font = new Font("Segoe UI", 10F)
-                },
-                RowTemplate = { Height = 22 }
             };
-            grid.EnableHeadersVisualStyles = false;
-            grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            foreach (DataGridViewColumn c in grid.Columns) c.DividerWidth = 0;
-            grid.RowTemplate.DividerHeight = 0;
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(grid, 36, 36);
+            grid.Resize += (s, e) => { try { grid.Invalidate(); } catch { } };
+            grid.ColumnWidthChanged += (s, e) => { try { grid.Invalidate(); } catch { } };
             return grid;
         }
 
+        // Скругление углов: режем Region контрола по скруглённому rect.
+        
         private async Task ScanAsync()
         {
             _scanBtn.Enabled = false;
@@ -250,9 +269,7 @@ namespace ShadowRDP.Forms
             foreach (var g in bySoftware)
             {
                 var computers = string.Join(", ", g.Select(e => e.Computer).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c));
-                var row = _gridBySoftware.Rows.Add(g.Key.Name, g.Key.Version, g.Count(), computers);
-                _gridBySoftware.Rows[row].DefaultCellStyle.BackColor = (row % 2 == 0) ? RowBase : RowAlt;
-                _gridBySoftware.Rows[row].DefaultCellStyle.SelectionBackColor = SelectionColor;
+                _gridBySoftware.Rows.Add(g.Key.Name, g.Key.Version, g.Count(), computers);
             }
             _gridBySoftware.ResumeLayout();
 
@@ -263,12 +280,9 @@ namespace ShadowRDP.Forms
                 .ToList();
 
             _gridByComputer.SuspendLayout();
-            int idx = 0;
             foreach (var e in byComputer)
             {
-                var row = _gridByComputer.Rows.Add(e.Computer, e.Name, e.Version);
-                _gridByComputer.Rows[row].DefaultCellStyle.BackColor = (idx++ % 2 == 0) ? RowBase : RowAlt;
-                _gridByComputer.Rows[row].DefaultCellStyle.SelectionBackColor = SelectionColor;
+                _gridByComputer.Rows.Add(e.Computer, e.Name, e.Version);
             }
             _gridByComputer.ResumeLayout();
         }
@@ -312,7 +326,7 @@ namespace ShadowRDP.Forms
                 FileName = "software_inventory.csv",
                 DefaultExt = "csv"
             };
-            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            if (UiModal.ShowDimmed(this, sfd) != DialogResult.OK) return;
 
             try
             {

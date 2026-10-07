@@ -57,7 +57,7 @@ namespace ShadowRDP
 
             if (!skipSplash && !alreadyAdmin)
             {
-                ShowSplashBlocking(3000);
+                ShowSplashBlocking(800);   // v3.9.3 Фаза 4: 3000→800мс
             }
 
             // v3.0.18 — auto-elevate without asking. App MUST be admin for

@@ -63,9 +63,13 @@ namespace ShadowRDP.Controls
                     LineAlignment = StringAlignment.Center,
                     Alignment = StringAlignment.Near
                 };
+                // v3.9.3AQ — чёткий ClearType заголовка (голый DrawString
+                // давал «пиксельные» глифы).
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
                 g.DrawString(Text, titleFont, titleBrush,
                     new RectangleF(padLeft + 2, titleY, titleRect.Width - 2, titleRect.Height),
                     sf);
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
             }
         }
 

@@ -22,6 +22,9 @@ namespace ShadowRDP.Services
             // v2.1.49 — user-defined group name for the session. Empty =
             // "Без группы". Used by RdpManagerForm to render grouped sidebar.
             public string? Group { get; set; }
+            // v4.9.34 — отображаемое название (null/"" = Computer) и заметки.
+            public string? DisplayName { get; set; }
+            public string? Notes { get; set; }
             // v3.0.7 — when false, RestoreSessions adds the session as a
             // sidebar entry WITHOUT connecting mstsc (pending until the user
             // clicks the tab). Lets the user opt out of "open everything on
@@ -73,6 +76,8 @@ namespace ShadowRDP.Services
                             Computer = e.Computer.Trim(),
                             Ip = string.IsNullOrWhiteSpace(e.Ip) ? null : e.Ip.Trim(),
                             Group = string.IsNullOrWhiteSpace(e.Group) ? null : e.Group.Trim(),
+                            DisplayName = string.IsNullOrWhiteSpace(e.DisplayName) ? null : e.DisplayName.Trim(),
+                            Notes = string.IsNullOrWhiteSpace(e.Notes) ? null : e.Notes.Trim(),
                             AutoOpen = e.AutoOpen,
                             SortOrder = e.SortOrder
                         })

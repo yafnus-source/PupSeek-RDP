@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Renci.SshNet;
+using ShadowRDP.Controls;
 
 namespace ShadowRDP.Forms
 {
@@ -37,8 +38,8 @@ namespace ShadowRDP.Forms
         }
         private SftpClient _currentSftp = null!;
         private SftpClient Sftp => _currentSftp ?? _sftp;
-        private ListView _localView = null!;
-        private ListView _remoteView = null!;
+        private Controls.ScrollHiddenListView _localView = null!;
+        private Controls.ScrollHiddenListView _remoteView = null!;
         private TextBox _localPath = null!;
         private TextBox _remotePath = null!;
         private Panel? _localPathPanel;
@@ -67,9 +68,10 @@ namespace ShadowRDP.Forms
         // Marked-for-paste remote path (set by "Скопировать" in remote
         // context menu / search results). Ctrl+V in local pane downloads.
         private string? _copySource;
-        private static Color RowAlt => ShadowRDP.Helpers.UiTheme.RowAlt;
+        private static Color RowAlt => IsBlue ? Color.FromArgb(0xF5, 0xF5, 0xF5) : ShadowRDP.Helpers.UiTheme.RowAlt;
 
-        private static Color RowBase => ShadowRDP.Helpers.UiTheme.RowBase;
+        private static Color RowBase => IsBlue ? Color.White : ShadowRDP.Helpers.UiTheme.RowBase;
+        private static bool IsBlue => ShadowRDP.Helpers.UiTheme.CurrentName != "Olive";
         private static readonly Color FieldBorder = Color.FromArgb(0xC0, 0xC0, 0xC0);
 
         public SftpForm(SftpClient sftp, string sessionName = "", Form? parent = null) : base()
@@ -265,6 +267,8 @@ namespace ShadowRDP.Forms
                 HighlightArrow(_uploadArrow as Button, false);
             };
             Controls.Add(_localView);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachListView(_localView);
 
             _remoteView = MakeListView(488);
             _remoteView.DoubleClick += (s, e) => OnRemoteDoubleClick();
@@ -286,6 +290,8 @@ namespace ShadowRDP.Forms
                 HighlightArrow(_downloadArrow as Button, false);
             };
             Controls.Add(_remoteView);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachListView(_remoteView);
 
             // === Middle transfer arrows (no background, hover → accent-blue) =
             // v3.3.8 — same arrow glyph both directions (was ➤/⬅, looked
@@ -636,11 +642,13 @@ namespace ShadowRDP.Forms
         // columns. Earlier OwnerDraw attempt had a hover bug because it
         // mixed OwnerDraw with default sub-item rendering — this version
         // paints every cell explicitly.
-        private static readonly Color SelectionColor = Color.FromArgb(0xCC, 0xE4, 0xF7);
+        // v3.9.3BI — выбор #E8ECE8.
+        // v3.9.3CK — синяя тема: выбор мониторный.
+        private static Color SelectionColor => IsBlue ? Color.FromArgb(0xE9, 0xEF, 0xF6) : Helpers.UiTheme.AccentSoft;
 
-        private ListView MakeListView(int x)
+        private ScrollHiddenListView MakeListView(int x)
         {
-            var lv = new ListView
+            var lv = new Controls.ScrollHiddenListView
             {
                 Location = new Point(x, 116),
                 Size = new Size(400, 378),
@@ -650,7 +658,7 @@ namespace ShadowRDP.Forms
                 HideSelection = false,
                 BackColor = RowBase,
                 ForeColor = Helpers.UiTheme.Foreground,
-                Font = new Font("Segoe UI", 10F),
+                Font = new Font("Segoe UI", 9F),
                 BorderStyle = BorderStyle.None,
                 SmallImageList = Helpers.SystemFileIcons.GetImageList(),
                 HeaderStyle = ColumnHeaderStyle.Clickable,
@@ -698,7 +706,7 @@ namespace ShadowRDP.Forms
                         lv.Columns[1].Width,
                         e.Bounds.Height);
                     TextRenderer.DrawText(e.Graphics, item.SubItems[1].Text,
-                        lv.Font, sizeRect, Helpers.UiTheme.MutedForeground,
+                        lv.Font, sizeRect, Helpers.UiTheme.Foreground,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
                 }
 
@@ -710,14 +718,13 @@ namespace ShadowRDP.Forms
                         e.Bounds.Y,
                         lv.Columns[2].Width - 4,
                         e.Bounds.Height);
-                    var dateColor = Color.FromArgb(0x99, 0x99, 0x99);
                     TextRenderer.DrawText(e.Graphics, item.SubItems[2].Text,
-                        lv.Font, dateRect, dateColor,
+                        lv.Font, dateRect, Helpers.UiTheme.Foreground,
                         TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
                 }
 
-                // Column dividers — 1px #D9D9D9 lines between columns.
-                using var divPen = new Pen(Color.FromArgb(0xD9, 0xD9, 0xD9), 1);
+                // Column dividers — BorderSubtle to match unified tables.
+                using var divPen = new Pen(Helpers.UiTheme.BorderSubtle, 1);
                 if (lv.Columns.Count >= 2)
                     e.Graphics.DrawLine(divPen, e.Bounds.X + lv.Columns[0].Width, e.Bounds.Y,
                         e.Bounds.X + lv.Columns[0].Width, e.Bounds.Bottom);
@@ -733,20 +740,24 @@ namespace ShadowRDP.Forms
             };
             lv.DrawColumnHeader += (sender, e) =>
             {
-                e.Graphics.FillRectangle(new SolidBrush(Helpers.UiTheme.Muted), e.Bounds);
-                // Manual text draw for precise left alignment.
-                var textRect = new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 6, e.Bounds.Height);
-                e.Graphics.DrawString(e.Header!.Text, lv.Font,
+                // v3.9.3CK — синяя тема: шапка как у всех таблиц.
+                var hb = e.Bounds;
+                if (IsBlue)
+                {
+                    using var lg = new System.Drawing.Drawing2D.LinearGradientBrush(hb,
+                        Color.FromArgb(0xE0, 0xE7, 0xF0), Color.FromArgb(0xD3, 0xDC, 0xE8), 90f);
+                    e.Graphics.FillRectangle(lg, hb);
+                }
+                else e.Graphics.FillRectangle(new SolidBrush(Color.White), hb);
+                // Manual text draw for precise left alignment (unified white header).
+                var textRect = new Rectangle(e.Bounds.X + 12, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
+                using var fnt = new Font("Segoe UI Semibold", 9F);
+                // v3.9.3AQ — чёткий ClearType заголовка.
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                e.Graphics.DrawString(e.Header!.Text, fnt,
                     new SolidBrush(Helpers.UiTheme.Foreground), textRect,
                     new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center });
-                // 1px divider on the right edge of each column.
-                using var divPen = new Pen(Color.FromArgb(0xD9, 0xD9, 0xD9), 1);
-                e.Graphics.DrawLine(divPen, e.Bounds.Right, e.Bounds.Top, e.Bounds.Right, e.Bounds.Bottom);
-            };
-            lv.Paint += (sender, e) =>
-            {
-                ControlPaint.DrawBorder(e.Graphics, lv.ClientRectangle,
-                    FieldBorder, ButtonBorderStyle.Solid);
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
             };
             return lv;
         }
@@ -816,7 +827,10 @@ namespace ShadowRDP.Forms
                 };
                 var rect = new Rectangle(0, -2, b.Width, b.Height);
                 using var brush = new SolidBrush(b.ForeColor);
+                // v3.9.3AQ — чёткий ClearType стрелки.
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
                 g.DrawString(arrow, b.Font, brush, rect, sf);
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
             };
             return btn;
         }
@@ -1023,7 +1037,7 @@ namespace ShadowRDP.Forms
                 AutoUpgradeEnabled = true
             };
             try { if (Directory.Exists(_localDir)) dlg.SelectedPath = _localDir; } catch { }
-            if (dlg.ShowDialog(this) == DialogResult.OK) TryNavigateLocal(dlg.SelectedPath);
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, dlg) == DialogResult.OK) TryNavigateLocal(dlg.SelectedPath);
         }
 
         // ===== Transfers ==================================================
@@ -1409,19 +1423,36 @@ namespace ShadowRDP.Forms
                 Font = new Font("Segoe UI", 9F)
             };
 
-            var lv = new ListView
+            var lv = new Controls.ScrollHiddenListView
             {
                 Dock = DockStyle.Fill,
                 View = View.Details,
                 FullRowSelect = true,
                 MultiSelect = false,
                 HideSelection = false,
-                BackColor = Color.White,
+                BackColor = Helpers.UiTheme.RowBase,
+                ForeColor = Helpers.UiTheme.Foreground,
+                Font = new Font("Segoe UI", 9F),
                 BorderStyle = BorderStyle.None,
+                OwnerDraw = true,
                 SmallImageList = Helpers.SystemFileIcons.GetImageList()
             };
             lv.Columns.Add("Путь", 460);
             lv.Columns.Add("Размер", 120, HorizontalAlignment.Right);
+            lv.DrawColumnHeader += (sender, e) =>
+            {
+                e.Graphics.FillRectangle(new SolidBrush(Color.White), e.Bounds);
+                var textRect = new Rectangle(e.Bounds.X + 12, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
+                using var fnt = new Font("Segoe UI Semibold", 9F);
+                // v3.9.3AQ — чёткий ClearType заголовка.
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                e.Graphics.DrawString(e.Header!.Text, fnt,
+                    new SolidBrush(Helpers.UiTheme.Foreground), textRect,
+                    new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center });
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SystemDefault;
+            };
+            lv.DrawItem += (sender, e) => { e.DrawDefault = true; };
+            lv.DrawSubItem += (sender, e) => { e.DrawDefault = true; };
 
             for (var i = 0; i < results.Count; i++)
             {
@@ -1430,7 +1461,8 @@ namespace ShadowRDP.Forms
                 item.SubItems.Add(r.IsDir ? "" : FormatSize(r.Size));
                 item.Tag = r.IsDir;
                 item.ImageIndex = Helpers.SystemFileIcons.IndexFor(r.Path, r.IsDir);
-                item.BackColor = (i % 2 == 0) ? Color.White : Color.FromArgb(0xF7, 0xF9, 0xFC);
+                item.BackColor = (i % 2 == 0) ? Helpers.UiTheme.RowBase : Helpers.UiTheme.RowAlt;
+                item.ForeColor = Helpers.UiTheme.Foreground;
                 lv.Items.Add(item);
             }
 
@@ -1544,7 +1576,9 @@ namespace ShadowRDP.Forms
             };
 
             dlg.Controls.Add(lv);
-            dlg.ShowDialog(this);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachListView(lv);
+            ShadowRDP.Helpers.UiModal.ShowDimmed(this, dlg);
         }
 
         private void NavigateToRemoteHit(string path, bool isDir)

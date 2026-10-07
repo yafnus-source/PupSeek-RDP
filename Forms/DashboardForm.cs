@@ -34,12 +34,45 @@ namespace ShadowRDP.Forms
         private Dictionary<string, Label> _periodPills = new Dictionary<string, Label>();
         private System.Windows.Forms.Timer _pollUiTimer = new System.Windows.Forms.Timer();
         private Label _btnAi = null!;
-        private DashboardChartPanel _chartPanel = null!;
+        private Panel _filterPanelW = null!;
         private string _selectedSource = "";
+        // v4.9.21 — кастомный диапазон периода + группировка + последние
+        // показанные строки (для экспорта CSV).
+        private DateTime _customFrom = DateTime.Now.AddDays(-2);
+        private DateTime _customTo = DateTime.Now;
+        private bool _grouped = false;
+        private List<string[]> _lastRows = new List<string[]>();
+        private List<DashboardEvent> _lastTags = new List<DashboardEvent>();
+        // v4.8 — шапка вынесена в поле: режим «только контент» для встраивания
+        // вьюхой Events единого дашборда (шапка прячется, остаётся фильтр+грид).
+        private Panel _headerW = null!;
+
+        // v4.8 — подготовить как контент вьюхи Events: убрать свою шапку
+        // (единая шапка у дашборда), оставить пилы/хосты/грид/статус.
+        // v4.9.21 — фильтры живут в hero единой шапки: свою панель фильтров
+        // тоже прячем во встроенном режиме.
+        public void PrepareForEmbeddedEvents()
+        {
+            try { if (_headerW != null && !_headerW.IsDisposed) _headerW.Visible = false; } catch { }
+            try { if (_filterPanelW != null && !_filterPanelW.IsDisposed) _filterPanelW.Visible = false; } catch { }
+        }
 
         private static readonly Font FontHeader = new Font("Segoe UI Semibold", 8.5f);
         private static readonly Font FontCell = new Font("Segoe UI", 8.5f);
-        private static readonly Color DashHeader = Color.FromArgb(0x62, 0x6F, 0x5E);
+        // v3.9.3BG — hero #48302F. v3.9.3BH — hero #36391E.
+        private static readonly Color DashHeader = Color.FromArgb(0x36, 0x39, 0x1E);
+        // v3.9.3H — активный хост: пил #4A6D8C + белый шрифт.
+        // v3.9.3J — ВСЕ пилы #4A6D8C + белый шрифт; активная темнее.
+        // v3.9.3L — пилы по CSS пользователя: фон #F5F1E8, шрифт чёрный,
+        // рамка белая 4px; активная #3D9C95 + белый шрифт.
+        // v3.9.3CA — синяя тема: стальные пилы переключаются
+        // (Olive — беж как было, Blue — стальные синие аналоги).
+        private static bool IsBlue => Helpers.UiTheme.CurrentName != "Olive";
+        private static Color SteelPillBg => IsBlue ? Color.FromArgb(0xE8, 0xEE, 0xF5) : Color.FromArgb(0xF5, 0xF1, 0xE8);
+        private static Color SteelPillActive => IsBlue ? Color.FromArgb(0xB9, 0xCD, 0xE0) : Color.FromArgb(0xCF, 0xCF, 0xCF);
+        private static Color SteelPillHover => IsBlue ? Color.FromArgb(0xD8, 0xE2, 0xEE) : Color.FromArgb(0xE9, 0xE2, 0xD2);
+        private static readonly Color SteelPillBorder = Color.FromArgb(0xFF, 0xFF, 0xFF);
+        private static readonly Color SteelPillText = Color.FromArgb(0x00, 0x00, 0x00);
 
         public DashboardForm()
         {
@@ -48,10 +81,25 @@ namespace ShadowRDP.Forms
             FormBorderStyle = FormBorderStyle.None;
             Dock = DockStyle.Fill;
 
-            // Header band — #626F5E per request
-            var header = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = DashHeader };
-            _title = new Label { Text = "ДАШБОРД СОБЫТИЙ", Font = new Font("Segoe UI Semibold", 11f), ForeColor = Color.White, BackColor = Color.Transparent, AutoSize = true, Location = new Point(16, 14) };
+            // Header band — цвет hero выбирается пользователем (v3.9.3BH).
+            var header = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Helpers.UiTheme.HeroBg };
+            _headerW = header;
+            _title = new Label { Text = "ДАШБОРД СОБЫТИЙ", Font = new Font("Segoe UI Semibold", 11f), ForeColor = Helpers.UiTheme.HeroFg, BackColor = Color.Transparent, AutoSize = true, Location = new Point(16, 14) };
             header.Controls.Add(_title);
+            // v3.9.3CY — выбор цвета hero перенесён в «Инструменты → Настройки цвета».
+            Helpers.UiTheme.HeroColorChanged += RefreshHeroColors;
+            header.Disposed += (s, e) => { try { Helpers.UiTheme.HeroColorChanged -= RefreshHeroColors; } catch { } };
+            void RefreshHeroColors()
+            {
+                try
+                {
+                    if (header.IsDisposed) return;
+                    header.BackColor = Helpers.UiTheme.HeroBg;
+                    _title.ForeColor = Helpers.UiTheme.HeroFg;
+                    header.Invalidate(true);
+                }
+                catch { }
+            }
 
             var btnRefresh = UiButtons.MakeCompactFilled("Обновить", 90);
             btnRefresh.Location = new Point(220, 13);
@@ -59,7 +107,7 @@ namespace ShadowRDP.Forms
             header.Controls.Add(btnRefresh);
 
             // AI button — custom Label that reads lbl.Text in Paint
-            Color _aiBg = DashHeader;
+            Color _aiBg = Helpers.UiTheme.HeroBg;
             _btnAi = new Label
             {
                 Text = "Проверка ИИ...",
@@ -74,14 +122,14 @@ namespace ShadowRDP.Forms
             _btnAi.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                var r = new Rectangle(0, 0, _btnAi.Width, _btnAi.Height);
-                using var path = UiButtons.RoundedRect(r, 1);
-                using var fill = new SolidBrush(_aiBg);
-                e.Graphics.FillPath(fill, path);
+        var r = new Rectangle(0, 0, _btnAi.Width, _btnAi.Height);
+        using var path = UiButtons.RoundedRect(r, 5);   // v4.9.4: 1 → 5
+        using var fill = new SolidBrush(_aiBg);
+        e.Graphics.FillPath(fill, path);
                 TextRenderer.DrawText(e.Graphics, _btnAi.Text, _btnAi.Font, r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             };
             _btnAi.MouseEnter += (s, e) => { _aiBg = ControlPaint.Dark(_aiBg, 0.08f); _btnAi.Invalidate(); };
-            _btnAi.MouseLeave += (s, e) => { _aiBg = _btnAi.BackColor != Color.Transparent ? _btnAi.BackColor : DashHeader; _btnAi.Invalidate(); };
+            _btnAi.MouseLeave += (s, e) => { _aiBg = _btnAi.BackColor != Color.Transparent ? _btnAi.BackColor : Helpers.UiTheme.HeroBg; _btnAi.Invalidate(); };
             _btnAi.Location = new Point(btnRefresh.Right + 8, 13);
             _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
             header.Controls.Add(_btnAi);
@@ -120,10 +168,17 @@ namespace ShadowRDP.Forms
             btnSettings.Click += (s, e) => ShowSettings();
             header.Controls.Add(btnSettings);
 
+            var btnFtp = UiButtons.MakeCompactFilled("FTP", 60);
+            btnFtp.Location = new Point(btnSettings.Right + 8, 13);
+            btnFtp.Click += (s, e) => Forms.FtpSettingsForm.Show(this);
+            header.Controls.Add(btnFtp);
+
             Controls.Add(header);
 
-            // Filter pills area
+            // Filter pills area (standalone; во встроенном режиме скрыта —
+            // фильтры живут в hero единой шапки, см. PrepareForEmbeddedEvents).
             var filterPanel = new Panel { Dock = DockStyle.Top, Height = 56, BackColor = UiTheme.Card, Padding = new Padding(12, 8, 12, 8) };
+            _filterPanelW = filterPanel;
             _filterLevel = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.Transparent };
             foreach (var lv in new[] { "Все", "Critical", "Error" })
             {
@@ -145,65 +200,27 @@ namespace ShadowRDP.Forms
             filterPanel.Controls.Add(_filterPeriod);
             Controls.Add(filterPanel);
 
-            // Host bar
-            _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, BackColor = UiTheme.Background, Padding = new Padding(12, 6, 12, 6), AutoSize = false };
+            // Host bar — classic MMC tab strip (v3.9.1): Card background,
+            // tabs flush to the bottom, 1px baseline. Active tab (white)
+            // covers it and merges into the white page below.
+            // Хосты — сегмент-пилы (v4.9.13): активный оливковый #626F5E,
+            // белый жирный текст, рамка olive; неактивный — карточный фон,
+            // muted-текст, рамка линии (как задано в CSS).
+            // v4.9.15 — пилы подняты на 8px (паддинг сверху убран), белая
+            // полоса под ними (sep) удалена, таблица подтянулась наверх.
+            // v4.9.22 — хосты фразами (олива + подложка, без рамки).
+            // v4.9.23 — зазор фразы→таблица ×3: панель 64px (36px под фразами).
+            // v4.9.24 — фразы внизу у таблицы: зазор 36px сверху (к hero).
+            // v4.9.25 — строчка серверов поднята на 10px (паддинг 26px).
+            _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 90, BackColor = UiTheme.Card, Padding = new Padding(8, 26, 12, 26), AutoSize = false };
             Controls.Add(_hostPanel);
-
-            var sep = new Panel { Dock = DockStyle.Top, Height = 4, BackColor = UiTheme.BorderSubtle };
-            Controls.Add(sep);
-
-            // Charts — before grid (все графики, интерактив, до таблицы)
-            _chartPanel = new DashboardChartPanel();
-            _chartPanel.OnChartClick += (kind, key) =>
-            {
-                if (kind == "Level") { _level = string.Equals(_level, key, StringComparison.OrdinalIgnoreCase) ? "Все" : key; UpdatePills(); ApplyFilters(); }
-                else if (kind == "Host") { _selectedHost = string.Equals(_selectedHost, key, StringComparison.OrdinalIgnoreCase) ? "" : key; RebuildHostBar(); ApplyFilters(); }
-                else if (kind == "Source") { _selectedSource = string.Equals(_selectedSource, key, StringComparison.OrdinalIgnoreCase) ? "" : key; ApplyFilters(); }
-                else if (kind == "Time") { _status.Text = $"Выбран интервал: {key}"; }
-            };
-            Controls.Add(_chartPanel);
 
             // Grid — double-buffered (DoubleBufferedDataGridView) for smooth
             // scrolling, matching the "Открытые файлы" grid. Cell painting is
             // only custom for the Level badge; everything else uses the
             // standard renderer so double-buffering stays artifact-free.
             _grid.Dock = DockStyle.Fill;
-            _grid.BackgroundColor = UiTheme.Card;
-            _grid.BorderStyle = BorderStyle.None;
-            _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
-            _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Top = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Left = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Right = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
-            _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedColumnHeadersBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
-            _grid.GridColor = UiTheme.BorderSubtle;
-            _grid.RowHeadersVisible = false;
-            _grid.AllowUserToAddRows = false;
-            _grid.AllowUserToDeleteRows = false;
-            _grid.AllowUserToResizeRows = false;
-            _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            _grid.ReadOnly = true;
-            _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            _grid.RowTemplate.Height = 36;
-            _grid.ColumnHeadersHeight = 28;
-            _grid.EnableHeadersVisualStyles = false;
-            _grid.ColumnHeadersDefaultCellStyle.BackColor = UiTheme.HeaderBar;
-            _grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-            _grid.ColumnHeadersDefaultCellStyle.Font = FontHeader;
-            _grid.DefaultCellStyle.Font = FontCell;
-            _grid.DefaultCellStyle.BackColor = UiTheme.Card;
-            _grid.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
-            _grid.DefaultCellStyle.Padding = new Padding(6, 0, 6, 0);
-            _grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
-            _grid.DefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
-            _grid.DefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
-            _grid.AlternatingRowsDefaultCellStyle.BackColor = UiTheme.RowAlt;
-            _grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = UiTheme.AccentSoft;
-            _grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = UiTheme.Foreground;
+            UiGridStyle.ApplyUnified(_grid, 36, 36);
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "Время", Width = 130, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 6, 0) } });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Level", HeaderText = "Уровень", Width = 80, MinimumWidth = 80, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter, Padding = Padding.Empty } });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Source", HeaderText = "Источник", Width = 120, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 6, 0) } });
@@ -211,7 +228,6 @@ namespace ShadowRDP.Forms
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Computer", HeaderText = "Хост", Width = 110, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 6, 0) } });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Message", HeaderText = "Сообщение", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 6, 0) } });
 
-            _grid.CellPainting += OnCellPainting;
             _grid.CellFormatting += OnCellFormatting;
             _grid.CellMouseDown += OnCellMouseDown;
             _grid.CellDoubleClick += OnCellDoubleClick;
@@ -220,11 +236,11 @@ namespace ShadowRDP.Forms
             // Status bar with NyanCat progress — подкручен: толще + текст процента/ETA (зеленый бар только для опроса, Nyan только для ИИ)
             var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 62, BackColor = UiTheme.Card };
             _progressBar = new ProgressBar { Dock = DockStyle.Top, Height = 8, Style = ProgressBarStyle.Continuous, Visible = false };
-            _progressBar.HandleCreated += (s, e) => SetProgressBarColor(_progressBar.Handle, Color.FromArgb(0x10, 0xB9, 0x81));
+            _progressBar.HandleCreated += (s, e) => SetProgressBarColor(_progressBar.Handle, Color.FromArgb(0xF0, 0xA0, 0x50));
             _nyanBar.Dock = DockStyle.Top;
             _nyanBar.Height = 36;
             _nyanBar.Visible = false;
-            _progressLabel = new Label { Dock = DockStyle.Top, Height = 14, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 7.5f), ForeColor = Color.FromArgb(0x10, 0xB9, 0x81), BackColor = UiTheme.Card, Visible = false, Padding = new Padding(0) };
+            _progressLabel = new Label { Dock = DockStyle.Top, Height = 14, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 7.5f), ForeColor = Color.FromArgb(0xF0, 0xA0, 0x50), BackColor = UiTheme.Card, Visible = false, Padding = new Padding(0) };
             _status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 8f), ForeColor = UiTheme.MutedForeground, Padding = new Padding(12, 2, 0, 0) };
             statusPanel.Controls.Add(_status);
             statusPanel.Controls.Add(_progressLabel);
@@ -233,16 +249,19 @@ namespace ShadowRDP.Forms
             Controls.Add(statusPanel);
 
             Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
 
-            Controls.SetChildIndex(header, 6);
-            Controls.SetChildIndex(filterPanel, 5);
-            Controls.SetChildIndex(_hostPanel, 4);
-            Controls.SetChildIndex(sep, 3);
-            Controls.SetChildIndex(_chartPanel, 2);
-            Controls.SetChildIndex(_grid, 1);
+            Controls.SetChildIndex(header, 5);
+            Controls.SetChildIndex(filterPanel, 4);
+            Controls.SetChildIndex(_hostPanel, 3);
+            Controls.SetChildIndex(_grid, 2);
             Controls.SetChildIndex(statusPanel, 0);
 
             Load += async (s, e) => { await LoadEventsAsync(); EventPollerService.OnNewEvents += OnNewEvents; EventPollerService.OnCritical += OnCritical; EventPollerService.OnProgress += OnProgress; };
+            // v3.9.3 Фаза 4 — OnNewEvents не трогает скрытый грид: при
+            // возврате на вьюху обновляем его здесь.
+            VisibleChanged += (s, e) => { if (Visible && !IsDisposed && IsHandleCreated) { try { ApplyFilters(); } catch { } } };
             FormClosing += (s, e) => SaveColumnWidths();
             FormClosed += (s, e) => { EventPollerService.OnNewEvents -= OnNewEvents; EventPollerService.OnCritical -= OnCritical; EventPollerService.OnProgress -= OnProgress; };
 
@@ -358,34 +377,17 @@ namespace ShadowRDP.Forms
             catch { }
         }
 
+        
         private void UpdatePills()
         {
-            foreach (var kv in _levelPills) ApplyPillStyle(kv.Value, kv.Key == _level);
-            foreach (var kv in _periodPills) ApplyPillStyle(kv.Value, kv.Key == _period);
+            // v3.9.1 — БЕЗ BringToFront(): во FlowLayoutPanel он меняет порядок
+            // элементов, и активная пила перескакивает на первое место. Пилы
+            // выделяются только стилем, как в Книге.
+            foreach (var kv in _levelPills) Helpers.UiPills.Apply(kv.Value, kv.Key == _level);
+            foreach (var kv in _periodPills) Helpers.UiPills.Apply(kv.Value, kv.Key == _period);
         }
 
-        private Label CreatePill(string text, bool active)
-        {
-            var lbl = new Label { Text = text, AutoSize = true, Font = active ? new Font("Segoe UI Semibold", 9f) : new Font("Segoe UI", 9f), TextAlign = ContentAlignment.MiddleCenter, Cursor = Cursors.Hand, Padding = new Padding(10, 6, 10, 6), Margin = new Padding(4, 0, 4, 0) };
-            ApplyPillStyle(lbl, active);
-            lbl.Paint += (s, e) =>
-            {
-                if (lbl.BackColor == Color.Transparent) return;
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using var path = UiButtons.RoundedRect(new Rectangle(0, 0, lbl.Width - 1, lbl.Height - 1), 8);
-                using var brush = new SolidBrush(lbl.BackColor);
-                e.Graphics.FillPath(brush, path);
-                TextRenderer.DrawText(e.Graphics, lbl.Text, lbl.Font, lbl.ClientRectangle, lbl.ForeColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            };
-            return lbl;
-        }
-
-        private void ApplyPillStyle(Label lbl, bool active)
-        {
-            if (active) { lbl.BackColor = UiTheme.PillActiveBg; lbl.ForeColor = UiTheme.PillActiveFg; lbl.Font = new Font("Segoe UI Semibold", 9f); }
-            else { lbl.BackColor = Color.Transparent; lbl.ForeColor = UiTheme.MutedForeground; lbl.Font = new Font("Segoe UI", 9f); }
-            lbl.Invalidate();
-        }
+        private Label CreatePill(string text, bool active) => Helpers.UiPills.Create(text, active);
 
         private async Task LoadEventsAsync()
         {
@@ -416,37 +418,49 @@ namespace ShadowRDP.Forms
                 bool hasCrit = crit > 0;
                 bool hasAny = total > 0;
                 bool isActive = string.Equals(_selectedHost, h, StringComparison.OrdinalIgnoreCase);
+                string tabText = total > 0 ? $"{h}  • {total}" : h;
 
                 var tab = new Label
                 {
                     Text = "",
                     AutoSize = false,
-                    Size = new Size(130, 24),
-                    Font = new Font("Segoe UI Semibold", 8.5f),
+                    Font = new Font("Segoe UI Semibold", 9F),
                     TextAlign = ContentAlignment.MiddleCenter,
                     Cursor = Cursors.Hand,
-                    Margin = new Padding(0, 0, 2, 0),
-                    BackColor = Color.Transparent,
-                    ForeColor = Color.White
+                    Margin = new Padding(0, 0, 10, 0),
+                    BackColor = Color.Transparent
                 };
-                Color baseBg = hasCrit ? Color.FromArgb(0xB0, 0x7A, 0x72) : hasAny ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.Card;
-                Color tabBg = isActive ? ControlPaint.Dark(baseBg, 0.15f) : baseBg;
-                Color tabFg = hasAny ? Color.White : UiTheme.Foreground;
-                Color tabBorder = isActive ? Color.FromArgb(0x48, 0x30, 0x2F) : hasAny ? tabBg : UiTheme.BorderSubtle;
-                string tabText = total > 0 ? $"{h}  • {total}" : h;
-                tab.Text = tabText;
-                tab.ForeColor = tabFg;
-                int borderW = isActive ? 2 : 1;
+                int textW = TextRenderer.MeasureText(tabText, tab.Font).Width;
+                int w = textW + 46;
+                int tabH = 38;
+                tab.Size = new Size(w, tabH);
+                Color statusDot = hasCrit ? Color.FromArgb(0xB0, 0x7A, 0x72) : hasAny ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.StatusOffline;
+                tab.Tag = false;
+                tab.MouseEnter += (s, e) => { tab.Tag = true; try { tab.Invalidate(); } catch { } };
+                tab.MouseLeave += (s, e) => { tab.Tag = false; try { tab.Invalidate(); } catch { } };
                 tab.Paint += (s, e) =>
                 {
                     e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    var r = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
-                    using var path = UiButtons.TabRect(r, 6);
-                    using var brush = new SolidBrush(tabBg);
-                    using var pen = new Pen(tabBorder, borderW);
-                    e.Graphics.FillPath(brush, path);
+                    bool hov = tab.Tag is true;
+                    // v3.9.3CK — дизайн как чипы Монитора: градиент +
+                    // inset-рамка + halo-точка (были стальные с белой рамкой 4px).
+                    var rr = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
+                    using var path = UiButtons.RoundedRect(rr, 19);
+                    Color top = IsBlue ? Color.FromArgb(0xFC, 0xFE, 0xFF) : Color.FromArgb(0xFF, 0xFD, 0xF8);
+                    Color botBase = IsBlue ? Color.FromArgb(0xEB, 0xF0, 0xF6) : Color.FromArgb(0xF6, 0xF3, 0xE9);
+                    Color botEdge = IsBlue ? Color.FromArgb(0xD3, 0xDC, 0xE8) : Color.FromArgb(0xE2, 0xDD, 0xC9);
+                    Color ink = IsBlue ? Color.FromArgb(0x2F, 0x4A, 0x63) : Color.FromArgb(0x56, 0x5C, 0x30);
+                    Color inkDark = IsBlue ? Color.FromArgb(0x20, 0x36, 0x4E) : Color.FromArgb(0x3D, 0x42, 0x23);
+                    using var lg = new System.Drawing.Drawing2D.LinearGradientBrush(rr, top, isActive ? botBase : top, 90f);
+                    e.Graphics.FillPath(lg, path);
+                    using var pen = new Pen(hov && !isActive ? ink : botEdge, 1) { Alignment = System.Drawing.Drawing2D.PenAlignment.Inset };
                     e.Graphics.DrawPath(pen, path);
-                    TextRenderer.DrawText(e.Graphics, tabText, tab.Font, r, tabFg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                    using var halo = new SolidBrush(Color.FromArgb(40, statusDot));
+                    e.Graphics.FillEllipse(halo, 11, (tab.Height - 11) / 2, 11, 11);
+                    using var dot = new SolidBrush(statusDot);
+                    e.Graphics.FillEllipse(dot, 13, (tab.Height - 8) / 2, 8, 8);
+                    var textRect = new Rectangle(31, 0, Math.Max(0, tab.Width - 33), tab.Height);
+                    TextRenderer.DrawText(e.Graphics, tabText, tab.Font, textRect, isActive ? inkDark : ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
                 };
                 string captured = h;
                 tab.Click += (s, e) =>
@@ -473,20 +487,52 @@ namespace ShadowRDP.Forms
         private void ApplyFilters()
         {
             var now = DateTime.Now;
-            TimeSpan periodSpan = TimeSpan.FromDays(2);
-            if (_period == "30 мин") periodSpan = TimeSpan.FromMinutes(30);
-            else if (_period == "1 час") periodSpan = TimeSpan.FromHours(1);
-            else if (_period == "24 часа") periodSpan = TimeSpan.FromHours(24);
-            var cutoff = now - periodSpan;
+            DateTime from;
+            DateTime to = now;
+            // v4.9.21 — «Кастом»: свой диапазон дат (диалог из hero-пилы).
+            if (_period == "Кастом") { from = _customFrom; to = _customTo; }
+            else
+            {
+                TimeSpan periodSpan = TimeSpan.FromDays(2);
+                if (_period == "30 мин") periodSpan = TimeSpan.FromMinutes(30);
+                else if (_period == "1 час") periodSpan = TimeSpan.FromHours(1);
+                else if (_period == "24 часа") periodSpan = TimeSpan.FromHours(24);
+                from = now - periodSpan;
+            }
 
-            var filtered = _all.Where(e => e.Time >= cutoff).Where(e => _level == "Все" || string.Equals(e.Level, _level, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedHost) || string.Equals(e.Computer, _selectedHost, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedSource) || string.Equals(e.Source, _selectedSource, StringComparison.OrdinalIgnoreCase)).OrderByDescending(e => e.Time).ToList();
+            var filtered = _all.Where(e => e.Time >= from && e.Time <= to).Where(e => _level == "Все" || string.Equals(e.Level, _level, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedHost) || string.Equals(e.Computer, _selectedHost, StringComparison.OrdinalIgnoreCase)).Where(e => string.IsNullOrEmpty(_selectedSource) || string.Equals(e.Source, _selectedSource, StringComparison.OrdinalIgnoreCase)).OrderByDescending(e => e.Time).ToList();
+
+            // v4.9.21 — «Группировать»: одинаковые (уровень, источник, ID,
+            // сообщение) схлопываются в одну строку с префиксом [×N].
+            var rows = new List<string[]>();
+            var tags = new List<DashboardEvent>();
+            if (_grouped)
+            {
+                foreach (var g in filtered.GroupBy(e => (e.Level ?? "") + "|" + (e.Source ?? "") + "|" + e.EventId + "|" + (e.Message ?? "")).OrderByDescending(g => g.Max(e => e.Time)).Take(500))
+                {
+                    var top = g.OrderByDescending(e => e.Time).First();
+                    string msg = g.Count() > 1 ? $"[×{g.Count()}] {top.Message}" : top.Message;
+                    rows.Add(new[] { top.Time.ToString("dd.MM HH:mm"), top.Level, top.Source, top.EventId.ToString(), top.Computer, msg });
+                    tags.Add(top);
+                }
+            }
+            else
+            {
+                foreach (var ev in filtered.Take(500))
+                {
+                    rows.Add(new[] { ev.Time.ToString("dd.MM HH:mm"), ev.Level, ev.Source, ev.EventId.ToString(), ev.Computer, ev.Message });
+                    tags.Add(ev);
+                }
+            }
+            _lastRows = rows;
+            _lastTags = tags;
 
             _grid.SuspendLayout();
             _grid.Rows.Clear();
-            foreach (var ev in filtered.Take(500))
+            for (int i = 0; i < rows.Count; i++)
             {
-                int idx = _grid.Rows.Add(ev.Time.ToString("dd.MM HH:mm"), ev.Level, ev.Source, ev.EventId.ToString(), ev.Computer, ev.Message);
-                _grid.Rows[idx].Tag = ev;
+                int idx = _grid.Rows.Add(rows[i]);
+                _grid.Rows[idx].Tag = tags[i];
             }
             _grid.ResumeLayout();
             if (_grid.Rows.Count > 0)
@@ -494,13 +540,98 @@ namespace ShadowRDP.Forms
                 try { _grid.FirstDisplayedScrollingRowIndex = 0; _grid.ClearSelection(); } catch { }
             }
             UpdateStatus(filtered.Count);
+        }
+
+        // v4.9.21 — публичное API фильтров для hero-пил единой шапки.
+        public void SetLevelFilter(string level) { _level = level; UpdatePills(); ApplyFilters(); }
+        public void SetSourceFilter(string source) { _selectedSource = source == "Все" ? "" : source; UpdatePills(); ApplyFilters(); }
+        public void SetGrouped(bool grouped) { _grouped = grouped; ApplyFilters(); }
+        // Возвращает false, если пользователь отменил диалог Кастом.
+        public bool SetPeriodFilter(string period)
+        {
+            if (period == "Кастом" && !ShowCustomPeriodDialog()) return false;
+            _period = period;
+            UpdatePills();
+            ApplyFilters();
+            return true;
+        }
+
+        // v4.9.21 — диалог своего диапазона дат для периода «Кастом».
+        public bool ShowCustomPeriodDialog()
+        {
             try
             {
-                var stats = DashboardStats.From(filtered, _period);
-                _chartPanel?.Update(stats);
+                using var dlg = new Form
+                {
+                    Text = "Период — свой диапазон",
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    StartPosition = FormStartPosition.CenterParent,
+                    MaximizeBox = false,
+                    MinimizeBox = false,
+                    ShowInTaskbar = false,
+                    ClientSize = new Size(360, 222),
+                    BackColor = UiTheme.DialogBackground
+                };
+                var hero = UiModal.Hero("Свой диапазон", "Период событий для фильтра «Кастом»", "dashboard");
+                hero.Dock = DockStyle.Top;
+                dlg.Controls.Add(hero);
+                var card = UiModal.Card(12, 90, 336, 88, "Диапазон", "dashboard", withHeader: false);
+                var lblFrom = UiModal.FieldLabel("С:", 16, 16);
+                var dtFrom = new DateTimePicker { Location = new Point(16, 34), Width = 150, Format = DateTimePickerFormat.Custom, CustomFormat = "dd.MM.yyyy HH:mm", ShowUpDown = true, Value = _customFrom };
+                var lblTo = UiModal.FieldLabel("По:", 174, 16);
+                var dtTo = new DateTimePicker { Location = new Point(174, 34), Width = 150, Format = DateTimePickerFormat.Custom, CustomFormat = "dd.MM.yyyy HH:mm", ShowUpDown = true, Value = _customTo };
+                card.Controls.Add(lblFrom);
+                card.Controls.Add(dtFrom);
+                card.Controls.Add(lblTo);
+                card.Controls.Add(dtTo);
+                dlg.Controls.Add(card);
+                var btnOk = UiButtons.MakeCompactFilled("OK", 80);
+                btnOk.Location = new Point(188, 186);
+                btnOk.Click += (s, e) => { dlg.DialogResult = DialogResult.OK; dlg.Close(); };
+                var btnCancel = UiButtons.MakeCompactFilled("Отмена", 80, danger: true);
+                btnCancel.Location = new Point(276, 186);
+                btnCancel.Click += (s, e) => { dlg.DialogResult = DialogResult.Cancel; dlg.Close(); };
+                dlg.Controls.Add(btnOk);
+                dlg.Controls.Add(btnCancel);
+                dlg.AcceptButton = null;
+                if (UiModal.ShowDimmed(this, dlg) != DialogResult.OK) return false;
+                if (dtFrom.Value > dtTo.Value) { MessageBox.Show(this, "Дата «С» позже даты «По».", "Период", MessageBoxButtons.OK, MessageBoxIcon.Warning); return false; }
+                _customFrom = dtFrom.Value;
+                _customTo = dtTo.Value;
+                return true;
             }
-            catch { }
+            catch { return false; }
         }
+
+        // v4.9.21 — выгрузка показанных строк в CSV.
+        public void ExportFilteredCsv()
+        {
+            try
+            {
+                if (_lastRows.Count == 0) { MessageBox.Show(this, "Нет строк для экспорта.", "Экспорт CSV", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                using var sfd = new SaveFileDialog { Filter = "CSV (*.csv)|*.csv", FileName = $"events_{DateTime.Now:yyyyMMdd_HHmm}.csv" };
+                if (sfd.ShowDialog(this) != DialogResult.OK) return;
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("Время;Уровень;Источник;ID;Хост;Сообщение");
+                foreach (var r in _lastRows) sb.AppendLine(string.Join(";", r.Select(c => CsvCell(c))));
+                System.IO.File.WriteAllText(sfd.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
+                MessageBox.Show(this, $"Сохранено строк: {_lastRows.Count}\n{sfd.FileName}", "Экспорт CSV", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex) { MessageBox.Show(this, "Ошибка экспорта:\n" + ex.Message, "Экспорт CSV", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        }
+
+        private static string CsvCell(string? v)
+        {
+            v ??= "";
+            if (v.Contains(';') || v.Contains('"') || v.Contains('\n') || v.Contains('\r')) return "\"" + v.Replace("\"", "\"\"") + "\"";
+            return v;
+        }
+
+        // v4.8 — публичные обёртки для единого дашборда (вьюха Events вызывает
+        // их со своих кнопок шапки/футера вместо приватных методов).
+        public async Task RefreshEventsNowAsync() => await RefreshNowAsync();
+        public void ShowEventsSettings() => ShowSettings();
+        public string GetStatusText() { try { return _status.Text ?? ""; } catch { return ""; } }
 
         private void UpdateStatus(int shown = -1)
         {
@@ -539,27 +670,87 @@ namespace ShadowRDP.Forms
 
         private void ShowSettings()
         {
-            using var dlg = new Form { Text = "Настройки дашборда", Size = new Size(380, 320), StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = UiTheme.Card };
-            var settings = EventDashboardStore.LoadSettings();
-            var chkCrit = new CheckBox { Text = "Уведомлять о Critical", Checked = settings.NotifyCritical, Location = new Point(16, 20), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var chkErr = new CheckBox { Text = "Уведомлять о Error", Checked = settings.NotifyError, Location = new Point(16, 50), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var chkSound = new CheckBox { Text = "Звук", Checked = settings.NotifySound, Location = new Point(16, 80), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var chkNyan = new CheckBox { Text = "Прогресс-бар Nyan Cat", Checked = settings.ShowNyanCat, Location = new Point(16, 110), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var lblInterval = new Label { Text = "Интервал (мин):", Location = new Point(16, 145), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var numInterval = new NumericUpDown { Value = settings.PollIntervalMinutes, Minimum = 5, Maximum = 240, Location = new Point(130, 143), Width = 60 };
-            var lblRet = new Label { Text = "Хранение (дн):", Location = new Point(16, 175), AutoSize = true, ForeColor = UiTheme.Foreground };
-            var numRet = new NumericUpDown { Value = settings.RetentionDays, Minimum = 1, Maximum = 7, Location = new Point(130, 173), Width = 60 };
+            var owner = this.FindForm() ?? this.TopLevelControl as Form ?? this;
+            // Общий дизайн модалок: hero + карточки + футер (как FTP/календарь).
+            using var dlg = new Form
+            {
+                Text = "Настройки — Дашборд событий",
+                Size = new Size(640, 620),
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = UiTheme.DialogBackground,
+                AutoScroll = false
+            };
+            dlg.KeyPreview = true;
+            dlg.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; dlg.DialogResult = DialogResult.Cancel; dlg.Close(); } };
 
+            const int ClientW = 624;
+            var hero = UiModal.Hero("Настройки", "Дашборд событий — уведомления, интервал, хранение", "dashboard");
+
+            // ——— Footer ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.Card };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
             var btnOk = UiButtons.MakeCompactFilled("Сохранить", 100);
-            btnOk.Location = new Point(16, 210);
             btnOk.Click += (s, e) => { dlg.DialogResult = DialogResult.OK; dlg.Close(); };
-
-            var btnCancel = UiButtons.MakeCompactFilled("Отмена", 80, bgOverride: UiTheme.Muted);
-            btnCancel.Location = new Point(126, 210);
+            var btnCancel = UiButtons.MakeCompactFilled("Отмена", 100, bgOverride: UiTheme.MutedForeground);
             btnCancel.Click += (s, e) => { dlg.DialogResult = DialogResult.Cancel; dlg.Close(); };
+            var hiddenOk = new Button { DialogResult = DialogResult.OK, Visible = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+            var hiddenCancel = new Button { DialogResult = DialogResult.Cancel, Visible = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+            footer.Controls.Add(hiddenOk);
+            footer.Controls.Add(hiddenCancel);
+            dlg.AcceptButton = hiddenOk;
+            dlg.CancelButton = hiddenCancel;
+            footer.Controls.Add(btnOk);
+            footer.Controls.Add(btnCancel);
 
-            dlg.Controls.AddRange(new Control[] { chkCrit, chkErr, chkSound, chkNyan, lblInterval, numInterval, lblRet, numRet, btnOk, btnCancel });
-            if (dlg.ShowDialog(this) == DialogResult.OK)
+            var settings = EventDashboardStore.LoadSettings();
+
+            // ——— Content: карточки ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiTheme.Background };
+
+            // Карточка «Уведомления».
+            var cardNotif = UiModal.Card(14, 14, 300, 264, "Уведомления", "msg");
+            var chkCrit = new CheckBox { Text = "Уведомлять о Critical", Checked = settings.NotifyCritical, Location = new Point(16, 56), AutoSize = true, ForeColor = UiTheme.Foreground, BackColor = Color.Transparent };
+            var chkErr = new CheckBox { Text = "Уведомлять о Error", Checked = settings.NotifyError, Location = new Point(16, 92), AutoSize = true, ForeColor = UiTheme.Foreground, BackColor = Color.Transparent };
+            var chkSound = new CheckBox { Text = "Звук", Checked = settings.NotifySound, Location = new Point(16, 128), AutoSize = true, ForeColor = UiTheme.Foreground, BackColor = Color.Transparent };
+            var chkNyan = new CheckBox { Text = "Прогресс-бар Nyan Cat", Checked = settings.ShowNyanCat, Location = new Point(16, 164), AutoSize = true, ForeColor = UiTheme.Foreground, BackColor = Color.Transparent };
+            cardNotif.Controls.AddRange(new Control[] { chkCrit, chkErr, chkSound, chkNyan });
+
+            // Карточка «Опрос».
+            var cardPoll = UiModal.Card(326, 14, 284, 170, "Опрос", "restart");
+            var numInterval = new EscNumericUpDown { Minimum = 5, Maximum = 240, Value = settings.PollIntervalMinutes };
+            var lInterval = UiModal.FieldLabel("Интервал (мин):", 16, 56);
+            var wInterval = UiModal.Field(numInterval, 76);
+            wInterval.Location = new Point(16, 74);
+            var numRet = new EscNumericUpDown { Minimum = 1, Maximum = 7, Value = settings.RetentionDays };
+            var lRet = UiModal.FieldLabel("Хранение (дн):", 16, 110);
+            var wRet = UiModal.Field(numRet, 76);
+            wRet.Location = new Point(16, 128);
+            cardPoll.Controls.AddRange(new Control[] { lInterval, wInterval, lRet, wRet });
+
+            // ——— assemble ———
+            content.Controls.AddRange(new Control[] { cardNotif, cardPoll });
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            foreach (var cd in new[] { cardNotif, cardPoll }) { try { cd.Region?.Dispose(); cd.Region = null; } catch { } }
+            ShadowScroll.AttachPanel(content);
+            dlg.Controls.Add(content);
+            dlg.Controls.Add(hero);
+            dlg.Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(dlg);
+            if (dpiScale > 1.001f)
+                dlg.ClientSize = new Size((int)Math.Round(dlg.ClientSize.Width * dpiScale), (int)Math.Round(dlg.ClientSize.Height * dpiScale));
+
+            dlg.Shown += (a, b) =>
+            {
+                btnOk.Location = new Point(footer.Width - 233, 15);
+                btnCancel.Location = new Point(footer.Width - 125, 15);
+                try { dlg.BeginInvoke(new Action(() => { try { dlg.Refresh(); } catch { } })); } catch { }
+            };
+
+            if (UiModal.ShowDimmed(owner, dlg) == DialogResult.OK)
             {
                 settings.NotifyCritical = chkCrit.Checked;
                 settings.NotifyError = chkErr.Checked;
@@ -606,14 +797,14 @@ namespace ShadowRDP.Forms
                 if (useNyan) _nyanBar.FadeOut(); else HideMarqueeBar();
                 await Task.Delay(250);
                 using var dlg = new AiAnswerForm(ev.EventId, ev.Source, ev.Level, ev.Computer, decoded);
-                dlg.ShowDialog(this);
+                UiModal.ShowDimmed(this, dlg);
             }
             catch (Exception ex)
             {
                 if (useNyan) _nyanBar.FadeOut(); else HideMarqueeBar();
                 await Task.Delay(250);
                 using var dlg = new AiAnswerForm(ev.EventId, ev.Source, ev.Level, ev.Computer, $"Ошибка ИИ: {ex.Message}");
-                dlg.ShowDialog(this);
+                UiModal.ShowDimmed(this, dlg);
             }
             finally
             {
@@ -655,7 +846,7 @@ namespace ShadowRDP.Forms
             _status.Text = "";
 
             using var dlg = new EventDetailForm(ev.EventId, ev.Source, ev.Level, ev.Computer, ev.Message, detail);
-            dlg.ShowDialog(this);
+            UiModal.ShowDimmed(this, dlg);
         }
 
         private string ReadEventFromServer(DashboardEvent ev)
@@ -688,42 +879,7 @@ namespace ShadowRDP.Forms
             return "";
         }
 
-        private void OnCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
-        {
-            // Only the header is drawn custom (dark band + sort glyph). All
-            // body cells use the native renderer so double-buffering (and thus
-            // smooth scrolling) works cleanly, exactly like "Открытые файлы".
-            if (e.RowIndex == -1 && e.ColumnIndex >= 0)
-            {
-                e.Handled = true;
-                using var bgBrush = new SolidBrush(UiTheme.HeaderBar);
-                e.Graphics.FillRectangle(bgBrush, e.CellBounds);
-                var col = _grid.Columns[e.ColumnIndex];
-                var headerText = col.HeaderText;
-                int glyphSpace = col.HeaderCell.SortGlyphDirection != SortOrder.None ? 16 : 0;
-                int textX = e.CellBounds.X + 8;
-                int textWAvail = e.CellBounds.Width - 8 - glyphSpace;
-                var textRect = new Rectangle(textX, e.CellBounds.Y, textWAvail, e.CellBounds.Height);
-                TextRenderer.DrawText(e.Graphics, headerText, FontHeader, textRect, Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                if (col.HeaderCell.SortGlyphDirection != SortOrder.None)
-                {
-                    int gx = e.CellBounds.Right - 18;
-                    int gy = e.CellBounds.Y + (e.CellBounds.Height - 8) / 2;
-                    var glyphColor = Color.FromArgb(0x62, 0x6F, 0x5E);
-                    using var glyphBrush = new SolidBrush(glyphColor);
-                    if (col.HeaderCell.SortGlyphDirection == SortOrder.Ascending)
-                    {
-                        var pts = new[] { new Point(gx + 4, gy), new Point(gx + 8, gy + 6), new Point(gx, gy + 6) };
-                        e.Graphics.FillPolygon(glyphBrush, pts);
-                    }
-                    else
-                    {
-                        var pts = new[] { new Point(gx, gy), new Point(gx + 8, gy), new Point(gx + 4, gy + 6) };
-                        e.Graphics.FillPolygon(glyphBrush, pts);
-                    }
-                }
-            }
-        }
+        // Header painting now handled by UiGridStyle.ApplyUnified — white bg, dark text, Segoe UI Semibold 9F, gap 3px.
 
         private void OnCellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
@@ -742,7 +898,7 @@ namespace ShadowRDP.Forms
             SendMessage(hWnd, PBM_SETBARCOLOR, IntPtr.Zero, (IntPtr)ColorTranslator.ToWin32(color));
         }
 
-        private void OnNewEvents(List<DashboardEvent> list) => BeginInvoke(new Action(() => { _all = EventDashboardStore.LoadEvents(); ApplyFilters(); }));
+        private void OnNewEvents(List<DashboardEvent> list) => BeginInvoke(new Action(() => { _all = EventDashboardStore.LoadEvents(); if (Visible && !IsDisposed) ApplyFilters(); }));
         private void OnCritical(DashboardEvent ev)
         {
             try

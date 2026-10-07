@@ -35,15 +35,16 @@ namespace ShadowRDP.Helpers
             for (int i = 0; i < _stars.Length; i++)
                 _stars[i] = new PointF(_rng.Next(0, 500), _rng.Next(2, Height - 4));
 
-            _timer.Interval = 50;
+            _timer.Interval = 100;   // v3.9.3 Фаза 3: 50→100мс (шаг звёзд ×2 ниже)
             _timer.Tick += (s, e) =>
             {
+                if (!Visible) return;   // v3.9.3 Фаза 3: скрытый бар не тикает
                 _frame = (_frame + 1) % 4;
                 _starTick++;
 
                 if (_fading)
                 {
-                    _fadeAlpha -= 15;
+                    _fadeAlpha -= 30;
                     if (_fadeAlpha <= 0) { Stop(); return; }
                 }
                 else if (_sw.IsRunning)
@@ -54,10 +55,10 @@ namespace ShadowRDP.Helpers
                     _progress = Math.Min(1f, (float)(1.0 - Math.Exp(-elapsed / 12.0)));
                 }
 
-                // Move stars left
+                // Move stars left (6px/100мс — та же скорость, что 3px/50мс)
                 for (int i = 0; i < _stars.Length; i++)
                 {
-                    _stars[i].X -= 3f;
+                    _stars[i].X -= 6f;
                     if (_stars[i].X < -10)
                     {
                         _stars[i].X = Width + _rng.Next(10, 80);

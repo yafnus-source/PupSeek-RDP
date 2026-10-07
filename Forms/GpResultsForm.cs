@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ShadowRDP.Controls;
+using ShadowRDP.Helpers;
 using ShadowRDP.Services;
 
 namespace ShadowRDP.Forms
@@ -15,6 +16,10 @@ namespace ShadowRDP.Forms
     // and renders the textual output in the same Excel-style table format as
     // ComputerInfoForm — sections get accent-blue header rows, key/value pairs
     // get banded data rows, list items nest under their parent.
+    //
+    // v4.3.3 — редизайн в стиле FTP-эталона (как окно информации о компьютере):
+    // градиентный hero, таблица в карточке, кнопки в футере. Вся логика
+    // (запуск gpresult, парсинг, кодировки, копирование) без изменений.
     //
     // Output encoding detection: gpresult writes 866 (OEM) on Russian Windows
     // when stdout is redirected. We read raw bytes and try UTF-8 → 866 → 1251
@@ -36,83 +41,160 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(640, 546);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = ShadowRDP.Helpers.UiTheme.Background;
+            BackColor = UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
-            // Header
-            var headerPanel = Helpers.UiHeader.Create("Group Policy Results", _computer, "gear");
-            headerPanel.Dock = DockStyle.Top;
-            Controls.Add(headerPanel);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero("Group Policy Results", computer, "gear");
+
+            // ——— 2. Content: report grid inside a section card ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };
+            var card = UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            card.Dock = DockStyle.Fill;
+            content.Controls.Add(card);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { card.Region?.Dispose(); card.Region = null; } catch { }
 
             // === Grid ===
-            _grid = new DataGridView
+            _grid = new Controls.DoubleBufferedDataGridView
             {
-                Location = new Point(24, 82),
-                Size = new Size(824, 510),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AllowUserToResizeRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.FixedSingle,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.Background,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                ColumnHeadersHeight = 30,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F),
-                    Alignment = DataGridViewContentAlignment.MiddleLeft
-                },
-                DefaultCellStyle = {
-                    Font = new Font("Segoe UI", 9.5F),
-                    SelectionBackColor = ShadowRDP.Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = ShadowRDP.Helpers.UiTheme.Accent
-                },
-                RowTemplate = { Height = 24 }
+                MultiSelect = false,
             };
-_grid.EnableHeadersVisualStyles = false;
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Property", HeaderText = "Параметр", FillWeight = 110 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "Значение", FillWeight = 250 });
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
-            Controls.Add(_grid);
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
+            card.Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
+            RoundCorners(_grid, 7);
+            card.Resize += (s, e) => { FitCardChild(card, _grid); try { card.Invalidate(true); } catch { } };
+            _grid.Resize += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            _grid.ColumnWidthChanged += (s, e) => { try { _grid.Invalidate(); } catch { } };
+            FitCardChild(card, _grid);
 
-            // === Buttons ===
-            _refreshBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Обновить");
-            _refreshBtn.Location = new Point(24, 605);
-            _refreshBtn.Click += async (s, e) => await RunGpResultAsync();
-            Controls.Add(_refreshBtn);
-
-            _copyBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Копировать в Excel");
-            _copyBtn.Location = new Point(144, 605);
-            _copyBtn.Click += OnCopyClicked;
-            Controls.Add(_copyBtn);
-
-            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(738, 605);
-            _closeBtn.Click += (s, e) => Close();
-            Controls.Add(_closeBtn);
-            // CancelButton requires IButtonControl; Label doesn't implement it.
-
+            // ——— 3. Status bar (thin strip above the footer) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _statusLabel = new Label
             {
-                Location = new Point(320, 610),
-                Size = new Size(410, 22),
+                Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Font = new Font("Segoe UI", 8F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(16, 0, 0, 0),
                 Text = "Запуск gpresult..."
             };
-            Controls.Add(_statusLabel);
+            statusPanel.Controls.Add(_statusLabel);
 
-            Shown += async (s, e) => await RunGpResultAsync();
+            // ——— 4. Footer with action buttons ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+            _refreshBtn = ActionButton("Обновить", w("Обновить"));
+            _refreshBtn.Location = new Point(16, 15);
+            _refreshBtn.Click += async (s, e) => await RunGpResultAsync();
+            _copyBtn = ActionButton("Копировать в Excel", w("Копировать в Excel"));
+            _copyBtn.Location = new Point(16 + _refreshBtn.Width + 8, 15);
+            _copyBtn.Click += OnCopyClicked;
+            _closeBtn = ActionButton("Закрыть", w("Закрыть"));
+            _closeBtn.Click += (s, e) => Close();
+            footer.Controls.AddRange(new Control[] { _refreshBtn, _copyBtn, _closeBtn });
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
+
+            // Dock order: content Fill first, hero Top, then the two Bottom
+            // strips (footer added last docks first → very bottom, status
+            // above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
+
+            Shown += async (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+                try { BeginInvoke(new Action(() => { try { Refresh(); } catch { } })); } catch { }
+                await RunGpResultAsync();
+            };
+        }
+
+        // Child of a headerless card: uniform 14px padding on all sides.
+        private static void FitCardChild(Panel card, Control child)
+        {
+            child.Bounds = new Rectangle(14, 14,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 28));
+        }
+
+        // Скругление углов: режем Region контрола по скруглённому rect.
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
+        }
+
+        // Локальная filled-кнопка: тот же вид, что MakeCompactFilled, но текст
+        // рисуется из lbl.Text — смена Text ("Скопировано!") реально видна.
+        private static Label ActionButton(string text, int width, Color? bgOverride = null)
+        {
+            Color bg = bgOverride ?? UiTheme.HeaderBar;
+            Color hover = ControlPaint.Dark(bg, 0.08f);
+            var fill = new SolidBrush(bg);
+            var lbl = new Label
+            {
+                Text = text,
+                AutoSize = false,
+                Size = new Size(width, 22),
+                Font = new Font("Segoe UI Semibold", 9F),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                BackColor = Color.Transparent
+            };
+            lbl.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
+                using var path = UiButtons.RoundedRect(r, 1);
+                if (lbl.Enabled) e.Graphics.FillPath(fill, path);
+                else { using var dis = new SolidBrush(Color.FromArgb(0xE2, 0xE4, 0xE8)); e.Graphics.FillPath(dis, path); }
+                var fg = lbl.Enabled ? Color.White : Color.FromArgb(0x8A, 0x8E, 0x94);
+                TextRenderer.DrawText(e.Graphics, lbl.Text, lbl.Font, r, fg,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+            };
+            lbl.MouseEnter += (s, e) => { if (lbl.Enabled) { fill.Color = hover; lbl.Invalidate(); } };
+            lbl.MouseLeave += (s, e) => { if (lbl.Enabled) { fill.Color = bg; lbl.Invalidate(); } };
+            lbl.EnabledChanged += (s, e) => lbl.Invalidate();
+            return lbl;
         }
 
         private async Task RunGpResultAsync()
@@ -297,7 +379,7 @@ _grid.EnableHeadersVisualStyles = false;
     {
         public static List<(bool IsSection, string Property, string Value)> Parse(string text)
         {
-            var rows = new List<(bool, string, string)>();
+            var rows = new List<(bool IsSection, string Property, string Value)>();
             if (string.IsNullOrWhiteSpace(text)) return rows;
 
             // Strip stderr/stdout markers we added ourselves for clean parse.

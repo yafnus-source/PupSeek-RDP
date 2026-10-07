@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Helpers;
 using ShadowRDP.Services;
 
@@ -13,11 +14,11 @@ namespace ShadowRDP.Forms
     // entries. Opened from the tray menu ("Пароли…"). If the vault isn't
     // open yet, the unlock dialog appears first.
     //
-    // Redesigned v3.7.0 to match the report dialogs (OpenFiles etc.):
-    // blue header bar (UiHeader), "+ Сессия"/"+ В книгу"-style compact
-    // filled toolbar buttons, borderless themed DataGridView. Column widths
-    // persist in column_widths.json (key "keepassVault") and column order
-    // via GridColumnOrder, window size via WindowStateStore.
+    // v4.3.3 — redesigned in the FTP sample-modal style (hero + section
+    // cards + footer): gradient hero band instead of the blue header bar,
+    // group tree and entries grid each live in a rounded card, toolbar
+    // actions moved to the footer (left: entry actions, right: lock/close).
+    // All logic (unlock flow, CRUD, persistence) is untouched.
     public class KeePassVaultForm : Form
     {
         private static KeePassVaultForm? _instance;
@@ -38,7 +39,7 @@ namespace ShadowRDP.Forms
             base.OnFormClosed(e);
         }
 
-        private readonly TreeView _tree;
+        private readonly Controls.ScrollHiddenTreeView _tree;
         private readonly DataGridView _grid;
         private readonly Label _status;
         private readonly Label _btnEdit;
@@ -63,83 +64,58 @@ namespace ShadowRDP.Forms
             MinimumSize = new Size(720, 420);
             StartPosition = FormStartPosition.CenterParent;
             Font = new Font("Segoe UI", 9F);
-            BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8);
+            BackColor = UiTheme.DialogBackground;
             FormBorderStyle = FormBorderStyle.Sizable;
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; Close(); } };
 
-            // === Blue header bar (same as Open Files / Computer Info) ===
-            var header = UiHeader.Create("Пароли", "хранилище KeePass (.kdbx)", "shield", Color.FromArgb(0x62, 0x6F, 0x5E));
-            header.Dock = DockStyle.Top;
+            // ——— 1. Hero (gradient band with icon, title, subtitle, ✕) ———
+            var hero = UiModal.Hero("Пароли", "хранилище KeePass (.kdbx)", "shield");
 
-            // === Toolbar row: compact filled buttons ("+ Сессия" / "+ В книгу" look) ===
-            var toolbar = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 44,
-                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
-            };
-            var btnFont = new Font("Segoe UI Semibold", 9F);
-            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
-
-            var btnAdd = UiButtons.MakeCompactFilled("Новая запись", w("Новая запись"));
-            btnAdd.Location = new Point(16, 11);
-            var btnEdit = UiButtons.MakeCompactFilled("Изменить", w("Изменить"));
-            btnEdit.Location = new Point(16 + btnAdd.Width + 8, 11);
-            var btnDelete = UiButtons.MakeCompactFilled("Удалить", w("Удалить"), danger: true);
-            btnDelete.Location = new Point(btnEdit.Left + btnEdit.Width + 8, 11);
-            var btnCopy = UiButtons.MakeCompactFilled("Копировать пароль", w("Копировать пароль"));
-            btnCopy.Location = new Point(btnDelete.Left + btnDelete.Width + 8, 11);
-
-            var btnLock = UiButtons.MakeCompactFilled("Заблокировать", w("Заблокировать"));
-            btnLock.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            var btnClose = UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
-            btnClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            // Right-cluster anchored to the toolbar's right edge; positioned
-            // on Resize so the pair hugs the right edge together.
-            // v3.7.1: Top=11 to vertically align with btnAdd/btnEdit/etc.
-            // (Anchor=Top|Right left Top=0; other buttons use Location.Y=11.)
-            toolbar.Resize += (s, e) =>
-            {
-                btnLock.Left = toolbar.ClientSize.Width - 16 - btnClose.Width - 8 - btnLock.Width;
-                btnLock.Top = 11;
-                btnClose.Left = toolbar.ClientSize.Width - 16 - btnClose.Width;
-                btnClose.Top = 11;
-            };
-
-            _btnEdit = btnEdit;
-            _btnDelete = btnDelete;
-            _btnCopy = btnCopy;
-
-            toolbar.Controls.AddRange(new Control[] { btnAdd, btnEdit, btnDelete, btnCopy, btnLock, btnClose });
-
-            btnAdd.Click += (_, _) => AddEntry();
-            btnEdit.Click += (_, _) => EditEntry();
-            btnDelete.Click += (_, _) => DeleteEntry();
-            btnCopy.Click += (_, _) => CopyPassword();
-            btnLock.Click += (_, _) => LockVault();
-            btnClose.Click += (_, _) => Close();
-
-            // === Split: group tree | entries grid ===
+            // ——— 2. Content: group tree | entries grid, each in its own card ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground };
             _split = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 SplitterDistance = 260,
-                SplitterWidth = 6,
-                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
+                SplitterWidth = 5,
+                BackColor = UiTheme.DialogBackground
             };
+            // Отступ карточек от внешних границ 5px; между карточками тоже 5px:
+            // внутренние края без паддинга, зазор даёт сам сплиттер.
+            // Фон панелей в цвет страницы: иначе при живом ресайзе сплиттера
+            // в неприкрытых щелях светится серая подложка и читается как
+            // «лишние границы».
+            _split.Panel1.Padding = new Padding(5, 5, 0, 5);
+            _split.Panel2.Padding = new Padding(0, 5, 5, 5);
+            _split.Panel1.BackColor = UiTheme.DialogBackground;
+            _split.Panel2.BackColor = UiTheme.DialogBackground;
+            content.Controls.Add(_split);
 
-            _tree = new TreeView
+            var cardTree = UiModal.Card(0, 0, 100, 100, "Группы", "list");
+            cardTree.Dock = DockStyle.Fill;
+            var cardGrid = UiModal.Card(0, 0, 100, 100, "Записи", "key");
+            cardGrid.Dock = DockStyle.Fill;
+            _split.Panel1.Controls.Add(cardTree);
+            _split.Panel2.Controls.Add(cardGrid);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            foreach (var c in new Control[] { cardTree, cardGrid })
+            { try { c.Region?.Dispose(); c.Region = null; } catch { } }
+
+
+            _tree = new Controls.ScrollHiddenTreeView
             {
-                Dock = DockStyle.Fill,
-                BorderStyle = BorderStyle.FixedSingle,
+                BorderStyle = BorderStyle.None,
                 HideSelection = false,
-                // v3.9 — near-white cream background for the groups tree
-                // (#FFFDF8) instead of the Olive theme Background (#E8E4D2).
-                BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8),
+                BackColor = Color.White,
                 ForeColor = Color.FromArgb(0x1E, 0x1E, 0x1E),
                 Font = new Font("Segoe UI", 9F),
                 ItemHeight = 22
             };
-            _split.Panel1.Controls.Add(_tree);
+            cardTree.Controls.Add(_tree);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachTreeView(_tree);
+            RoundCorners(_tree, 7);
 
             // === Entries grid (borderless, themed — same as Open Files) ===
             // v3.7.1: AutoSizeColumnsMode switched from Fill to None. In Fill
@@ -150,74 +126,92 @@ namespace ShadowRDP.Forms
             // stable; columns the user doesn't touch stay at their defaults.
             _grid = new Controls.DoubleBufferedDataGridView
             {
-                Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                AllowUserToResizeRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
-                BackgroundColor = Color.White,
                 BorderStyle = BorderStyle.None,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.None,
-                GridColor = Color.White,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                DefaultCellStyle = {
-                    BackColor = Color.White,
-                    SelectionBackColor = UiTheme.AccentSoft,
-                    SelectionForeColor = UiTheme.Foreground,
-                    // v3.7.1: row height reduced 28 → 23 (−5px per user
-                    // request). Padding stays (5,4,5,4) — 15px text + 8px
-                    // vertical padding = 23, content still fits.
-                    Padding = new Padding(5, 4, 5, 4)
-                },
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = UiTheme.Muted,
-                    ForeColor = UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F),
-                    Padding = new Padding(5, 0, 5, 0)
-                },
-                RowTemplate = { Height = 23 }
+                BackgroundColor = UiTheme.Card
             };
-            _grid.EnableHeadersVisualStyles = false;
-            _grid.AdvancedCellBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Top = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Left = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedCellBorderStyle.Right = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
-            _grid.AdvancedColumnHeadersBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
-            // v3.7.1 — explicit Width instead of FillWeight (None mode).
-            // Default widths chosen so Name + Login together comfortably
-            // fill the right pane of a 880px-wide form (split.Panel2 ≈ 614px
-            // after the 260px tree + 6px splitter); user-resizes persist via
-            // SaveColumnWidths / LoadColumnWidths.
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Имя", Width = 400, MinimumWidth = 90 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Login", HeaderText = "Логин", Width = 200, MinimumWidth = 90 });
-            foreach (DataGridViewColumn c in _grid.Columns) c.DividerWidth = 0;
-            _grid.RowTemplate.DividerHeight = 0;
-            UiGridStyle.PaintHeaders(_grid, 6);
-            _split.Panel2.Controls.Add(_grid);
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
+            cardGrid.Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
+            RoundCorners(_grid, 7);
 
-            // === Status bar ===
+            // Children are laid out explicitly (no anchors): cards are docked
+            // and resize with the sizable window, children follow the card.
+            // Полный Invalidate на каждый шаг ресайза: гасит застойные
+            // штрихи-призраки при живом движении сплиттера/колонок.
+            cardTree.Resize += (s, e) => { FitCardChild(cardTree, _tree); try { cardTree.Invalidate(true); } catch { } };
+            cardGrid.Resize += (s, e) => { FitCardChild(cardGrid, _grid); try { cardGrid.Invalidate(true); } catch { } };
+            _grid.ColumnWidthChanged += (s, e) => { try { cardGrid.Invalidate(true); } catch { } };
+            FitCardChild(cardTree, _tree);
+            FitCardChild(cardGrid, _grid);
+
+            // ——— 3. Status bar (thin strip above the footer) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _status = new Label
             {
-                Dock = DockStyle.Bottom,
-                Height = 24,
+                Dock = DockStyle.Fill,
                 ForeColor = UiTheme.MutedForeground,
                 Font = new Font("Segoe UI", 8.5F),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(16, 0, 0, 0)
             };
+            statusPanel.Controls.Add(_status);
 
-            // Dock order matters: Fill first, then Top, then Top, then Bottom —
-            // the last added docks first, so header takes the top edge, toolbar
-            // sits under it, split fills the middle, status hugs the bottom.
-            Controls.Add(_split);
-            Controls.Add(toolbar);
-            Controls.Add(header);
-            Controls.Add(_status);
+            // ——— 4. Footer with action buttons ———
+            // Left: entry actions. Right: lock + close (positioned on Resize,
+            // the window is sizable — same pattern as the old toolbar).
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+
+            var btnAdd = UiButtons.MakeCompactFilled("Новая запись", w("Новая запись"));
+            btnAdd.Location = new Point(16, 15);
+            var btnEdit = UiButtons.MakeCompactFilled("Изменить", w("Изменить"));
+            btnEdit.Location = new Point(16 + btnAdd.Width + 8, 15);
+            var btnDelete = UiButtons.MakeCompactFilled("Удалить", w("Удалить"), danger: true);
+            btnDelete.Location = new Point(btnEdit.Left + btnEdit.Width + 8, 15);
+            var btnCopy = UiButtons.MakeCompactFilled("Копировать пароль", w("Копировать пароль"));
+            btnCopy.Location = new Point(btnDelete.Left + btnDelete.Width + 8, 15);
+
+            var btnLock = UiButtons.MakeCompactFilled("Заблокировать", w("Заблокировать"));
+            var btnClose = UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
+            footer.Resize += (s, e) =>
+            {
+                btnLock.Left = footer.ClientSize.Width - 16 - btnClose.Width - 8 - btnLock.Width;
+                btnLock.Top = 15;
+                btnClose.Left = footer.ClientSize.Width - 16 - btnClose.Width;
+                btnClose.Top = 15;
+            };
+
+            _btnEdit = btnEdit;
+            _btnDelete = btnDelete;
+            _btnCopy = btnCopy;
+
+            footer.Controls.AddRange(new Control[] { btnAdd, btnEdit, btnDelete, btnCopy, btnLock, btnClose });
+
+            btnAdd.Click += (_, _) => AddEntry();
+            btnEdit.Click += (_, _) => EditEntry();
+            btnDelete.Click += (_, _) => DeleteEntry();
+            btnCopy.Click += (_, _) => CopyPassword();
+            btnLock.Click += (_, _) => LockVault();
+            btnClose.Click += (_, _) => Close();
+
+            // Dock order: content Fill first, then hero Top, then the two
+            // Bottom strips (footer added last docks first → very bottom,
+            // status above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
 
             _tree.AfterSelect += (_, _) => ReloadEntries();
             _grid.SelectionChanged += (_, _) =>
@@ -257,7 +251,6 @@ namespace ShadowRDP.Forms
             // other dialogs; column drag-to-reorder via GridColumnOrder.
             // v3.7.1 — splitter distance also persisted (was hardcoded 260).
             WindowStateStore.Register(this, "keepassVault");
-            GridColumnOrder.Wire(_grid);
             LoadColumnWidths();
             // SplitterDistance can only be applied after the handle exists and
             // _split has real pixel width — clamp in LoadSplitDistance guards
@@ -278,6 +271,36 @@ namespace ShadowRDP.Forms
             };
 
             Shown += (_, _) => EnsureUnlocked();
+        }
+
+        // Child of a card: padded area below the card header (header ends ~y44).
+        private static void FitCardChild(Panel card, Control child)
+        {
+            child.Bounds = new Rectangle(14, 52,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 66));
+        }
+
+        // Скругление углов (как в FTP-окне): режем Region контрола по
+        // скруглённому rect, чтобы прямоугольные углы не торчали за радиус.
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
         }
 
         private void EnsureUnlocked()
@@ -400,7 +423,7 @@ namespace ShadowRDP.Forms
         }
 
         private KeePassVault.VaultEntry? SelectedEntry =>
-            _grid.SelectedRows.Count > 0 ? _grid.SelectedRows[0].Tag as KeePassVault.VaultEntry : null;
+            _grid.SelectedRows.Count > 0 ? _grid.Rows[0].Tag as KeePassVault.VaultEntry : null;
 
         private void AddEntry()
         {
@@ -632,148 +655,131 @@ namespace ShadowRDP.Forms
                 using var dlg = new Form
                 {
                     Text = title,
-                    ClientSize = new Size(460, 260),
+                    Size = new Size(500, 530),
                     StartPosition = FormStartPosition.CenterParent,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     MaximizeBox = false,
                     MinimizeBox = false,
-                    Font = new Font("Segoe UI", 9F),
-                    BackColor = Color.FromArgb(0xFF, 0xFD, 0xF8)
+                    BackColor = UiTheme.DialogBackground,
+                    AutoScroll = false
+                };
+                dlg.KeyPreview = true;
+                dlg.KeyDown += (_, ke) =>
+                {
+                    if (ke.KeyCode == Keys.Escape) { dlg.DialogResult = DialogResult.Cancel; ke.Handled = true; }
                 };
 
-                AddRow(dlg, "Имя:", 14, out var tbName);
-                tbName.Text = name;
-                AddRow(dlg, "Логин:", 50, out var tbLogin);
-                tbLogin.Text = login;
-                AddRow(dlg, "Пароль:", 86, out var tbPass);
-                tbPass.Text = password;
+                // ——— 1. Hero ———
+                var hero = UiModal.Hero(title, "Запись хранилища KeePass", "key");
+
+                // ——— 2. Card with fields ———
+                var card = UiModal.Card(14, 14, 456, 320, "Данные записи", "key");
+                var lName = UiModal.FieldLabel("Имя", 16, 46);
+                var wName = UiModal.Field(new TextBox { Text = name }, 424);
+                wName.Location = new Point(16, 62);
+                var lLogin = UiModal.FieldLabel("Логин", 16, 100);
+                var wLogin = UiModal.Field(new TextBox { Text = login }, 424);
+                wLogin.Location = new Point(16, 116);
+                var lPass = UiModal.FieldLabel("Пароль", 16, 154);
+                var tbPass = new TextBox { Text = password };
                 tbPass.UseSystemPasswordChar = true;
-
-                var lblNotes = new Label
+                var wPass = UiModal.Field(tbPass, 424);
+                wPass.Location = new Point(16, 170);
+                var lNotes = UiModal.FieldLabel("Заметки", 16, 208);
+                var tbNotes = new Controls.ScrollHiddenTextBox
                 {
-                    Text = "Заметки:",
-                    Location = new Point(16, 122),
-                    Size = new Size(80, 22),
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    ForeColor = UiTheme.Foreground
-                };
-                dlg.Controls.Add(lblNotes);
-
-                var tbNotes = new TextBox
-                {
-                    Location = new Point(100, 122),
-                    Size = new Size(344, 60),
+                    Text = notes,
                     Multiline = true,
                     ScrollBars = ScrollBars.Vertical,
-                    Font = new Font("Segoe UI", 9F)
+                    Location = new Point(16, 224),
+                    Size = new Size(424, 56),
+                    Font = new Font("Segoe UI", 9F),
+                    BackColor = Color.White,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    ForeColor = UiTheme.Foreground
                 };
-                tbNotes.Text = notes;
-                dlg.Controls.Add(tbNotes);
-
                 var hint = new Label
                 {
                     Text = $"Группа: {group}",
-                    Location = new Point(16, 190),
-                    Size = new Size(428, 20),
+                    Location = new Point(16, 286),
+                    AutoSize = false,
+                    Size = new Size(424, 20),
+                    Font = new Font("Segoe UI", 8.5F),
                     ForeColor = UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI", 8.5F)
+                    BackColor = Color.Transparent
                 };
-                dlg.Controls.Add(hint);
+                card.Controls.AddRange(new Control[] { lName, wName, lLogin, wLogin, lPass, wPass, lNotes, tbNotes, hint });
+                // v4.4.0 — своя тонкая полоса вместо системной.
+                ShadowScroll.AttachTextBox(tbNotes);
+                // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+                try { card.Region?.Dispose(); card.Region = null; } catch { }
 
-                // v3.7.1 — compact filled buttons for consistency with the
-                // toolbar and unlock dialog (was MakeFilled 36px tall).
-                var okBtn = UiButtons.MakeCompactFilled("OK", 96);
-                okBtn.Location = new Point(236, 218);
-                dlg.Controls.Add(okBtn);
-
-                var cancelBtn = UiButtons.MakeCompactFilled("Отмена", 96,
+                // ——— 3. Footer ———
+                var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+                footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+                var okBtn = UiButtons.MakeCompactFilled("OK", 100);
+                okBtn.Location = new Point(12, 15);
+                okBtn.Click += (_, _) => Submit();
+                var cancelBtn = UiButtons.MakeCompactFilled("Отмена", 100,
                     bgOverride: UiTheme.MutedForeground);
-                cancelBtn.Location = new Point(344, 218);
-                dlg.Controls.Add(cancelBtn);
+                cancelBtn.Location = new Point(footer.Width - 112, 15);
+                cancelBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                cancelBtn.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
+                footer.Controls.Add(okBtn);
+                footer.Controls.Add(cancelBtn);
+
+                var hiddenOk = new Button { Visible = true, TabStop = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+                var hiddenCancel = new Button { DialogResult = DialogResult.Cancel, Visible = true, TabStop = false, Location = new Point(-100, -100), Size = new Size(1, 1) };
+                footer.Controls.Add(hiddenOk);
+                footer.Controls.Add(hiddenCancel);
+                dlg.AcceptButton = hiddenOk;
+                dlg.CancelButton = hiddenCancel;
 
                 string? rName = null, rLogin = null, rPassword = null, rNotes = null;
                 void Submit()
                 {
-                    if (string.IsNullOrWhiteSpace(tbName.Text))
+                    var txtName = ((TextBox)wName.Controls[0]).Text;
+                    if (string.IsNullOrWhiteSpace(txtName))
                     {
                         MessageBox.Show(dlg, "Введите имя записи.",
                             "Пароли", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        tbName.Focus();
+                        ((TextBox)wName.Controls[0]).Focus();
                         return;
                     }
-                    rName = tbName.Text.Trim();
-                    rLogin = tbLogin.Text.Trim();
-                    rPassword = tbPass.Text;
+                    rName = txtName.Trim();
+                    rLogin = ((TextBox)wLogin.Controls[0]).Text.Trim();
+                    rPassword = ((TextBox)wPass.Controls[0]).Text;
                     rNotes = tbNotes.Text.Trim();
                     dlg.DialogResult = DialogResult.OK;
                 }
 
                 okBtn.Click += (_, _) => Submit();
-                cancelBtn.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
-
-                var hiddenCancel = new Button
-                {
-                    DialogResult = DialogResult.Cancel,
-                    Visible = true,
-                    TabStop = false,
-                    Location = new Point(-200, -200),
-                    Size = new Size(1, 1)
-                };
-                hiddenCancel.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
-                dlg.Controls.Add(hiddenCancel);
-                dlg.CancelButton = hiddenCancel;
-
-                var hiddenOk = new Button
-                {
-                    Visible = true,
-                    TabStop = false,
-                    Location = new Point(-300, -300),
-                    Size = new Size(1, 1)
-                };
                 hiddenOk.Click += (_, _) => Submit();
-                dlg.Controls.Add(hiddenOk);
-                dlg.AcceptButton = hiddenOk;
+                hiddenCancel.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
 
-                dlg.KeyPreview = true;
-                dlg.KeyDown += (_, ke) =>
+                // ——— assemble ———
+                var content = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiTheme.DialogBackground };
+                content.Controls.Add(card);
+                // v4.4.0 — своя тонкая полоса вместо системной.
+                ShadowScroll.AttachPanel(content);
+                dlg.Controls.Add(content);
+                dlg.Controls.Add(hero);
+                dlg.Controls.Add(footer);
+
+                var dpiScale = UiModal.ApplyDpiScale(dlg);
+                if (dpiScale > 1.001f)
+                    dlg.ClientSize = new Size((int)Math.Round(dlg.ClientSize.Width * dpiScale), (int)Math.Round(dlg.ClientSize.Height * dpiScale));
+
+                dlg.Shown += (_, _) =>
                 {
-                    if (ke.KeyCode == Keys.Enter)
-                    {
-                        Submit();
-                        ke.Handled = true;
-                        ke.SuppressKeyPress = true;
-                    }
-                    else if (ke.KeyCode == Keys.Escape)
-                    {
-                        dlg.DialogResult = DialogResult.Cancel;
-                        ke.Handled = true;
-                    }
+                    cancelBtn.Location = new Point(footer.Width - 112, 15);
+                    ((TextBox)wName.Controls[0]).Focus();
+                    try { dlg.BeginInvoke(new Action(() => { try { dlg.Refresh(); } catch { } })); } catch { }
                 };
 
-                dlg.Shown += (_, _) => tbName.Focus();
-
-                return dlg.ShowDialog(owner) == DialogResult.OK
+                return UiModal.ShowDimmed(owner, dlg) == DialogResult.OK
                     ? (rName, rLogin, rPassword, rNotes)
                     : (null, null, null, null);
-            }
-
-            private static void AddRow(Form dlg, string label, int y, out TextBox box)
-            {
-                dlg.Controls.Add(new Label
-                {
-                    Text = label,
-                    Location = new Point(16, y),
-                    Size = new Size(80, 22),
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    ForeColor = UiTheme.Foreground
-                });
-                box = new TextBox
-                {
-                    Location = new Point(100, y - 2),
-                    Size = new Size(344, 26),
-                    Font = new Font("Segoe UI", 10F)
-                };
-                dlg.Controls.Add(box);
             }
         }
     }

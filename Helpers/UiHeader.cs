@@ -1,4 +1,5 @@
 ﻿using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace ShadowRDP.Helpers
@@ -20,7 +21,8 @@ namespace ShadowRDP.Helpers
         public static Panel Create(string title, string? subtitle = null, string? iconKey = null,
             Color? headerBg = null, Color? subtitleColor = null)
         {
-            var bg = headerBg ?? ShadowRDP.Helpers.UiTheme.HeaderBar;
+            // v3.9.3CY — шапка диалогов: DialogHeaderBg (независим от hero).
+            var bg = headerBg ?? ShadowRDP.Helpers.UiTheme.DialogHeaderBg;
             var panel = new Panel
             {
                 Dock = DockStyle.Top,
@@ -33,17 +35,30 @@ namespace ShadowRDP.Helpers
 
             if (iconKey != null)
             {
-                var rawIcon = MenuIcons.Get(iconKey);
+                // v3.9.3 — нативный рендер 28 (было растягивание 16→28 = мыло).
+                var rawIcon = MenuIcons.GetScaled(iconKey, 28);
                 var whiteIcon = UiButtons.TintWhite(rawIcon);
-                var icon = new PictureBox
+                // v3.9.3 — Panel+Paint вместо PictureBox.Zoom (16→28): Zoom
+                // масштабирует без интерполяции, иконка пиксельная.
+                var iconPanel = new Panel
                 {
-                    Image = whiteIcon,
-                    SizeMode = PictureBoxSizeMode.Zoom,
                     Size = new Size(28, 28),
                     Location = new Point(iconX, (76 - 28) / 2),
                     BackColor = Color.Transparent
                 };
-                panel.Controls.Add(icon);
+                iconPanel.Paint += (s, e) =>
+                {
+                    if (whiteIcon == null) return;
+                    var g = e.Graphics;
+                    var imPrev = g.InterpolationMode;
+                    var poPrev = g.PixelOffsetMode;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.DrawImage(whiteIcon, new Rectangle(0, 0, 28, 28));
+                    g.InterpolationMode = imPrev;
+                    g.PixelOffsetMode = poPrev;
+                };
+                panel.Controls.Add(iconPanel);
             }
 
             if (subtitle != null)
@@ -54,7 +69,7 @@ namespace ShadowRDP.Helpers
                     Location = new Point(textX, 44),  // v2.2.16: shifted down for taller header
                     AutoSize = true,
                     Font = new Font("Segoe UI", 9F),
-                    ForeColor = subtitleColor ?? Color.FromArgb(204, 224, 235),
+                    ForeColor = subtitleColor ?? UiTheme.DialogHeaderFg,
                     BackColor = bg
                 };
                 panel.Controls.Add(sub);
@@ -66,7 +81,7 @@ namespace ShadowRDP.Helpers
                 Location = new Point(textX, subtitle != null ? 14 : 28),  // v2.2.16: adjusted Y for 76px
                 AutoSize = true,
                 Font = new Font("Segoe UI Semibold", 14F),
-                ForeColor = Color.White,
+                ForeColor = UiTheme.DialogHeaderFg,
                 BackColor = bg
             };
             panel.Controls.Add(lbl);

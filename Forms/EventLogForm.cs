@@ -53,6 +53,8 @@ namespace ShadowRDP.Forms
             var headerPanel = Helpers.UiHeader.Create("Журнал событий", _computer, "list");
             headerPanel.Dock = DockStyle.Top;
             Controls.Add(headerPanel);
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
             // === Filter row ===
             var lblLog = new Label { Text = "Журнал:", Location = new Point(16, 82), Size = new Size(50, 22), TextAlign = ContentAlignment.MiddleLeft };
@@ -91,33 +93,14 @@ namespace ShadowRDP.Forms
                 Location = new Point(16, 116),
                 Size = new Size(888, 580),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.Background,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F)
-                },
-                DefaultCellStyle = {
-                    Font = new Font("Segoe UI", 9F),
-                    SelectionBackColor = ShadowRDP.Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = ShadowRDP.Helpers.UiTheme.Accent
-                },
-                RowTemplate = { Height = 22 }
             };
-_grid.EnableHeadersVisualStyles = false;
             AddCol(_grid, "Time", "Время", 130);
             AddCol(_grid, "Source", "Источник", 140);
             AddCol(_grid, "EventID", "ID", 60);
             AddCol(_grid, "Type", "Тип", 70);
             AddCol(_grid, "Message", "Сообщение", 400);
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
 
             // v3.9.0 — right-click menu shown as a themed popup.
             _grid.CellMouseDown += (s, args) =>
@@ -144,8 +127,9 @@ _grid.EnableHeadersVisualStyles = false;
                 menu.Show(this, Control.MousePosition);
             };
 
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
             Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
 
             _statusLabel = new Label
             {
@@ -272,7 +256,7 @@ _grid.EnableHeadersVisualStyles = false;
                 Filter = "CSV (*.csv)|*.csv|All files|*.*",
                 FileName = $"events_{_computer}_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
             };
-            if (sfd.ShowDialog(this) != DialogResult.OK) return;
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, sfd) != DialogResult.OK) return;
             try
             {
                 var sb = new StringBuilder();
