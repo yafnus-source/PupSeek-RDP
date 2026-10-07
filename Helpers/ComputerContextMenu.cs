@@ -574,6 +574,39 @@ namespace ShadowRDP.Helpers
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             };
+
+            // v3.9.4 — TCP-порт-сканер (тот же вход, что «Инструменты →
+            // Проверка портов», но хост подставлен из контекста).
+            var miPorts = menu.Items.Add("Проверка портов...", MenuIcons.Get("ping"));
+            miPorts.Click += (s, e) =>
+            {
+                var computer = computerResolver() ?? "";
+                try
+                {
+                    Forms.PortScanForm.Show(owner, string.IsNullOrEmpty(computer) ? null : computer);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(owner, $"Не удалось открыть сканер: {ex.Message}", "Проверка портов",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            };
+
+            // v3.9.4 — удалённая консоль команд (WinRM/WMI) для этого хоста.
+            var miConsole = menu.Items.Add("Консоль команд...", MenuIcons.Get("terminal"));
+            miConsole.Click += (s, e) =>
+            {
+                var computer = computerResolver() ?? "";
+                try
+                {
+                    Forms.RemoteConsoleForm.Show(owner, string.IsNullOrEmpty(computer) ? null : computer);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(owner, $"Не удалось открыть консоль: {ex.Message}", "Консоль команд",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            };
         }
 
         // Generic launcher for items that just call a Func<bool>.

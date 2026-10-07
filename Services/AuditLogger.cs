@@ -56,6 +56,72 @@ namespace ShadowRDP.Services
             }
         }
 
+        // v3.9.4 — ретеншн истории. Месяцы сравниваются с точностью до
+        // месяца (день не учитывает: файл за октябрь 2025 жив, пока не
+        // наступит «12 полных месяцев назад»). public — харнесс гоняет
+        // чистую функцию PlanAction без файловой системы.
+        public static int RetentionMonths = 12;
+        public static int ArchiveSizeMb = 20;
+
+        public enum RetentionAction { Keep, Delete, Gzip }
+
+        public static RetentionAction PlanAction(string fileMonth, long sizeBytes,
+            DateTime now, int retentionMonths, int archiveSizeMb)
+        {
+            if (!DateTime.TryParseExact(fileMonth, "yyyy-MM",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var month))
+                return RetentionAction.Keep;
+            var cutoff = new DateTime(now.AddMonths(-retentionMonths).Year,
+                now.AddMonths(-retentionMonths).Month, 1);
+            if (month < cutoff) return RetentionAction.Delete;
+            if (sizeBytes > (long)archiveSizeMb * 1024L * 1024L)
+                return RetentionAction.Gzip;
+            return RetentionAction.Keep;
+        }
+
+        // Разовый запуск при старте: прошлые месяцы старше лимита —
+        // удалить; слишком большие прошлые месяцы — сжать в .gz.
+        // Текущий месяц не трогаем (в него пишет WriterLoop).
+        public static void RunRetention()
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(AppPaths.AuditLogPath);
+                if (dir == null || !Directory.Exists(dir)) return;
+                var current = $"audit_{DateTime.Now:yyyy-MM}";
+                foreach (var f in Directory.GetFiles(dir, "audit_*.jsonl"))
+                {
+                    var name = Path.GetFileName(f);
+                    if (name.StartsWith(current, StringComparison.OrdinalIgnoreCase)) continue;
+                    var stamp = name.Substring(6, 7);
+                    var size = new FileInfo(f).Length;
+                    switch (PlanAction(stamp, size, DateTime.Now, RetentionMonths, ArchiveSizeMb))
+                    {
+                        case RetentionAction.Delete:
+                            try { File.Delete(f); } catch { }
+                            break;
+                        case RetentionAction.Gzip:
+                            try
+                            {
+                                using (var inFs = File.OpenRead(f))
+                                using (var outFs = File.Create(f + ".gz"))
+                                using (var gz = new System.IO.Compression.GZipStream(
+                                    outFs, System.IO.Compression.CompressionMode.Compress))
+                                    inFs.CopyTo(gz);
+                                File.Delete(f);
+                            }
+                            catch { }
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"AuditLogger retention: {ex.Message}");
+            }
+        }
+
         private static void WriterLoop()
         {
             try

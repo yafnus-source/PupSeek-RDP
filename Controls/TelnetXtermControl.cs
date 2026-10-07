@@ -76,13 +76,7 @@ namespace ShadowRDP.Controls
 
             try
             {
-                _client = new TcpClient();
-                // Таймаут подключения 8с — голый ConnectAsync висит до 20с+.
-                var connectTask = _client.ConnectAsync(Host, Port);
-                await connectTask.WaitAsync(TimeSpan.FromSeconds(8));
-                _stream = _client.GetStream();
-                _stream.ReadTimeout = 30000;
-                _stream.WriteTimeout = 5000;
+                await OpenTcpAsync();
                 _cts = new CancellationTokenSource();
                 _ = ReadLoopAsync(_cts.Token);
                 Logger.Info($"TelnetXtermControl: connected to {Host}:{Port}");
@@ -96,6 +90,50 @@ namespace ShadowRDP.Controls
             }
         }
 
+        // v3.9.4 — открытие TCP (таймаут 8с). Бросает при неудаче;
+        // поля подменяются только после полного успеха.
+        private async Task OpenTcpAsync()
+        {
+            var client = new TcpClient();
+            // Таймаут подключения 8с — голый ConnectAsync висит до 20с+.
+            var connectTask = client.ConnectAsync(Host, Port);
+            await connectTask.WaitAsync(TimeSpan.FromSeconds(8));
+            var stream = client.GetStream();
+            stream.ReadTimeout = 30000;
+            stream.WriteTimeout = 5000;
+            _client = client;
+            _stream = stream;
+        }
+
+        // v3.9.4 — авто-переподключение при обрыве: 3 попытки, 2/5/15с.
+        // true — читать дальше; false — отмена/Cleanup.
+        private async Task<bool> ReconnectAsync(int attempt, CancellationToken token)
+        {
+            int delay = attempt == 1 ? 2 : attempt == 2 ? 5 : 15;
+            SendOutput($"\r\n[соединение потеряно — переподключение через {delay}с (попытка {attempt}/3)]\r\n");
+            try { await Task.Delay(TimeSpan.FromSeconds(delay), token); }
+            catch { return false; }
+            try { _stream?.Close(); } catch { }
+            try { _client?.Close(); } catch { }
+            try
+            {
+                await OpenTcpAsync();
+                SendOutput("[переподключено]\r\n");
+                Logger.Info($"TelnetXtermControl: reconnected to {Host}:{Port} (attempt {attempt})");
+                ShadowRDP.Services.AuditLogger.Write("telnet.reconnect",
+                    $"{Host}:{Port}", "ok", $"attempt={attempt}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"TelnetXtermControl: reconnect attempt {attempt} failed: {ex.Message}");
+                ShadowRDP.Services.AuditLogger.Write("telnet.reconnect",
+                    $"{Host}:{Port}", "fail", $"attempt={attempt}: {ex.Message}");
+                // Вернуться в цикл: старый stream disposed → новая попытка.
+                return true;
+            }
+        }
+
         // Telnet IAC-константы.
         private const byte IAC = 255, DONT = 254, DO = 253, WONT = 252, WILL = 251;
         private const byte SB = 250, SE = 240;
@@ -106,29 +144,42 @@ namespace ShadowRDP.Controls
             var buf = new byte[8192];
             // Хвост незавершённой IAC-последовательности (границы TCP-чанков).
             var pending = new System.Collections.Generic.List<byte>();
+            int failures = 0;
             try
             {
-                while (!token.IsCancellationRequested && _stream != null)
+                while (!token.IsCancellationRequested)
                 {
+                    var stream = _stream;
+                    if (stream == null) { await Task.Delay(500, token); continue; }
                     int read;
                     try
                     {
-                        read = await _stream.ReadAsync(buf, 0, buf.Length, token);
+                        read = await stream.ReadAsync(buf, 0, buf.Length, token);
                     }
                     catch (OperationCanceledException) { break; }
-                    catch (ObjectDisposedException) { break; }
+                    catch (ObjectDisposedException) { read = -1; }
                     catch (Exception ex)
                     {
                         Logger.Warn($"TelnetXtermControl: read loop: {ex.Message}");
-                        break;
+                        read = -1;
                     }
-                    if (read == 0)
+                    if (read > 0)
+                    {
+                        failures = 0;
+                        var text = ProcessIncoming(buf, read, pending);
+                        if (!string.IsNullOrEmpty(text)) SendOutput(text);
+                        continue;
+                    }
+                    if (token.IsCancellationRequested) break;
+                    // Обрыв → авто-переподключение (2/5/15с, максимум 3).
+                    if (failures >= 3)
                     {
                         SendOutput("\r\n[connection closed]\r\n");
                         break;
                     }
-                    var text = ProcessIncoming(buf, read, pending);
-                    if (!string.IsNullOrEmpty(text)) SendOutput(text);
+                    failures++;
+                    if (!await ReconnectAsync(failures, token)) break;
+                    pending.Clear(); // новая сессия — хвост старого IAC не нужен
                 }
             }
             catch (OperationCanceledException) { /* normal */ }

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -29,18 +30,55 @@ namespace ShadowRDP.Controls
         private CancellationTokenSource? _cts;
         private bool _ready;
         private int _cols = 80, _rows = 24;
+        // v3.9.4 — панель сниппетов над терминалом.
+        private readonly Panel _toolbar;
+        private readonly Button _snipBtn;
+        private readonly Button _snipMgrBtn;
 
         public string Host { get; set; } = "";
         public int Port { get; set; } = 22;
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
+        // v3.9.4 — путь к приватному ключу (ppk/pem/key). Задан и файл
+        // существует → только publickey (Password = фраза ключа);
+        // иначе → password auth. null — чистый пароль (как раньше).
+        public string? PublicKeyPath { get; set; }
 
         public SshXtermControl()
         {
             BackColor = System.Drawing.Color.FromArgb(30, 30, 30);
+
+            _toolbar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 28,
+                BackColor = System.Drawing.Color.FromArgb(38, 38, 38)
+            };
+            _snipBtn = DarkBtn("Сниппеты", 90);
+            _snipBtn.Location = new System.Drawing.Point(4, 3);
+            _snipBtn.Click += (_, _) => ShowSnippetsMenu();
+            _snipMgrBtn = DarkBtn("Управление…", 100);
+            _snipMgrBtn.Location = new System.Drawing.Point(98, 3);
+            _snipMgrBtn.Click += (_, _) => OpenSnippetManager();
+            _toolbar.Controls.Add(_snipBtn);
+            _toolbar.Controls.Add(_snipMgrBtn);
+            Controls.Add(_toolbar);
+
             Load += async (_, _) => await InitializeAsync();
             Disposed += (_, _) => Cleanup();
         }
+
+        private static Button DarkBtn(string text, int width) => new Button
+        {
+            Text = text,
+            Size = new System.Drawing.Size(width, 22),
+            FlatStyle = FlatStyle.Flat,
+            FlatAppearance = { BorderColor = System.Drawing.Color.FromArgb(70, 70, 70), BorderSize = 1 },
+            BackColor = System.Drawing.Color.FromArgb(45, 45, 45),
+            ForeColor = System.Drawing.Color.FromArgb(220, 220, 220),
+            Font = new System.Drawing.Font("Segoe UI", 8.25F),
+            Cursor = Cursors.Hand
+        };
 
         private async Task InitializeAsync()
         {
@@ -129,11 +167,9 @@ namespace ShadowRDP.Controls
 
             try
             {
-                _client = new SshClient(Host, Port, Username, Password);
-                await Task.Run(() => _client.Connect());
+                await Task.Run(OpenConnection);
                 // cols/rows come from the JS side; we set a sane default
                 // before the first resize message arrives.
-                _shell = _client.CreateShellStream("xterm-256color", (uint)_cols, (uint)_rows, 800, 600, 4096);
                 _cts = new CancellationTokenSource();
                 _ = ReadLoopAsync(_cts.Token);
                 Logger.Info($"SshXtermControl: connected to {Username}@{Host}:{Port}");
@@ -147,34 +183,104 @@ namespace ShadowRDP.Controls
             }
         }
 
+        private bool _keyWarned;
+
+        // v3.9.4 — открытие подключения (клиент + шелл). Бросает при
+        // неудаче; поля подменяются только после полного успеха.
+        private void OpenConnection()
+        {
+            if (!_keyWarned && Services.SshAuth.KeyConfigured(PublicKeyPath) && !Services.SshAuth.KeyUsable(PublicKeyPath))
+            {
+                _keyWarned = true;
+                SendOutput($"[warn] ключ '{PublicKeyPath}' не найден — подключение по паролю\r\n");
+            }
+            var client = new SshClient(Services.SshAuth.BuildConnectionInfo(
+                Host, Port, Username, Password, PublicKeyPath));
+            client.HostKeyReceived += (_, e) =>
+                Helpers.SshHostKeyTrust.Handle(e, Host, Port, this);
+            client.Connect();
+            // cols/rows come from the JS side; we set a sane default
+            // before the first resize message arrives.
+            var shell = client.CreateShellStream("xterm-256color", (uint)_cols, (uint)_rows, 800, 600, 4096);
+            _client = client;
+            _shell = shell;
+        }
+
+        // v3.9.4 — закрыть транспорт, НУЛЬ-ссылки не трогаем: в цикле
+        // чтения старый disposed шелл даст исключение → счётчик обрывов.
+        private void CloseTransport()
+        {
+            try { _shell?.Dispose(); } catch { }
+            try { _client?.Disconnect(); } catch { }
+            try { _client?.Dispose(); } catch { }
+        }
+
+        // v3.9.4 — авто-переподключение при обрыве: 3 попытки, задержки
+        // 2/5/15с. true — читать дальше; false — отмена/Cleanup.
+        private async Task<bool> ReconnectAsync(int attempt, CancellationToken token)
+        {
+            int delay = attempt == 1 ? 2 : attempt == 2 ? 5 : 15;
+            SendOutput($"\r\n[соединение потеряно — переподключение через {delay}с (попытка {attempt}/3)]\r\n");
+            try { await Task.Delay(TimeSpan.FromSeconds(delay), token); }
+            catch { return false; }
+            CloseTransport();
+            try
+            {
+                await Task.Run(OpenConnection, token);
+                SendOutput("[переподключено]\r\n");
+                Logger.Info($"SshXtermControl: reconnected to {Username}@{Host}:{Port} (attempt {attempt})");
+                ShadowRDP.Services.AuditLogger.Write("ssh.reconnect",
+                    $"{Username}@{Host}:{Port}", "ok", $"attempt={attempt}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"SshXtermControl: reconnect attempt {attempt} failed: {ex.Message}");
+                ShadowRDP.Services.AuditLogger.Write("ssh.reconnect",
+                    $"{Username}@{Host}:{Port}", "fail", $"attempt={attempt}: {ex.Message}");
+                // Вернуться в цикл: старый шелл disposed → новая попытка.
+                return true;
+            }
+        }
+
         private async Task ReadLoopAsync(CancellationToken token)
         {
             var buf = new byte[8192];
+            int failures = 0;
             try
             {
-                while (!token.IsCancellationRequested && _shell != null)
+                while (!token.IsCancellationRequested)
                 {
+                    var shell = _shell;
+                    if (shell == null) { await Task.Delay(500, token); continue; }
                     int read;
                     try
                     {
-                        read = await _shell.ReadAsync(buf, 0, buf.Length);
+                        read = await shell.ReadAsync(buf, 0, buf.Length);
                     }
-                    catch (ObjectDisposedException) { break; }
+                    catch (OperationCanceledException) { break; }
+                    catch (ObjectDisposedException) { read = -1; }
                     catch (Exception ex)
                     {
                         Logger.Warn($"SshXtermControl: read loop: {ex.Message}");
-                        break;
+                        read = -1;
                     }
-                    if (read == 0)
+                    if (read > 0)
+                    {
+                        failures = 0;
+                        // xterm.js wants a JS string — convert bytes via UTF-8.
+                        SendOutput(Encoding.UTF8.GetString(buf, 0, read));
+                        continue;
+                    }
+                    if (token.IsCancellationRequested) break;
+                    // Обрыв → авто-переподключение (2/5/15с, максимум 3).
+                    if (failures >= 3)
                     {
                         SendOutput("\r\n[connection closed]\r\n");
                         break;
                     }
-                    // xterm.js wants a JS string — convert bytes via UTF-8.
-                    // For binary-ish sequences (rare on a shell stream) this
-                    // is fine, xterm.js handles them.
-                    var text = Encoding.UTF8.GetString(buf, 0, read);
-                    SendOutput(text);
+                    failures++;
+                    if (!await ReconnectAsync(failures, token)) break;
                 }
             }
             catch (OperationCanceledException) { /* normal */ }
@@ -253,6 +359,83 @@ namespace ShadowRDP.Controls
             _shell = null;
             _client = null;
             _cts = null;
+        }
+
+        // === v3.9.4 — сниппеты SSH ===
+
+        // Отправить строку в открытый шелл (сниппеты, программный ввод).
+        // false — нет подключения/канал не пишется.
+        public bool SendCommand(string command, bool enter = true)
+        {
+            var shell = _shell;
+            if (shell == null || !shell.CanWrite) return false;
+            try
+            {
+                shell.Write(enter ? command + "\r" : command);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"SshXtermControl: SendCommand failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void OpenSnippetManager()
+        {
+            try { Forms.SnippetManagerForm.Show(this); }
+            catch (Exception ex) { Logger.Warn($"Сниппеты: не удалось открыть менеджер: {ex.Message}"); }
+        }
+
+        private void RunSnippet(Models.SshSnippet s)
+        {
+            if (!SendCommand(s.Command))
+            {
+                MessageBox.Show(this, "Нет активного подключения к серверу.", "Сниппеты",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Services.AuditLogger.Write("ssh.snippet", $"{Username}@{Host}:{Port}", "sent", s.Name);
+        }
+
+        private void ShowSnippetsMenu()
+        {
+            var snippets = Services.SshSnippetStore.All();
+            var menu = new Helpers.ThemedContextMenu();
+            menu.AddHeader("Сниппеты SSH",
+                snippets.Count == 0 ? "пока пусто — добавьте команды" : $"{snippets.Count} команд(ы)");
+
+            if (snippets.Count == 0)
+            {
+                menu.AddItem("Управление сниппетами…", "gear", OpenSnippetManager);
+            }
+            else
+            {
+                foreach (var s in snippets)
+                    if (string.IsNullOrWhiteSpace(s.Group))
+                        menu.AddItem(s.Name, "terminal", () => RunSnippet(s));
+                var hasPlain = snippets.Exists(s => string.IsNullOrWhiteSpace(s.Group));
+                var groups = snippets
+                    .Where(s => !string.IsNullOrWhiteSpace(s.Group))
+                    .GroupBy(s => s.Group!.Trim())
+                    .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (hasPlain && groups.Count > 0) menu.AddSeparator();
+                foreach (var grp in groups)
+                {
+                    var members = grp
+                        .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    menu.AddSubmenu(grp.Key, "list", sub =>
+                    {
+                        foreach (var s in members)
+                            sub.AddItem(s.Name, "terminal", () => RunSnippet(s));
+                    });
+                }
+                menu.AddSeparator();
+                menu.AddItem("Управление сниппетами…", "gear", OpenSnippetManager);
+            }
+            menu.Show(_toolbar, new System.Drawing.Point(4, _toolbar.Height - 2));
         }
     }
 }

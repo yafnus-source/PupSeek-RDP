@@ -883,6 +883,7 @@ namespace ShadowRDP.Forms
             exportMenu.AddSeparator();
             exportMenu.AddItem("Импорт книги", null, () => ImportAddressBook());
             exportMenu.AddItem("Импорт сессий", null, () => ImportSessions());
+            exportMenu.AddItem("Импорт .rdp…", null, () => ImportRdpFiles());
             // Both left and right click show the menu below the button.
             exportBtn.MouseDown += (s, e) => exportMenu.Show(this, exportBtn.PointToScreen(new Point(0, exportBtn.Height)));
             header.Controls.Add(exportBtn);
@@ -1026,6 +1027,112 @@ namespace ShadowRDP.Forms
             });
             toolsMenu.AddItem("Сессия", "add", () => addSession());
             toolsMenu.AddItem("В книгу", "book", () => addToBook());
+            // v3.9.4 — TCP-порт-сканер.
+            toolsMenu.AddItem("Проверка портов…", "ping", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.PortScanForm.Show(this); }
+                    catch (Exception ex) { Logger.Warn($"Проверка портов: {ex.Message}"); }
+                }));
+            });
+            // v3.9.4 — менеджер сниппетов SSH-команд.
+            toolsMenu.AddItem("Сниппеты SSH…", "terminal", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.SnippetManagerForm.Show(this); }
+                    catch (Exception ex) { Logger.Warn($"Сниппеты: {ex.Message}"); }
+                }));
+            });
+            // v3.9.4 — удалённая консоль команд (WinRM/WMI), хосты из книги.
+            toolsMenu.AddItem("Удалённая консоль…", "terminal", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        var hosts = Services.AddressBookStore.Load()
+                            .Select(e => e.Computer)
+                            .Where(c => !string.IsNullOrWhiteSpace(c))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+                        Forms.RemoteConsoleForm.Show(this, null, hosts);
+                    }
+                    catch (Exception ex) { Logger.Warn($"Консоль команд: {ex.Message}"); }
+                }));
+            });
+
+            // v3.9.4 — SSH-туннели (port forwarding).
+            toolsMenu.AddItem("Туннели…", "exchange", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.PortForwardForm.Show(this); }
+                    catch (Exception ex) { Logger.Warn($"Туннели: {ex.Message}"); }
+                }));
+            });
+
+            // === v3.9.4 — Ctrl+K: командная палитра ===
+            void OpenPalette()
+            {
+                try
+                {
+                    var items = new List<Forms.PaletteItem>
+                    {
+                        new() { Title = "Добавить сессию…", Category = "Сессии", Action = addSession },
+                        new() { Title = "Добавить в книгу…", Category = "Сессии", Action = addToBook },
+                        new() { Title = "Проверка портов…", Category = "Инструменты",
+                            Action = () => Forms.PortScanForm.Show(this) },
+                        new() { Title = "Сниппеты SSH…", Category = "Инструменты",
+                            Action = () => Forms.SnippetManagerForm.Show(this) },
+                        new() { Title = "Журнал действий…", Category = "Инструменты",
+                            Action = () => Forms.AuditViewerForm.Show(this) },
+                        new() { Title = "Удалённая консоль…", Category = "Инструменты",
+                            Action = () =>
+                            {
+                                var hosts = Services.AddressBookStore.Load()
+                                    .Select(en => en.Computer)
+                                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .ToList();
+                                Forms.RemoteConsoleForm.Show(this, null, hosts);
+                            } },
+                        new() { Title = "Туннели SSH…", Category = "Инструменты",
+                            Action = () => Forms.PortForwardForm.Show(this) },
+                        new() { Title = "Настройки цвета…", Category = "Настройки",
+                            Action = () => Forms.ColorSettingsForm.Show(this) },
+                        new() { Title = "Модули…", Category = "Настройки",
+                            Action = () => { try { new Forms.ModuleManagerForm().Show(); } catch { } } },
+                        new() { Title = "Сменить пароль", Category = "Настройки", Action = changePwd },
+                        new() { Title = "Сменить тему", Category = "Настройки", Action = switchTheme },
+                    };
+                    var chosen = Forms.CommandPaletteForm.Run(this, items);
+                    // Выполнение — после закрытия модальной палитры.
+                    if (chosen?.Action != null) BeginInvoke(new Action(chosen.Action));
+                }
+                catch (Exception ex) { Logger.Warn($"Палитра команд: {ex.Message}"); }
+            }
+            KeyPreview = true;
+            KeyDown += (s, e) =>
+            {
+                if (e.Control && e.KeyCode == Keys.K)
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    toolsMenu.Close();
+                    OpenPalette();
+                }
+            };
+            toolsMenu.AddItem("Палитра команд", "search", () =>
+            {
+                toolsMenu.Close();
+                OpenPalette();
+            }, "Ctrl+K");
             toolsMenu.AddSeparator();
             // v4.7 — менеджер встраиваемых модулей (TODO.шная и будущие).
             toolsMenu.AddItem("Модули…", "tasks", () =>
@@ -1049,11 +1156,15 @@ namespace ShadowRDP.Forms
                 }));
             });
             // v3.9.3 — аудит действий администратора (audit_ГГГГ-ММ.jsonl).
+            // v3.9.4 — встроенный просмотрщик вместо notepad.
             toolsMenu.AddItem("Журнал действий…", "list", () =>
             {
                 toolsMenu.Close();
-                try { System.Diagnostics.Process.Start("notepad.exe", AppPaths.AuditLogPath); }
-                catch (Exception ex) { Logger.Warn($"Не удалось открыть журнал действий: {ex.Message}"); }
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.AuditViewerForm.Show(this); }
+                    catch (Exception ex) { Logger.Warn($"Не удалось открыть журнал действий: {ex.Message}"); }
+                }));
             });
             _toolsTab.Click += (s, e) => toolsMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)));
 
@@ -2059,6 +2170,70 @@ namespace ShadowRDP.Forms
             MessageBox.Show(this,
                 $"Импортировано:\n  RDP: +{rdpAdded} новых, пропущено {rdpSkipped}\n  SSH/Web: +{customAdded} новых, пропущено {customSkipped}",
                 "Импорт сессий", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        // v3.9.4 — импорт .rdp (mstsc): мультивыбор файлов, дедуп по
+        // Computer/Target, без автоконнекта (как JSON-импорт).
+        private void ImportRdpFiles()
+        {
+            using var ofd = new OpenFileDialog
+            {
+                Filter = "Файлы RDP (*.rdp)|*.rdp|Все файлы (*.*)|*.*",
+                DefaultExt = "rdp",
+                Title = "Импорт сессий из .rdp",
+                Multiselect = true
+            };
+            if (ShadowRDP.Helpers.UiModal.ShowDimmed(this, ofd) != DialogResult.OK) return;
+
+            int added = 0, skipped = 0, errors = 0;
+            var addedNames = new List<string>();
+            foreach (var file in ofd.FileNames)
+            {
+                try
+                {
+                    var p = Services.RdpFileParser.ParseFile(file);
+                    if (string.IsNullOrWhiteSpace(p.Address))
+                    {
+                        errors++;
+                        Logger.Warn($"RDP import: в '{file}' нет full address");
+                        continue;
+                    }
+                    var exists = _sessions.Any(s =>
+                        string.Equals(s.Target, p.Address, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(s.Computer, p.Address, StringComparison.OrdinalIgnoreCase));
+                    if (exists) { skipped++; continue; }
+
+                    var name = System.IO.Path.GetFileNameWithoutExtension(file);
+                    var displayName = string.Equals(name, p.Address, StringComparison.OrdinalIgnoreCase)
+                        ? null : name;
+                    var notes = string.IsNullOrEmpty(p.Username)
+                        ? null : $"Импорт .rdp, пользователь: {p.Username}";
+                    AddSession(p.Address, p.Address, group: null, autoOpen: false,
+                        displayName: displayName, notes: notes);
+                    added++;
+                    if (addedNames.Count < 10) addedNames.Add(p.Address);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"RDP import: '{file}': {ex.Message}");
+                    errors++;
+                }
+            }
+
+            if (added > 0)
+            {
+                PersistSessions();
+                RenderSidebar();
+            }
+            Logger.Info($"RDP Manager: .rdp import: +{added}, skipped {skipped}, errors {errors}");
+            var list = addedNames.Count > 0
+                ? "\n\nДобавлено:\n  " + string.Join("\n  ", addedNames)
+                    + (added > addedNames.Count ? "\n  …" : "")
+                : "";
+            MessageBox.Show(this,
+                $"Импорт .rdp: +{added} новых, пропущено {skipped}, ошибок {errors}{list}",
+                "Импорт .rdp", MessageBoxButtons.OK,
+                errors > 0 && added == 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
 
         private void ShowSession(RdpSession active)
@@ -4507,7 +4682,7 @@ namespace ShadowRDP.Forms
 
             if (!_sshCredsCache.TryGetValue(sess.Id, out var cached))
             {
-                var creds = Helpers.SshCredsDialog.Prompt(this, host);
+                var creds = Helpers.SshCredsDialog.Prompt(this, host, sess.SshKeyPath);
                 if (creds == null) return;
                 cached = (creds.User, creds.Password);
                 _sshCredsCache[sess.Id] = cached;
@@ -4515,7 +4690,10 @@ namespace ShadowRDP.Forms
 
             try
             {
-                var sftp = new Renci.SshNet.SftpClient(host, port, cached.User, cached.Password);
+                // v3.9.4 — ConnectionInfo: ключ сессии + проверка host key.
+                var sftp = new Renci.SshNet.SftpClient(Services.SshAuth.BuildConnectionInfo(
+                    host, port, cached.User, cached.Password, sess.SshKeyPath));
+                sftp.HostKeyReceived += (_, e) => Helpers.SshHostKeyTrust.Handle(e, host, port, this);
                 sftp.Connect();
                 // v3.9.3 — аудит подключений (пароль — никогда).
                 Services.AuditLogger.Write("sftp.connect", $"{cached.User}@{host}:{port}", "ok");
@@ -5162,7 +5340,7 @@ namespace ShadowRDP.Forms
                     ? new Helpers.SshCredsDialog.Creds { User = cached.User, Password = cached.Password }
                     : kpCreds != null
                         ? new Helpers.SshCredsDialog.Creds { User = kpCreds.Value.Login, Password = kpCreds.Value.Password }
-                        : Helpers.SshCredsDialog.Prompt(this, host);
+                        : Helpers.SshCredsDialog.Prompt(this, host, sess.SshKeyPath);
                 if (creds == null)
                 {
                     // Cancelled — show a small "no creds" hint panel.
@@ -5190,7 +5368,8 @@ namespace ShadowRDP.Forms
                         Host = host,
                         Port = port,
                         Username = creds.User,
-                        Password = creds.Password
+                        Password = creds.Password,
+                        PublicKeyPath = sess.SshKeyPath
                     };
                     // v2.1.96: cache creds so "Перезапуск сессии" can reuse
                     // them without re-prompting. Cleared on app exit + when

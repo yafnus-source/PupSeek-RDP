@@ -22,6 +22,9 @@ namespace ShadowRDP.Models
         // session's group (RDP + custom sessions share the numbering). 0
         // default keeps legacy order until the user reorders something.
         public int SortOrder { get; set; }
+        // v3.9.4 — SSH: путь к приватному ключу (ppk/pem/key). null — пароль.
+        // Фраза ключа не хранится: её спрашивает диалог кредов (поле «пароль»).
+        public string? SshKeyPath { get; set; }
     }
 
     // v3.9.3 — Telnet добавлен СТРОГО в конец: Kind сериализуется
