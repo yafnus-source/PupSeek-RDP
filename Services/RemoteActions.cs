@@ -95,14 +95,18 @@ namespace ShadowRDP.Services
                 if (retVal != null && (uint)retVal == 0)
                 {
                     Logger.Info($"Restart initiated on {computer} (force={force}, timeout={timeoutSec}s)");
+                    // v3.9.3 — аудит.
+                    AuditLogger.Write("host.restart", computer, "ok", $"force={force}, timeout={timeoutSec}s");
                     return true;
                 }
                 Logger.Warn($"Restart on {computer} returned {retVal}");
+                AuditLogger.Write("host.restart", computer, "fail", $"return={retVal}");
                 return false;
             }
             catch (Exception ex)
             {
                 Logger.Warn($"Restart failed on {computer}: {ex.Message}");
+                AuditLogger.Write("host.restart", computer, "fail", ex.Message);
                 return false;
             }
         }
@@ -128,11 +132,14 @@ namespace ShadowRDP.Services
                 if (proc == null) return false;
                 if (!proc.WaitForExit(8000)) { try { proc.Kill(); } catch { } return false; }
                 Logger.Info($"EndSession on {computer} (id={sessionId}, exit={proc.ExitCode})");
+                // v3.9.3 — аудит.
+                AuditLogger.Write("session.logoff", $"{computer} (сессия {sessionId})", proc.ExitCode == 0 ? "ok" : "fail", $"exit={proc.ExitCode}");
                 return proc.ExitCode == 0;
             }
             catch (Exception ex)
             {
                 Logger.Warn($"EndSession failed on {computer} (id={sessionId}): {ex.Message}");
+                AuditLogger.Write("session.logoff", $"{computer} (сессия {sessionId})", "fail", ex.Message);
                 return false;
             }
         }
@@ -272,6 +279,8 @@ namespace ShadowRDP.Services
                 entry.Invoke("SetPassword", new object[] { newPassword });
                 entry.CommitChanges();
                 Logger.Info($"Password changed on {computer} for local user '{userName}'");
+                // v3.9.3 — аудит (сам пароль — никогда).
+                AuditLogger.Write("password.change", $"{computer}/{userName}", "ok");
                 return true;
             }
             catch (Exception ex)

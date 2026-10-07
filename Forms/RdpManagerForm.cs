@@ -1048,6 +1048,13 @@ namespace ShadowRDP.Forms
                     try { Forms.ColorSettingsForm.Show(this); } catch { }
                 }));
             });
+            // v3.9.3 — аудит действий администратора (audit_ГГГГ-ММ.jsonl).
+            toolsMenu.AddItem("Журнал действий…", "list", () =>
+            {
+                toolsMenu.Close();
+                try { System.Diagnostics.Process.Start("notepad.exe", AppPaths.AuditLogPath); }
+                catch (Exception ex) { Logger.Warn($"Не удалось открыть журнал действий: {ex.Message}"); }
+            });
             _toolsTab.Click += (s, e) => toolsMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)));
 
             // Recompute X position — right-anchored buttons.
@@ -3246,9 +3253,9 @@ namespace ShadowRDP.Forms
                 Tag = sess
             };
 
-            // Icon — tasks for SSH, globe for Web (16x16, already drawn by MenuIcons).
+            // Icon — tasks for SSH, globe for Web, terminal for Telnet (16x16, already drawn by MenuIcons).
             // v2.3.10: lighten by 50% so the dark icons read on the dark sidebar.
-            var iconKey = sess.Kind == Models.SessionKind.Web ? "globe" : "tasks";
+            var iconKey = sess.Kind == Models.SessionKind.Web ? "globe" : sess.Kind == Models.SessionKind.Telnet ? "terminal" : "tasks";
             var icon = new PictureBox
             {
                 Image = Lighten(Helpers.MenuIcons.Get(iconKey), 0.5f),
@@ -3375,6 +3382,21 @@ namespace ShadowRDP.Forms
                         ActivateCustomSession(sess);
                     });
                     menu.AddItem("Обмен файлами…", "list", () => OpenSftpFor(sess));
+                }
+                // v3.9.3 — Telnet: без учёток, только перезапуск встроенной вкладки.
+                if (sess.Kind == Models.SessionKind.Telnet)
+                {
+                    menu.AddItem("Перезапуск сессии", "restart", () =>
+                    {
+                        if (_customPlaceholders.TryGetValue(sess.Id, out var oldPanel))
+                        {
+                            _mainArea.Controls.Remove(oldPanel);
+                            oldPanel.Dispose();
+                            _customPlaceholders.Remove(sess.Id);
+                        }
+                        Logger.Info($"Telnet restart: '{sess.Name}'");
+                        ActivateCustomSession(sess);
+                    });
                 }
                 menu.AddItem("Переименовать…", "person", () => RenameCustomSession(sess));
                 menu.AddSubmenu("Группа", "list", sub =>
@@ -4341,8 +4363,18 @@ namespace ShadowRDP.Forms
         // v2.1.86: Web sessions no longer launch an external browser — the
         // embedded WebBrowser control (created in GetOrCreateCustomPlaceholder)
         // IS the in-app view. LaunchCustomSession now handles SSH only.
+        // v3.9.3 — Telnet: внешнего telnet.exe может не быть (опциональная
+        // фича Windows), поэтому «Открыть» ведёт на встроенную вкладку.
         private void LaunchCustomSession(Models.CustomSession sess)
         {
+            if (sess.Kind == Models.SessionKind.Telnet)
+            {
+                EnsureVisible();
+                if (_activeTab != SidebarTab.Sessions) SwitchTab(SidebarTab.Sessions);
+                ActivateCustomSession(sess);
+                RenderSidebar();
+                return;
+            }
             try
             {
                 // SSH — try Windows Terminal first, fallback to cmd /k ssh.
@@ -4485,6 +4517,8 @@ namespace ShadowRDP.Forms
             {
                 var sftp = new Renci.SshNet.SftpClient(host, port, cached.User, cached.Password);
                 sftp.Connect();
+                // v3.9.3 — аудит подключений (пароль — никогда).
+                Services.AuditLogger.Write("sftp.connect", $"{cached.User}@{host}:{port}", "ok");
                 // Reuse existing embedded SFTP form if one is open.
                 if (_activeSftpForm != null && !_activeSftpForm.IsDisposed)
                 {
@@ -5040,6 +5074,64 @@ namespace ShadowRDP.Forms
                         Url = new Uri(url)
                     };
                     panel.Controls.Add(browser);
+                }
+            }
+            else if (sess.Kind == Models.SessionKind.Telnet)
+            {
+                // v3.9.3 — Telnet: встроенный TelnetXtermControl, учётка
+                // вводится интерактивно в терминале (login:/Password:).
+                // Target: "host" или "host:port" (по умолчанию 23).
+                var parts = sess.Target.Split(':');
+                var host = parts[0].Trim();
+                var port = 23;
+                if (parts.Length > 1 && int.TryParse(parts[1], out var p)) port = p;
+                if (string.IsNullOrWhiteSpace(host))
+                {
+                    var hint = new Label
+                    {
+                        Text = "Не указан хост.",
+                        Dock = DockStyle.Fill,
+                        Font = new Font("Segoe UI", 10F),
+                        ForeColor = Helpers.UiTheme.MutedForeground,
+                        BackColor = Helpers.UiTheme.Background,
+                        TextAlign = ContentAlignment.MiddleCenter
+                    };
+                    panel.Controls.Add(hint);
+                }
+                else
+                {
+                    var term = new ShadowRDP.Controls.TelnetXtermControl
+                    {
+                        Dock = DockStyle.Fill,
+                        Host = host,
+                        Port = port
+                    };
+                    panel.Controls.Add(term);
+                    _ = term.ConnectAsync().ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                        {
+                            try
+                            {
+                                Invoke(new Action(() =>
+                                {
+                                    panel.Controls.Remove(term);
+                                    term.Cleanup();
+                                    var err = new Label
+                                    {
+                                        Text = $"Не удалось подключиться: {t.Exception?.GetBaseException().Message}",
+                                        Dock = DockStyle.Fill,
+                                        Font = new Font("Segoe UI", 10F),
+                                        ForeColor = Helpers.UiTheme.Danger,
+                                        BackColor = Helpers.UiTheme.Background,
+                                        TextAlign = ContentAlignment.MiddleCenter
+                                    };
+                                    panel.Controls.Add(err);
+                                }));
+                            }
+                            catch { }
+                        }
+                    }, TaskScheduler.Default);
                 }
             }
             else

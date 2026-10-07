@@ -24,9 +24,12 @@ namespace ShadowRDP.Models
         public int SortOrder { get; set; }
     }
 
+    // v3.9.3 — Telnet добавлен СТРОГО в конец: Kind сериализуется
+    // числом (Ssh=0, Web=1), сдвиг сломал бы старые custom_sessions.json.
     public enum SessionKind
     {
         Ssh,
-        Web
+        Web,
+        Telnet
     }
 }
