@@ -20,6 +20,10 @@ namespace ShadowRDP
             // creates the new folder (and an empty placeholder if the
             // folder was empty), which would shadow the legacy data.
             try { AppPaths.EnsureDataDir(); } catch { }
+            // v3.9.4 — ретеншн аудита (удаление/сжатие старых месяцев) и
+            // ежедневный бэкап ключевых JSON. Оба никогда не валят старт.
+            try { Services.AuditLogger.RunRetention(); } catch { }
+            try { Services.DataBackup.RunDailyIfDue(); } catch { }
             // v3.8.x — seed / load the user-defined groups (groups.json) so the
             // Book filter pills reflect any persisted custom groups on launch.
             try { ShadowRDP.Helpers.ComputerGroup.EnsureLoaded(); } catch { }

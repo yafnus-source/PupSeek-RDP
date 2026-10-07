@@ -17,8 +17,11 @@ namespace ShadowRDP.Helpers
             public string Password { get; set; } = "";
         }
 
-        public static Creds? Prompt(IWin32Window owner, string host)
+        // v3.9.4 — keyPath != null: пароль в диалоге = фраза приватного
+        // ключа (пусто, если ключ без фразы).
+        public static Creds? Prompt(IWin32Window owner, string host, string? keyPath = null)
         {
+            bool keyMode = !string.IsNullOrWhiteSpace(keyPath);
             using var dlg = new Form
             {
                 Text = $"SSH: {host}",
@@ -56,7 +59,7 @@ namespace ShadowRDP.Helpers
 
             var lblPass = new Label
             {
-                Text = "Пароль:",
+                Text = keyMode ? "Фраза ключа:" : "Пароль:",
                 Location = new Point(16, 50),
                 Size = new Size(120, 22),
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -75,7 +78,9 @@ namespace ShadowRDP.Helpers
 
             var hint = new Label
             {
-                Text = "Креды не сохраняются — только на время сессии.",
+                Text = keyMode
+                    ? $"Ключ: {System.IO.Path.GetFileName(keyPath!)}\nПусто — если ключ без фразы."
+                    : "Креды не сохраняются — только на время сессии.",
                 Location = new Point(16, 84),
                 Size = new Size(388, 36),
                 ForeColor = UiTheme.MutedForeground,

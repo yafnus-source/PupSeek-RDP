@@ -40,6 +40,11 @@ namespace ShadowRDP.Forms
         private readonly Label _computerLabel;
         private readonly TextBox _computerBox;
         private readonly Panel _computerWrap;
+        // v3.9.4 — строка «Ключ SSH» (только тип SSH).
+        private readonly Label _keyLabel;
+        private readonly TextBox _keyBox;
+        private readonly Panel _keyWrap;
+        private readonly Label _keyBrowse;
         // v4.9.34 — подписи/карточка/футер полями: RDP-режим сдвигает ряды.
         private readonly Label _lblType;
         private readonly Label _lblGroup;
@@ -171,6 +176,28 @@ namespace ShadowRDP.Forms
             _targetWrap = Helpers.UiModal.Field(_targetBox, 384);
             _targetWrap.Location = new Point(16, 164);
             card.Controls.Add(_targetWrap);
+
+            // v3.9.4 — ключ SSH: под target, виден только при типе SSH.
+            // Рядом с полем (не внутри): wrap 340 + кнопка 34.
+            _keyLabel = Helpers.UiModal.FieldLabel("Ключ SSH (ppk/pem) — опц.", 16, 196);
+            card.Controls.Add(_keyLabel);
+            _keyBox = new TextBox { Text = _session.SshKeyPath ?? "" };
+            _keyWrap = Helpers.UiModal.Field(_keyBox, 340);
+            _keyWrap.Location = new Point(16, 212);
+            card.Controls.Add(_keyWrap);
+            _keyBrowse = Helpers.UiButtons.MakeCompactFilled("...", 34);
+            _keyBrowse.Location = new Point(362, 212);
+            card.Controls.Add(_keyBrowse);
+            _keyBrowse.Click += (_, _) =>
+            {
+                using var ofd = new OpenFileDialog
+                {
+                    Filter = "Ключи SSH (*.ppk;*.pem;*.key)|*.ppk;*.pem;*.key|Все файлы (*.*)|*.*",
+                    Title = "Выбор ключа"
+                };
+                if (ofd.ShowDialog(this) == DialogResult.OK) _keyBox.Text = ofd.FileName;
+            };
+
             UpdateTargetLabel();
 
             _lblGroup = Helpers.UiModal.FieldLabel("Группа", 16, 196);
@@ -245,6 +272,11 @@ namespace ShadowRDP.Forms
                     : _typeBox.SelectedIndex == (_isNew ? 3 : 2) ? SessionKind.Telnet
                     : SessionKind.Ssh;
                 _session.Target = target;
+                // v3.9.4 — ключ SSH: только для типа SSH, иначе сбрасываем.
+                _session.SshKeyPath = _typeBox.SelectedIndex == 0
+                    && !string.IsNullOrWhiteSpace(_keyBox.Text)
+                    ? _keyBox.Text.Trim()
+                    : null;
                 _session.Group = string.IsNullOrWhiteSpace(_groupBox.Text) ? null : _groupBox.Text.Trim();
                 _session.Notes = string.IsNullOrWhiteSpace(_notesBox.Text) ? null : _notesBox.Text.Trim();
                 DialogResult = DialogResult.OK;
@@ -257,27 +289,38 @@ namespace ShadowRDP.Forms
             Shown += (_, _) => _nameBox.Focus();
         }
 
-        // v4.9.34 — RDP-режим: строка «Имя компьютера» после Названия,
-        // остальные ряды -48px вниз, карточка ниже (футер dock — сам).
-        private void LayoutRdpMode(bool rdp)
+        // v3.9.4 — обобщённая раскладка (была LayoutRdpMode):
+        //   RDP: строка «Имя компьютера» → type..target +48;
+        //   SSH: строка «Ключ» под target;
+        //   group/notes/карточка +48 при RDP или SSH (лишняя строка над ними).
+        private void UpdateLayout()
         {
-            _computerLabel.Visible = rdp;
-            _computerWrap.Visible = rdp;
-            int d = rdp ? 48 : 0;
-            _lblType.Location = new Point(16, 100 + d);
-            _typeWrap.Location = new Point(16, 116 + d);
-            _targetLabel.Location = new Point(16, 148 + d);
-            _targetWrap.Location = new Point(16, 164 + d);
+            bool isRdp = _isNew && _typeBox.SelectedIndex == 2;
+            bool isSsh = _typeBox.SelectedIndex == 0;
+            int dTop = isRdp ? 48 : 0;
+            int dBot = (isRdp || isSsh) ? 48 : 0;
+            _computerLabel.Visible = isRdp;
+            _computerWrap.Visible = isRdp;
+            _keyLabel.Visible = isSsh;
+            _keyWrap.Visible = isSsh;
+            _keyBrowse.Visible = isSsh;
+            _lblType.Location = new Point(16, 100 + dTop);
+            _typeWrap.Location = new Point(16, 116 + dTop);
+            _targetLabel.Location = new Point(16, 148 + dTop);
+            _targetWrap.Location = new Point(16, 164 + dTop);
             // v4.9.35 — первый UpdateTargetLabel() идёт из конструктора
             // ДО создания нижних рядов: дальше только если всё есть.
             if (_lblGroup == null || _lblNotes == null || _card == null)
                 return;
-            _lblGroup.Location = new Point(16, 196 + d);
-            _groupWrap.Location = new Point(16, 212 + d);
-            _lblNotes.Location = new Point(16, 244 + d);
-            _notesWrap.Location = new Point(16, 260 + d);
-            _card.Size = new Size(416, 304 + d);
-            ClientSize = new Size(440, 454 + d);
+            _keyLabel.Location = new Point(16, 196 + dTop);
+            _keyWrap.Location = new Point(16, 212 + dTop);
+            _keyBrowse.Location = new Point(362, 212 + dTop);
+            _lblGroup.Location = new Point(16, 196 + dBot);
+            _groupWrap.Location = new Point(16, 212 + dBot);
+            _lblNotes.Location = new Point(16, 244 + dBot);
+            _notesWrap.Location = new Point(16, 260 + dBot);
+            _card.Size = new Size(416, 304 + dBot);
+            ClientSize = new Size(440, 454 + dBot);
         }
 
         private void UpdateTargetLabel()
@@ -285,7 +328,7 @@ namespace ShadowRDP.Forms
             // v4.9.26 — RDP (только новые): индекс 2.
             bool isRdp = _isNew && _typeBox.SelectedIndex == 2;
             _targetLabel.Text = isRdp ? "Хост/IP:" : _typeBox.SelectedIndex == 1 ? "URL:" : "Хост:порт:";
-            LayoutRdpMode(isRdp);
+            UpdateLayout();
         }
     }
 }
