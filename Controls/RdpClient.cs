@@ -269,6 +269,8 @@ namespace ShadowRDP.Controls
                 _ocx.Connect();
                 _connected = true;
                 Logger.Info($"RDP ActiveX: Connect() called for {target}");
+                // v3.9.3 — аудит подключений (учётка — да, пароль — никогда).
+                ShadowRDP.Services.AuditLogger.Write("rdp.connect", target, "ok", login ?? "");
             }
             catch (Exception ex)
             {

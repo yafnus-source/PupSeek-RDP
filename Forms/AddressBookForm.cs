@@ -2134,6 +2134,13 @@ namespace ShadowRDP.Forms
             }
 
             Logger.Info($"Deleted {count} entries");
+            // v3.9.3 — аудит: какие именно записи удалены.
+            try
+            {
+                var names = string.Join(", ", System.Linq.Enumerable.Take(toDrop, 10));
+                Services.AuditLogger.Write("book.delete", $"{count} записей", "ok", names);
+            }
+            catch { }
             UpdateStatus();
         }
 

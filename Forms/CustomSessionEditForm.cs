@@ -157,8 +157,11 @@ namespace ShadowRDP.Forms
             _typeWrap.Location = new Point(16, 116);
             // v4.9.26 — RDP только для новых (переименование SSH/Web в RDP
             // не имеет смысла: RDP-сессии живут в своём списке).
-            _typeBox.Items.AddRange(_isNew ? new object[] { "SSH", "Web", "RDP" } : new object[] { "SSH", "Web" });
-            _typeBox.SelectedIndex = _session.Kind == SessionKind.Web ? 1 : 0;
+            // v3.9.3 — Telnet: у новых индекс 3, у существующих 2
+            // (RDP только у новых, индекс 2).
+            _typeBox.Items.AddRange(_isNew ? new object[] { "SSH", "Web", "RDP", "Telnet" } : new object[] { "SSH", "Web", "Telnet" });
+            _typeBox.SelectedIndex = _session.Kind == SessionKind.Web ? 1
+                : _session.Kind == SessionKind.Telnet ? (_isNew ? 3 : 2) : 0;
             _typeBox.SelectedIndexChanged += (_, _) => UpdateTargetLabel();
             card.Controls.Add(_typeWrap);
 
@@ -237,7 +240,10 @@ namespace ShadowRDP.Forms
                     return;
                 }
                 _session.Name = name;
-                _session.Kind = _typeBox.SelectedIndex == 1 ? SessionKind.Web : SessionKind.Ssh;
+                // v3.9.3 — Telnet: индекс 3 у новых, 2 у существующих.
+                _session.Kind = _typeBox.SelectedIndex == 1 ? SessionKind.Web
+                    : _typeBox.SelectedIndex == (_isNew ? 3 : 2) ? SessionKind.Telnet
+                    : SessionKind.Ssh;
                 _session.Target = target;
                 _session.Group = string.IsNullOrWhiteSpace(_groupBox.Text) ? null : _groupBox.Text.Trim();
                 _session.Notes = string.IsNullOrWhiteSpace(_notesBox.Text) ? null : _notesBox.Text.Trim();

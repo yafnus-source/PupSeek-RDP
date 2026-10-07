@@ -30,6 +30,8 @@ namespace ShadowRDP
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PupSeekRDP");
 
         public static string DebugLogPath => Path.Combine(DataDir, "debug.log");
+        // v3.9.3 — аудит действий администратора (JSONL по месяцам, рядом с debug.log).
+        public static string AuditLogPath => Path.Combine(DataDir, $"audit_{DateTime.Now:yyyy-MM}.jsonl");
         public static string HistoryPath => Path.Combine(DataDir, "history.json");
         public static string AddressBookPath => Path.Combine(DataDir, "addressbook.json");
         public static string WindowStatePath => Path.Combine(DataDir, "windows.json");

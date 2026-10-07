@@ -69,7 +69,8 @@ namespace ShadowRDP.Controls
         // Extract xterm files from embedded resources to a stable disk folder.
         // Returns the full path to terminal.html. No-op on subsequent runs
         // unless the assembly version changed (then we re-extract).
-        private static string EnsureXtermFiles()
+        // v3.9.3 — internal: xterm-файлы общие с TelnetXtermControl.
+        internal static string EnsureXtermFiles()
         {
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -98,7 +99,7 @@ namespace ShadowRDP.Controls
             return Path.Combine(dir, "terminal.html");
         }
 
-        private static void ExtractResource(Assembly asm, string name, string dest)
+        internal static void ExtractResource(Assembly asm, string name, string dest)
         {
             using var stream = asm.GetManifestResourceStream(name);
             if (stream == null)
@@ -136,6 +137,8 @@ namespace ShadowRDP.Controls
                 _cts = new CancellationTokenSource();
                 _ = ReadLoopAsync(_cts.Token);
                 Logger.Info($"SshXtermControl: connected to {Username}@{Host}:{Port}");
+                // v3.9.3 — аудит подключений (пароль — никогда).
+                ShadowRDP.Services.AuditLogger.Write("ssh.connect", $"{Username}@{Host}:{Port}", "ok");
             }
             catch (Exception ex)
             {

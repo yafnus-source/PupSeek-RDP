@@ -47,6 +47,8 @@ namespace ShadowRDP.Services
                 };
                 Process.Start(psi);
                 Logger.Info($"Shadow launched: session {sessionId} on {computer} (control={withControl}, noConsent={noConsent})");
+                // v3.9.3 — аудит: shadow с управлением и без спроса фиксируем особо.
+                AuditLogger.Write("shadow", $"{computer} (сессия {sessionId})", "ok", $"control={withControl}, noConsent={noConsent}");
             }
             catch (Exception ex)
             {

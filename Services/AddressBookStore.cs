@@ -28,6 +28,8 @@ namespace ShadowRDP.Services
         private static readonly object _lock = new object();
         private static readonly string _dir = AppPaths.DataDir;
         private static readonly string _path = AppPaths.AddressBookPath;
+        // v3.9.3 — аудит пишет только изменение числа записей.
+        private static int _lastCount = -1;
 
         // Locations to probe on first-run migration, in priority order.
         private static readonly string[] _legacyPaths = new[]
@@ -127,6 +129,11 @@ namespace ShadowRDP.Services
                     File.WriteAllText(_path, json, new UTF8Encoding(false));
                     AppPaths.SyncToMonitor(_path, "addressbook.json");
                     Logger.Info($"AddressBookStore: saved {list.Count} entries to {_path}");
+                    // v3.9.3 — аудит: пишем только ИЗМЕНЕНИЕ числа записей
+                    // (добавления/удаления), а не каждое сохранение.
+                    if (_lastCount >= 0 && _lastCount != list.Count)
+                        AuditLogger.Write("book.save", $"записей: {_lastCount} → {list.Count}", "ok");
+                    _lastCount = list.Count;
                 }
                 catch (Exception ex)
                 {
