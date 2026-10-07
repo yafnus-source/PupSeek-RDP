@@ -1082,7 +1082,51 @@ namespace ShadowRDP.Forms
             {
                 try
                 {
-                    var items = new List<Forms.PaletteItem>
+                    var items = new List<Forms.PaletteItem>();
+
+                    // v3.9.5 — открытые сессии в начале палитры: пустой
+                    // запрос не сортирует список, поэтому порядок добавления
+                    // = порядок показа (сессии сверху, действия ниже).
+                    foreach (var s in _sessions)
+                    {
+                        if (s.Client == null) continue;
+                        var title = string.IsNullOrWhiteSpace(s.DisplayName) ? s.Computer : s.DisplayName;
+                        var rdpTitle = title;
+                        items.Add(new Forms.PaletteItem { Title = $"RDP: {rdpTitle}",
+                            Category = "Открытые сессии", Action = () => ActivateSession(s) });
+                    }
+                    foreach (var cs in _customSessions)
+                    {
+                        if (!_customPlaceholders.ContainsKey(cs.Id)) continue;
+                        var cTitle = string.IsNullOrWhiteSpace(cs.Name) ? cs.Target : cs.Name;
+                        var kind = cs.Kind switch
+                        {
+                            Models.SessionKind.Web => "Web",
+                            Models.SessionKind.Telnet => "Telnet",
+                            _ => "SSH"
+                        };
+                        items.Add(new Forms.PaletteItem { Title = $"{kind}: {cTitle}",
+                            Category = "Открытые сессии", Action = () => ActivateCustomSession(cs) });
+                    }
+                    foreach (var es in _embeddedSessions)
+                    {
+                        var eTitle = string.IsNullOrWhiteSpace(es.Entry.Name) ? es.Entry.Path : es.Entry.Name;
+                        items.Add(new Forms.PaletteItem { Title = $"Встроенное: {eTitle}",
+                            Category = "Открытые сессии", Action = () => ActivateEmbeddedProgram(es) });
+                    }
+                    var consoles = new List<Controls.ConsoleSessionControl>();
+                    if (_cmdSession != null) consoles.Add(_cmdSession);
+                    if (_psSession != null) consoles.Add(_psSession);
+                    foreach (var pillKey in _consolePills.Keys)
+                        if (!consoles.Contains(pillKey)) consoles.Add(pillKey);
+                    foreach (var cons in consoles)
+                    {
+                        var consTitle = cons.SessionTitle;
+                        items.Add(new Forms.PaletteItem { Title = $"Консоль: {consTitle}",
+                            Category = "Открытые сессии", Action = () => ActivateConsoleSession(cons) });
+                    }
+
+                    items.AddRange(new Forms.PaletteItem[]
                     {
                         new() { Title = "Добавить сессию…", Category = "Сессии", Action = addSession },
                         new() { Title = "Добавить в книгу…", Category = "Сессии", Action = addToBook },
@@ -1110,7 +1154,7 @@ namespace ShadowRDP.Forms
                             Action = () => { try { new Forms.ModuleManagerForm().Show(); } catch { } } },
                         new() { Title = "Сменить пароль", Category = "Настройки", Action = changePwd },
                         new() { Title = "Сменить тему", Category = "Настройки", Action = switchTheme },
-                    };
+                    });
                     var chosen = Forms.CommandPaletteForm.Run(this, items);
                     // Выполнение — после закрытия модальной палитры.
                     if (chosen?.Action != null) BeginInvoke(new Action(chosen.Action));

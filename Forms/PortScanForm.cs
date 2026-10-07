@@ -91,11 +91,18 @@ namespace ShadowRDP.Forms
             _portsWrap.Location = new Point(16, 128);
             card.Controls.Add(_portsWrap);
 
-            // Пресеты — под полем портов.
-            AddPreset(card, "Сетевые", PresetCore, 16);
-            AddPreset(card, "Web", PresetWeb, 116);
-            AddPreset(card, "БД", PresetDb, 216);
-            AddPreset(card, "Все", PresetAll, 296);
+            // Пресеты — под полем портов: 4 кнопки одинаковой ширины с
+            // одинаковым зазором (v3.9.5: раньше «БД» перекрывала «Все»).
+            var presets = new (string Text, string Ports)[]
+            {
+                ("Сетевые", PresetCore),
+                ("Web", PresetWeb),
+                ("БД", PresetDb),
+                ("Все", PresetAll)
+            };
+            const int presetWidth = 90, presetStep = 98; // 90 + зазор 8
+            for (int i = 0; i < presets.Length; i++)
+                AddPreset(card, presets[i].Text, presets[i].Ports, 16 + i * presetStep);
 
             _statusLabel = new Label
             {
@@ -141,7 +148,7 @@ namespace ShadowRDP.Forms
 
         private void AddPreset(Control card, string text, string ports, int x)
         {
-            var b = Helpers.UiButtons.MakeCompactFilled(text, 96,
+            var b = Helpers.UiButtons.MakeCompactFilled(text, 90,
                 bgOverride: Helpers.UiTheme.MutedForeground);
             b.Location = new Point(x, 170);
             card.Controls.Add(b);

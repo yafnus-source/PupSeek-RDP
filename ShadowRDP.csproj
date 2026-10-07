@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,9 +8,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>PupSeekRDP</AssemblyName>
     <RootNamespace>ShadowRDP</RootNamespace>
-    <Version>3.9.4.0</Version>
-    <AssemblyVersion>3.9.4.0</AssemblyVersion>
-    <FileVersion>3.9.4.0</FileVersion>
+    <Version>3.9.5.0</Version>
+    <AssemblyVersion>3.9.5.0</AssemblyVersion>
+    <FileVersion>3.9.5.0</FileVersion>
     <Company>M.A.D.</Company>
     <Product>Pup Seek RDP — управление RDP shadow-сессиями</Product>
     <Title>Pup Seek RDP</Title>

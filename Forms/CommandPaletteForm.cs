@@ -10,6 +10,9 @@ namespace ShadowRDP.Forms
     // выполнить, Esc — закрыть. Форма только выбирает элемент и возвращает
     // его вызывающему — выполнение остаётся на стороне хозяина (он знает
     // свои private-методы).
+    // v3.9.5 — визуал по стилю диалогов программы (hero + поле в рамке +
+    // список с отступами + футер-хинт со счётчиком); пустой запрос больше
+    // не сортирует список — открытые сессии хозяина остаются сверху.
     public sealed class PaletteItem
     {
         public string Title { get; set; } = "";
@@ -27,12 +30,13 @@ namespace ShadowRDP.Forms
         private PaletteItem? _chosen;
 
         // Чистый фильтр (харнесс гоняет без UI): точные совпадения начала
-        // строки выше, далее Contains, регистр не важен.
+        // строки выше, далее Contains, регистр не важен. Пустой запрос —
+        // список как есть (в исходном порядке, без сортировки).
         public static List<PaletteItem> Filter(IEnumerable<PaletteItem> items, string query)
         {
             var list = items.ToList();
             if (string.IsNullOrWhiteSpace(query))
-                return list.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase).ToList();
+                return list;
             var q = query.Trim();
             var start = new List<PaletteItem>();
             var contain = new List<PaletteItem>();
@@ -68,33 +72,37 @@ namespace ShadowRDP.Forms
             MinimizeBox = false;
             Font = new Font("Segoe UI", 9.5F);
             BackColor = Helpers.UiTheme.DialogBackground;
-            ClientSize = new Size(580, 430);
+            ClientSize = new Size(600, 480);
 
-            _searchBox = new TextBox
+            // Градиентный hero сверху — как в остальных диалогах.
+            var hero = Helpers.UiModal.Hero("Палитра команд",
+                "Поиск действий, сессий и настроек — Enter выполняет", "list");
+            hero.Dock = DockStyle.Top;
+            Controls.Add(hero);
+
+            // Поле поиска в рамке (UiModal.Field) под hero.
+            var searchPanel = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 44,
-                Font = new Font("Segoe UI", 12F),
-                BorderStyle = BorderStyle.None,
-                BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.Foreground,
-                Margin = new Padding(8)
+                Location = new Point(0, 80),
+                Size = new Size(600, 64),
+                BackColor = Helpers.UiTheme.DialogBackground
             };
-            Controls.Add(_searchBox);
+            _searchBox = new TextBox();
+            var searchWrap = Helpers.UiModal.Field(_searchBox, 560, 36);
+            _searchBox.Font = new Font("Segoe UI", 11.5F);
+            _searchBox.ForeColor = Helpers.UiTheme.Foreground;
+            searchWrap.Location = new Point(14, 14);
+            searchPanel.Controls.Add(searchWrap);
+            Controls.Add(searchPanel);
 
-            _hint = new Label
+            // Список команд — в отступе от краёв, карточный фон.
+            var body = new Panel
             {
-                Dock = DockStyle.Bottom,
-                Height = 24,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(8, 0, 0, 0),
-                Font = new Font("Segoe UI", 8.25F),
-                BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.MutedForeground,
-                Text = "Enter — выполнить · Esc — закрыть · ввод фильтрует"
+                Location = new Point(0, 144),
+                Size = new Size(600, 302),
+                BackColor = Helpers.UiTheme.DialogBackground,
+                Padding = new Padding(14, 4, 14, 4)
             };
-            Controls.Add(_hint);
-
             _list = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -104,11 +112,32 @@ namespace ShadowRDP.Forms
                 HideSelection = false,
                 BorderStyle = BorderStyle.None,
                 BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.Foreground
+                ForeColor = Helpers.UiTheme.Foreground,
+                Font = new Font("Segoe UI", 9.5F)
             };
-            _list.Columns.Add("Команда", 400);
-            _list.Columns.Add("Раздел", 150);
-            Controls.Add(_list);
+            _list.Columns.Add("Команда", 378);
+            _list.Columns.Add("Раздел", 158);
+            body.Controls.Add(_list);
+            Controls.Add(body);
+
+            // Футер-хинт: счётчик найденного + клавиши.
+            _hint = new Label
+            {
+                Location = new Point(0, 446),
+                Size = new Size(600, 34),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(14, 0, 0, 0),
+                Font = new Font("Segoe UI", 8.5F),
+                BackColor = Helpers.UiTheme.DialogCard,
+                ForeColor = Helpers.UiTheme.MutedForeground,
+                Text = ""
+            };
+            _hint.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Helpers.UiTheme.Border, 1);
+                e.Graphics.DrawLine(pen, 0, 0, _hint.Width, 0);
+            };
+            Controls.Add(_hint);
 
             _searchBox.TextChanged += (_, _) => Render();
             _searchBox.KeyDown += SearchBox_KeyDown;
@@ -182,6 +211,9 @@ namespace ShadowRDP.Forms
                 }
                 if (_list.Items.Count > 0) _list.Items[0].Selected = true;
                 _list.EndUpdate();
+                _hint.Text = _list.Items.Count == 0
+                    ? "Ничего не найдено · Esc — закрыть"
+                    : $"{_view.Count} команд · Enter — выполнить · Esc — закрыть";
             }
             catch (Exception ex)
             {
