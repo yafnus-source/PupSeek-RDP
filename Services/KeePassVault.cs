@@ -46,9 +46,11 @@ namespace ShadowRDP.Services
         // automatically by the "Подтянуть из базы" popup when the user
         // focuses a login form input on a Web session page.
         public const string WebGroupName = "Web";
+        public const string FtpGroupName = "FTP";
         public const string RdpGroupPath = RootGroupName + "/" + RdpGroupName;
         public const string SshGroupPath = RootGroupName + "/" + SshGroupName;
         public const string WebGroupPath = RootGroupName + "/" + WebGroupName;
+        public const string FtpGroupPath = RootGroupName + "/" + FtpGroupName;
         // v3.7.1 — auto-lock after 15 minutes of inactivity (was 5). Combined
         // with the SecureString auto-reopen below, the user no longer has to
         // retype the master password when the timer fires mid-session.

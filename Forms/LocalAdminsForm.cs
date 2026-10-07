@@ -42,38 +42,22 @@ namespace ShadowRDP.Forms
             var headerPanel = Helpers.UiHeader.Create("Локальные администраторы", _computer, "shield");
             headerPanel.Dock = DockStyle.Top;
             Controls.Add(headerPanel);
+            KeyPreview = true;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
             _grid = new DataGridView
             {
                 Location = new Point(16, 82),
                 Size = new Size(608, 400),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = ShadowRDP.Helpers.UiTheme.Card,
-                BorderStyle = BorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = ShadowRDP.Helpers.UiTheme.Background,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                DefaultCellStyle = {
-                    SelectionBackColor = ShadowRDP.Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = ShadowRDP.Helpers.UiTheme.Card
-                },
-                ColumnHeadersDefaultCellStyle = {
-                    BackColor = ShadowRDP.Helpers.UiTheme.Muted,
-                    ForeColor = ShadowRDP.Helpers.UiTheme.MutedForeground,
-                    Font = new Font("Segoe UI Semibold", 9F)
-                },
-                RowTemplate = { Height = 24 }
             };
-_grid.EnableHeadersVisualStyles = false;
             var cName = new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Имя", FillWeight = 130 };
             var cDomain = new DataGridViewTextBoxColumn { Name = "Domain", HeaderText = "Домен", FillWeight = 90 };
             var cType = new DataGridViewTextBoxColumn { Name = "Type", HeaderText = "Тип", FillWeight = 60 };
             var cSID = new DataGridViewTextBoxColumn { Name = "SID", HeaderText = "SID", FillWeight = 200 };
             _grid.Columns.AddRange(cName, cDomain, cType, cSID);
+            ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
 
             // Right-click context menu — "Сменить пароль..." enabled only
             // when the selected row is a LOCAL user account (Domain matches
@@ -95,8 +79,9 @@ _grid.EnableHeadersVisualStyles = false;
                 menu.Show(this, Control.MousePosition);
             };
 
-            ShadowRDP.Helpers.UiGridStyle.PaintHeaders(_grid);
             Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной.
+            ShadowScroll.AttachGrid(_grid);
 
             _statusLabel = new Label
             {

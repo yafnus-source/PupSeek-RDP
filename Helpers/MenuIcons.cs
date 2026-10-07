@@ -63,7 +63,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap TintColor(Bitmap src, Color target)
         {
             var bmp = new Bitmap(src.Width, src.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             g.Clear(Color.Transparent);
             using var attrs = new System.Drawing.Imaging.ImageAttributes();
             var matrix = new System.Drawing.Imaging.ColorMatrix(new[]
@@ -115,6 +115,9 @@ namespace ShadowRDP.Helpers
             "key"      => DrawKey(),
             "book"     => DrawBook(),
             "dashboard" => DrawDashboard(),
+            "folder"     => DrawFolder(),
+            "bell"       => DrawBell(),
+            "calendar" => DrawCalendar(),
             _          => DrawTriangle(_dark)
         };
 
@@ -129,7 +132,7 @@ namespace ShadowRDP.Helpers
             if (src == null) return null;
             if (_darkCache.TryGetValue(src, out var d)) return d;
             var bmp = new Bitmap(src.Width, src.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             g.Clear(Color.Transparent);
             var m = new System.Drawing.Imaging.ColorMatrix(new[]
             {
@@ -148,17 +151,69 @@ namespace ShadowRDP.Helpers
 
         private static Bitmap NewBitmap()
         {
-            var bmp = new Bitmap(16, 16, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            int px = _renderPx > 0 ? _renderPx : 16;
+            var bmp = new Bitmap(px, px, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using var g = Graphics.FromImage(bmp);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Color.Transparent);
             return bmp;
+        }
+
+        // v3.9.3 — сглаживание иконок: SmoothingMode выставляется на ТОМ ЖЕ
+        // Graphics, которым рисуется геометрия (раньше AA ставился в NewBitmap
+        // на временном объекте и терялся — иконки рисовались «в лесенку»).
+        // SmoothingMode НЕ влияет на DrawImage-блиты (TintColor/Darken 1:1
+        // копируют попиксельно как раньше) — только на векторные примитивы.
+        private static Graphics NewIconGraphics(Bitmap bmp)
+        {
+            var g = Graphics.FromImage(bmp);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            // v3.9.3 — вектор рисуется в сетке 16, масштаб — трансформом:
+            // перья и координаты масштабируются пропорционально, края чёткие.
+            if (_renderPx > 0 && _renderPx != 16)
+            {
+                float k = _renderPx / 16f;
+                g.ScaleTransform(k, k);
+            }
+            return g;
+        }
+
+        // v3.9.3 — иконка в нативном размере px (24/28 для шапок): вместо
+        // растягивания 16px-растра (мыло) вектор перерисовывается в px.
+        // Тинт-пайплайн 1:1 как в Get (акцент/исключения/noTint).
+        [ThreadStatic] private static int _renderPx;
+
+        public static Image GetScaled(string key, int px)
+        {
+            if (px <= 0) px = 16;
+            if (px == 16) return Get(key);
+            var noTintKeys = new HashSet<string> { "play_green", "on_green", "off_red" };
+            string sizeTag = "_x" + px;
+            if (noTintKeys.Contains(key))
+            {
+                string ck = key + sizeTag;
+                if (_cache.TryGetValue(ck, out var cached)) return cached;
+                _renderPx = px;
+                try { cached = Draw(key); }
+                finally { _renderPx = 0; }
+                _cache[ck] = cached;
+                return cached;
+            }
+            var target = ShadowRDP.Helpers.UiTheme.MenuIcon;
+            var tintedKey = key + sizeTag + "_tint" + target.ToArgb();
+            if (_cache.TryGetValue(tintedKey, out var tinted)) return tinted;
+            Bitmap src;
+            _renderPx = px;
+            try { src = Draw(key); }
+            finally { _renderPx = 0; }
+            var tintedBmp = TintColor(src, target);
+            _cache[tintedKey] = tintedBmp;
+            return tintedBmp;
         }
 
         private static Bitmap DrawInfo()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_accent, 1.4f);
             using var brush = new SolidBrush(_accent);
             g.DrawEllipse(pen, 2, 2, 12, 12);
@@ -170,7 +225,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawTriangle(Color color)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(color);
             var points = new[] { new Point(4, 3), new Point(13, 8), new Point(4, 13) };
             g.FillPolygon(brush, points);
@@ -180,7 +235,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawSquare(Color color)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(color);
             g.FillRectangle(brush, 4, 4, 8, 8);
             return bmp;
@@ -189,7 +244,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawMessage()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawRectangle(pen, 2, 3, 12, 7);
             // Tail (triangle pointing down-left)
@@ -202,7 +257,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawCopy()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.2f);
             g.DrawRectangle(pen, 2, 4, 8, 10);   // back rect
             g.DrawRectangle(pen, 5, 2, 9, 10);  // front rect (overlap)
@@ -212,7 +267,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawComputer()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawRectangle(pen, 2, 3, 12, 8);   // monitor
             g.FillRectangle(new SolidBrush(_dark), 7, 12, 2, 2); // stand
@@ -224,7 +279,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawTerminal()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             using var brush = new SolidBrush(_dark);
             g.DrawRectangle(pen, 2, 3, 12, 10);
@@ -236,7 +291,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawPowerShell()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             using var brush = new SolidBrush(_dark);
             g.DrawRectangle(pen, 2, 3, 12, 10);
@@ -249,7 +304,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawExchange()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawLine(pen, 8, 3, 8, 13);
             g.DrawLine(pen, 5, 6, 8, 3);
@@ -262,7 +317,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawSun()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawEllipse(pen, 5, 5, 6, 6);
             for (int a = 0; a < 8; a++)
@@ -278,7 +333,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawKey()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawEllipse(pen, 3, 4, 6, 6);
             g.DrawLine(pen, 8, 9, 13, 14);
@@ -289,7 +344,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawBook()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             g.DrawRectangle(pen, 3, 3, 10, 10);
             g.DrawLine(pen, 8, 3, 8, 13);
@@ -299,7 +354,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawDashboard()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.2f);
             using var brush = new SolidBrush(_dark);
             // 3 bars of increasing height
@@ -311,10 +366,38 @@ namespace ShadowRDP.Helpers
             return bmp;
         }
 
+        private static Bitmap DrawFolder()
+        {
+            var bmp = NewBitmap();
+            using var g = NewIconGraphics(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            // tab + body
+            g.DrawLine(pen, 2, 4, 6, 4);
+            g.DrawLine(pen, 6, 4, 7, 6);
+            g.DrawRectangle(pen, 2, 4, 12, 9);
+            return bmp;
+        }
+
+        private static Bitmap DrawBell()
+        {
+            var bmp = NewBitmap();
+            using var g = NewIconGraphics(bmp);
+            using var pen = new Pen(_dark, 1.4f);
+            using var brush = new SolidBrush(_dark);
+            // dome: upper arc + sides down to base
+            g.DrawArc(pen, 4, 2, 8, 8, 180, 180);
+            g.DrawLine(pen, 4, 6, 4, 10);
+            g.DrawLine(pen, 12, 6, 12, 10);
+            g.DrawLine(pen, 3, 10, 13, 10);
+            // clapper
+            g.FillEllipse(brush, 7, 11, 2, 2);
+            return bmp;
+        }
+
         private static Bitmap DrawGlobe()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_accent, 1.2f);
             g.DrawEllipse(pen, 2, 2, 12, 12);
             g.DrawEllipse(pen, 5, 2, 6, 12);     // vertical line
@@ -325,7 +408,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawGear()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.2f);
             g.DrawEllipse(pen, 5, 5, 6, 6);      // body
             // 6 teeth around the body
@@ -338,7 +421,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawList()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.4f);
             for (int i = 0; i < 3; i++)
             {
@@ -352,7 +435,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawTasks()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.2f);
             // Clipboard outline
             g.DrawRectangle(pen, 3, 2, 10, 12);
@@ -369,7 +452,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawRestart()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_accent, 1.4f);
             var arcRect = new Rectangle(2, 2, 12, 12);
             // 3/4 arc
@@ -383,7 +466,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawWave(Color color)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(color);
             // 3 ascending bars
             g.FillRectangle(brush, 2, 10, 3, 4);
@@ -395,7 +478,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawX(Color color)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(color, 2f);
             g.DrawLine(pen, 3, 3, 13, 13);
             g.DrawLine(pen, 13, 3, 3, 13);
@@ -405,7 +488,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawPlus(Color color)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(color);
             g.FillRectangle(brush, 7, 2, 2, 12);
             g.FillRectangle(brush, 2, 7, 12, 2);
@@ -415,7 +498,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawShield()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(_accent);
             // Shield outline: pentagon-like
             var points = new[] {
@@ -434,7 +517,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawPerson()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(_dark);
             g.FillEllipse(brush, 5, 2, 6, 6);          // head
             g.FillEllipse(brush, 2, 9, 12, 10);        // shoulders (lower half visible)
@@ -444,7 +527,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawSearch()
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var pen = new Pen(_dark, 1.5f);
             g.DrawEllipse(pen, 2, 2, 8, 8);            // lens
             g.DrawLine(pen, 9, 9, 14, 14);             // handle
@@ -456,7 +539,7 @@ namespace ShadowRDP.Helpers
         private static Bitmap DrawStatusDot(Color fill, bool withCheck)
         {
             var bmp = NewBitmap();
-            using var g = Graphics.FromImage(bmp);
+            using var g = NewIconGraphics(bmp);
             using var brush = new SolidBrush(fill);
             g.FillEllipse(brush, 2, 2, 12, 12);
             using var whitePen = new Pen(Color.White, 1.8f)
@@ -474,6 +557,29 @@ namespace ShadowRDP.Helpers
                 g.DrawLine(whitePen, 5, 5, 11, 11);
                 g.DrawLine(whitePen, 11, 5, 5, 11);
             }
+            return bmp;
+        }
+
+        // Календарь: рамка-квадрат + 2 защёлки сверху + сетка дней.
+        private static Bitmap DrawCalendar()
+        {
+            var bmp = NewBitmap();
+            using var g = NewIconGraphics(bmp);
+            using var pen = new Pen(_dark, 1.2f);
+            using var brush = new SolidBrush(_dark);
+            // Корпус календаря (с заштрихованной крышей)
+            g.DrawRectangle(pen, 2, 4, 12, 11);
+            // Две защёлки сверху
+            g.FillRectangle(brush, 4, 1, 2, 5);
+            g.FillRectangle(brush, 10, 1, 2, 5);
+            // Сетка: горизонтальная линия (шапка)
+            g.DrawLine(pen, 2, 7, 14, 7);
+            // Точки-дни (2×2)
+            var dot = new SolidBrush(_accent);
+            g.FillRectangle(dot, 4, 9, 2, 2);
+            g.FillRectangle(dot, 8, 9, 2, 2);
+            g.FillRectangle(dot, 12, 9, 2, 2);
+            g.FillRectangle(dot, 4, 12, 2, 2);
             return bmp;
         }
     }

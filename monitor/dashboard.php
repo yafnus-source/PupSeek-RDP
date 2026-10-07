@@ -20,7 +20,7 @@ if (isset($_SESSION['ts']) && (time() - $_SESSION['ts']) > $SESSION_TTL) {
 }
 $_SESSION['ts'] = time(); // продлеваем сессию при активности
 
-// Чтение данных
+// Чтение данных событий
 $events = array();
 if (is_file($JSON_PATH)) {
     $raw = @file_get_contents($JSON_PATH);
@@ -30,6 +30,46 @@ if (is_file($JSON_PATH)) {
     }
 }
 $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+
+// Чтение данных Zabbix Agent
+$zabbixPath = __DIR__ . '/data/zabbix_agent_history.json';
+$zabbixData = array();
+if (is_file($zabbixPath)) {
+    $raw = @file_get_contents($zabbixPath);
+    if ($raw !== false) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) $zabbixData = $decoded;
+    }
+}
+$zabbixJson = json_encode($zabbixData, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+
+// Чтение адресной книги для IP
+$bookPath = __DIR__ . '/data/addressbook.json';
+$bookData = array();
+if (is_file($bookPath)) {
+    $raw = @file_get_contents($bookPath);
+    if ($raw !== false) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) $bookData = $decoded;
+    }
+}
+$bookJson = json_encode($bookData, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+
+// Чтение WEB-мониторинга
+$webUrlsPath = __DIR__ . '/data/webmon_urls.json';
+$webUrls = array();
+if (is_file($webUrlsPath)) {
+    $raw = @file_get_contents($webUrlsPath);
+    if ($raw !== false) { $d=json_decode($raw,true); if(is_array($d)) $webUrls=$d; }
+}
+$webUrlsJson = json_encode($webUrls, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+$webHistPath = __DIR__ . '/data/webmon_history.json';
+$webHist = array();
+if (is_file($webHistPath)) {
+    $raw = @file_get_contents($webHistPath);
+    if ($raw !== false) { $d=json_decode($raw,true); if(is_array($d)) $webHist=$d; }
+}
+$webHistJson = json_encode($webHist, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -45,7 +85,11 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--fg)}
   .mono{font-family:'Roboto',sans-serif}
-  .page{max-width:none;width:100%;margin:0;padding:24px 12px 40px}
+  .page{
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 24px 12px 18px;
   .hdr{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 18px -12px rgba(0,0,0,.1)}
   .mark{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:900;background:linear-gradient(135deg,var(--olive),var(--oliveD));box-shadow:0 6px 14px -8px rgba(111,138,107,.5)}
   .ttl{font-size:18px;font-weight:900;letter-spacing:-.02em}
@@ -55,16 +99,16 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(143,169,139,.45)}50%{box-shadow:0 0 0 6px rgba(143,169,139,0)}}
   .bento{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}
   @media(max-width:900px){.bento{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 18px -12px rgba(0,0,0,.1);overflow:hidden}
-  .card-h{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:var(--card)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 12px -10px rgba(0,0,0,.08);overflow:hidden}
+  .card-h{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:var(--card)}
   .card-h b{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-  .kpi{padding:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .kpi{padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
   @media(max-width:640px){.kpi{grid-template-columns:1fr}}
-  .kpi-item{padding:14px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+  .kpi-item{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
   .kpi-item.dark{background:var(--fg);color:var(--card);border-color:var(--fg)}
-  .kpi-num{font-size:28px;font-weight:900;letter-spacing:-.03em}
+  .kpi-num{font-size:22px;font-weight:900;letter-spacing:-.03em}
   .kpi-lab{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin-top:2px}
-  .hosts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+  .hosts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
   @media(max-width:900px){.hosts{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:560px){.hosts{grid-template-columns:1fr}}
   .host{padding:14px;border-radius:10px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .15s}
@@ -109,12 +153,18 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
       <div class="sub"><span id="hdrHosts">6 хостов</span> · <span id="hdrTotal">596 событий</span> · <span class="mono">Win32_NTLogEvent</span> · опрос 30с</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <div class="seg" id="viewSeg">
+        <button class="on" onclick="switchView('events')" id="viewEvents">События</button>
+        <button onclick="switchView('zabbix')" id="viewZabbix">Дашборд Z</button>
+        <button onclick="switchView('web')" id="viewWeb">WEB</button>
+      </div>
       <span class="mono" style="padding:7px 10px;border-radius:10px;background:var(--oliveL);border:1px solid #C8D9C6;color:var(--oliveD);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:var(--olive);display:inline-block"></span> LIVE</span>
       <button onclick="refreshBusy()" style="padding:9px 14px;border-radius:10px;background:var(--olive);color:#fff;font-weight:800;font-size:12px;border:1px solid var(--olive);cursor:pointer">Обновить</button>
     </div>
   </div>
   <div id="bar" class="bar" style="margin-top:10px"></div>
 
+  <div id="eventsPanel">
   <div class="bento">
     <div>
       <div class="card">
@@ -154,7 +204,7 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
   </div>
 
   <!-- ANALYTICS BENTO -->
-  <div class="analytics-row" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+  <div class="analytics-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
     <div class="card">
       <div class="card-h"><b>Доля по источникам</b><span class="mono" style="font-size:11px;color:var(--muted)">топ-5</span></div>
       <div style="padding:16px;display:flex;gap:16px;align-items:center">
@@ -169,25 +219,31 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
 
   </div>
 
-  <div class="card" style="margin-top:14px;overflow:hidden">
+  <div class="card" style="margin-top:10px;overflow:hidden">
     <div class="table-head">
       <div class="controls">
         <div class="seg" id="levelSeg"></div>
+        <div class="seg" id="logSeg"></div>
         <div class="seg" id="periodSeg"></div>
+        <input type="datetime-local" id="dateFrom" style="padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;display:none">
+        <input type="datetime-local" id="dateTo" style="padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;display:none">
+        <label class="mono" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:12px;font-weight:700;cursor:pointer"><input type="checkbox" id="groupToggle"> Группировать</label>
+        
       </div>
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="q" placeholder="Поиск по сообщению, источнику, ID, хосту…">
+        <input id="q" list="qList" placeholder="Поиск по сообщению, источнику, ID, хосту…">
+        <datalist id="qList"></datalist>
       </div>
     </div>
-    <div style="overflow:auto;max-height:62vh" class="scrollbar-thin">
-      <table style="width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed">
+    <div style="overflow:auto;max-height:48vh" class="scrollbar-thin">
+        <table style="width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed">
         <colgroup>
           <col style="width:108px">
           <col style="width:110px">
           <col style="width:380px">
           <col style="width:72px">
-          <col style="width:148px">
+          <col style="width:178px">
           <col style="width:auto">
           <col style="width:62px">
         </colgroup>
@@ -215,15 +271,165 @@ $eventsJson = json_encode($events, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SU
       <span class="mono" style="font-size:11px;color:var(--muted)">Обновлено: <b id="stNow" style="color:var(--fg)">—</b> · <b id="stNext" style="color:var(--fg)">—</b></span>
     </div>
   </div>
+  </div><!-- /eventsPanel -->
 
+  <div id="zabbixPanel" style="display:none">
+    <div class="card" style="overflow:hidden">
+      <div class="card-h">
+        <b>Дашборд Z — Zabbix Agent</b>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="zSearch" placeholder="Фильтр по хосту…" style="padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:12px;width:200px;outline:none">
+          <span class="mono" style="font-size:11px;color:var(--muted)" id="zStatus">—</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--line);flex-wrap:wrap" id="zHostBar"></div>
+      <div style="overflow:auto;max-height:70vh">
+        <table style="width:100%;min-width:1340px;border-collapse:collapse;table-layout:fixed">
+          <colgroup>
+            <col style="width:168px">
+            <col style="width:110px">
+            <col style="width:67px">
+            <col style="width:72px">
+            <col style="width:98px">
+            <col style="width:80px">
+            <col style="width:auto">
+            <col style="width:100px">
+            <col style="width:320px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Хост</th>
+              <th>IP</th>
+              <th style="text-align:center">Агент</th>
+              <th style="text-align:right">CPU %</th>
+              <th style="text-align:right">RAM free %</th>
+              <th style="text-align:right">Темп °C</th>
+              <th>Диски</th>
+              <th>Uptime</th>
+              <th>Версия</th>
+            </tr>
+          </thead>
+          <tbody id="zTbody"></tbody>
+        </table>
+        <div id="zEmpty" style="display:none;padding:40px;text-align:center">
+          <div style="width:48px;height:48px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto 10px">◯</div>
+          <div style="font-weight:800">Нет данных</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:4px">Откройте Дашборд Z в PupSeek RDP для сбора данных</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:10px;overflow:hidden">
+      <div class="card-h"><b>Сводный график — по времени суток</b><div style="display:flex;gap:4px;align-items:center"><div style="display:flex;gap:3px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:2px"><button id="zSumBtnCpu" onclick="zSumMetric='cpu'; renderZSummary()" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:800;border:1px solid var(--olive);background:var(--olive);color:#fff;cursor:pointer">CPU</button><button id="zSumBtnRam" onclick="zSumMetric='ram'; renderZSummary()" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:800;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer">RAM</button><button id="zSumBtnBoth" onclick="zSumMetric='both'; renderZSummary()" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:800;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer">Оба</button></div><span class="mono" style="font-size:11px;color:var(--muted)" id="zSumInfo">по хостам · 24ч</span></div></div>
+      <div style="padding:12px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="zSumLegend"></div>
+        <div style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--bg)">
+          <svg id="zSumSvg" viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;min-width:700px;height:220px;display:block"></svg>
+        </div>
+        <div class="mono" style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+        <div class="mono" style="font-size:10px;color:var(--muted);margin-top:6px">Сплошная — CPU %, пунктир — сеть (норм.) · наведите для деталей</div>
+      </div>
+      <div class="mono" style="padding:8px 16px;background:var(--bg);border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+        <span>Последнее обновление: <b id="zLastUpdate" style="color:var(--fg)">—</b></span>
+        <span style="color:var(--muted)">опрос 30с</span>
+      </div>
+    </div>
+  </div>
 
+  <div id="webPanel" style="display:none">
+    <div class="card" style="overflow:hidden">
+      <div class="card-h"><b>WEB-мониторинг</b><div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:11px;color:var(--muted)" id="webStatus">—</span><button onclick="if(window.webCheckNow) webCheckNow()" style="padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;font-weight:700;cursor:pointer">Проверить сейчас</button></div></div>
+      <div style="overflow:auto;max-height:60vh">
+        <table style="width:100%;min-width:800px;border-collapse:collapse;table-layout:fixed">
+          <colgroup><col style="width:180px"><col style="width:auto"><col style="width:90px"><col style="width:80px"><col style="width:100px"><col style="width:140px"></colgroup>
+          <thead><tr><th>Имя</th><th>URL</th><th style="text-align:center">Статус</th><th style="text-align:center">Код</th><th style="text-align:right">Время мс</th><th>Проверен</th></tr></thead>
+          <tbody id="webTbody"></tbody>
+        </table>
+        <div id="webEmpty" style="display:none;padding:30px;text-align:center;color:var(--muted)">Нет URL — добавь в PupSeek → WEB</div>
+      </div>
+      <div id="webDetail" style="display:none;padding:12px;background:var(--bg);border-top:1px solid var(--line)">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><b id="webDetailTitle" style="font-size:13px">—</b><a id="webDetailLink" href="#" target="_blank" style="margin-left:auto;font-size:11px;color:var(--olive);font-weight:700">Открыть →</a><button onclick="document.getElementById('webDetail').style.display='none'" style="padding:4px 8px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px">✕</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="mono" style="font-size:10px;color:var(--muted)">Время ответа (последние 20)</div><div id="webDetailGraph" style="height:60px;display:flex;align-items:end;gap:2px;margin-top:4px"></div></div><div style="flex:1;min-width:200px"><div class="mono" style="font-size:10px;color:var(--muted)">Последние 10 проверок</div><div id="webDetailList" class="mono" style="font-size:11px;margin-top:4px;max-height:100px;overflow:auto"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- === Zabbix Detail Modal (center) === -->
+<div id="zDetail" style="display:none;position:fixed;inset:0;z-index:41;place-items:center;padding:20px;background:rgba(43,36,30,.32);backdrop-filter:blur(4px);overflow:auto" onclick="if(event.target===this) closeZDetail()">
+  <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:640px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.22)" onclick="event.stopPropagation()">
+  <div style="padding:16px 16px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:linear-gradient(180deg,var(--card),var(--bg))">
+    <div id="zDIcon" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-weight:900;color:#fff;background:var(--olive);flex-shrink:0">◉</div>
+    <div style="flex:1;min-width:0">
+      <div id="zDHost" style="font-weight:900;font-size:15px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+      <div id="zDSub" class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+    </div>
+    <span id="zDPill" style="padding:4px 10px;border-radius:10px;font-size:11px;font-weight:800;border:1px solid var(--line);background:var(--bg);color:var(--muted)">—</span>
+    <button onclick="closeZDetail()" style="width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;display:grid;place-items:center;font-size:14px">✕</button>
+  </div>
+  <div style="flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px" class="scrollbar-thin">
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="card" style="padding:10px 12px"><div class="mono" style="font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:800">CPU</div><div id="zDKpiCpu" style="font-size:20px;font-weight:900;margin-top:2px">—</div><div id="zDKpiCpuBar" style="height:4px;border-radius:10px;background:var(--bg);margin-top:6px;overflow:hidden"><div style="height:100%;width:0;background:var(--olive);transition:width .4s"></div></div></div>
+      <div class="card" style="padding:10px 12px"><div class="mono" style="font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:800">RAM FREE</div><div id="zDKpiRam" style="font-size:20px;font-weight:900;margin-top:2px">—</div><div id="zDKpiRamBar" style="height:4px;border-radius:10px;background:var(--bg);margin-top:6px;overflow:hidden"><div style="height:100%;width:0;background:var(--olive);transition:width .4s"></div></div></div>
+      <div class="card" style="padding:10px 12px"><div class="mono" style="font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:800">UPTIME</div><div id="zDKpiUp" style="font-size:16px;font-weight:900;margin-top:4px">—</div><div id="zDKpiUpSub" class="mono" style="font-size:11px;color:var(--muted);margin-top:2px">—</div></div>
+      <div class="card" style="padding:10px 12px"><div class="mono" style="font-size:10px;letter-spacing:.06em;color:var(--muted);font-weight:800">АГЕНТ / ОС</div><div id="zDKpiVer" class="mono" style="font-size:13px;font-weight:800;margin-top:4px">—</div><div id="zDKpiVerSub" class="mono" style="font-size:11px;color:var(--muted);margin-top:2px">—</div></div>
+    </div>
+    <!-- History sparkline -->
+    <div class="card" style="padding:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:11px;letter-spacing:.06em;color:var(--muted)">ИСТОРИЯ 2 ДНЯ</b><span class="mono" style="font-size:11px;color:var(--muted)" id="zDHistInfo">—</span></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="flex:1"><div class="mono" style="font-size:10px;color:var(--muted);font-weight:700">CPU %</div><div id="zDHistCpu" style="height:54px;display:flex;align-items:end;gap:2px;margin-top:4px"></div></div>
+        <div style="flex:1"><div class="mono" style="font-size:10px;color:var(--muted);font-weight:700">RAM free %</div><div id="zDHistRam" style="height:54px;display:flex;align-items:end;gap:2px;margin-top:4px"></div></div>
+      </div>
+    </div>
+    <!-- Disks -->
+    <div class="card" style="padding:12px">
+      <b style="font-size:11px;letter-spacing:.06em;color:var(--muted)">ДИСКИ</b>
+      <div id="zDDisks" style="margin-top:8px;display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <!-- Network -->
+    <div class="card" style="padding:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:11px;letter-spacing:.06em;color:var(--muted)">СЕТЬ</b><span class="mono" style="font-size:11px;color:var(--muted)" id="zDNetInfo">—</span></div>
+      <div id="zDNet" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <!-- Disk I/O -->
+    <div class="card" style="padding:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:11px;letter-spacing:.06em;color:var(--muted)">ДИСК I/O</b><span class="mono" style="font-size:11px;color:var(--muted)" id="zDioInfo">—</span></div>
+      <div id="zDio" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <!-- Services -->
+    <div class="card" style="padding:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:11px;letter-spacing:.06em;color:var(--muted)">СЛУЖБЫ</b><span class="mono" style="font-size:11px;color:var(--muted)" id="zDSvcInfo">—</span></div>
+      <div id="zDSvc" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+  </div>
+  <div style="padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;background:var(--bg)">
+    <button onclick="if(window.filterByHost) filterByHost(document.getElementById('zDHost').textContent)" style="flex:1;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-weight:700;font-size:12px;cursor:pointer">Фильтр в Событиях</button>
+    <button onclick="closeZDetail()" style="padding:8px 14px;border-radius:10px;background:var(--olive);color:#fff;font-weight:800;font-size:12px;border:1px solid var(--olive);cursor:pointer">Закрыть</button>
+  </div>
+  </div>
 </div>
 
 <script>
 const FALLBACK = <?php echo $eventsJson; ?>;
+const ZABBIX_RAW = <?php echo $zabbixJson; ?>;
+const BOOK_RAW = <?php echo $bookJson; ?>;
+const WEB_URLS = <?php echo $webUrlsJson; ?>;
+const WEB_HIST = <?php echo $webHistJson; ?>;
 let DATA_SRC = FALLBACK;
-let level="Все", period="2 дня", selectedHost="", q="";
+let level="Все", logFilter="Все", period="2 дня", selectedHost="", q="";
 function hostCounts(){const m={}; DATA_SRC.forEach(e=>{m[e.computer]=(m[e.computer]||0)+1}); return m}
+function buildLogSeg(){
+  const el=document.getElementById("logSeg"); if(!el) return; el.innerHTML="";
+  ["Все","System","Application","Security"].forEach(v=>{
+    const b=document.createElement("button"); b.textContent=v;
+    const on=logFilter===v;
+    b.style.cssText="padding:6px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid "+(on?"var(--olive)":"var(--line)")+";background:"+(on?"var(--olive)":"var(--card)")+";color:"+(on?"#fff":"var(--muted)")+";cursor:pointer";
+    b.onclick=()=>{ logFilter=v; buildLogSeg(); apply(); };
+    el.appendChild(b);
+  });
+}
 function buildSeg(){
   const lv=document.getElementById("levelSeg"); lv.innerHTML="";
   [["Все","Все"],["Critical","Critical"],["Error","Error"]].forEach(([l,v])=>{
@@ -233,11 +439,11 @@ function buildSeg(){
     b.onclick=()=>{level=v; buildSeg(); apply();}; lv.appendChild(b);
   });
   const pp=document.getElementById("periodSeg"); pp.innerHTML="";
-  ["30 мин","1 час","24 часа","2 дня"].forEach(p=>{
+  ["30 мин","1 час","24 часа","2 дня","Кастом"].forEach(p=>{
     const b=document.createElement("button"); b.textContent=p;
     const on=period===p;
     b.style.cssText="padding:6px 12px;border-radius:10px;font-size:12px;font-weight:800;border:1px solid "+(on?"var(--fg)":"var(--line)")+";background:"+(on?"var(--fg)":"var(--card)")+";color:"+(on?"#fff":"var(--muted)")+";cursor:pointer";
-    b.onclick=()=>{period=p; buildSeg(); apply();}; pp.appendChild(b);
+    b.onclick=()=>{period=p; buildSeg(); updateDatePicker(); buildAutocomplete(); apply();}; pp.appendChild(b);
   });
 }
 function buildDynamics(){
@@ -314,19 +520,80 @@ function buildHosts(){
   const topIds=document.getElementById("topIds"); if(topIds){ topIds.innerHTML=""; sorted.slice(0,3).forEach(([id,c])=>{ const s=document.createElement("span"); s.className="mono"; s.style.cssText="padding:5px 8px;border-radius:10px;background:#fff;border:1px solid var(--line);font-size:11px;font-weight:700"; s.textContent=`${id} ×${c}`; topIds.appendChild(s); });}
 }
 document.getElementById("q").addEventListener("input",e=>{q=e.target.value.toLowerCase(); apply();});
-function cutoffFor(p){ if(p==="30 мин")return 30*60*1000; if(p==="1 час")return 60*60*1000; if(p==="24 часа")return 24*60*60*1000; return 2*24*60*60*1000; }
+document.getElementById("dateFrom")?.addEventListener("change", apply);
+document.getElementById("dateTo")?.addEventListener("change", apply);
+function updateDatePicker(){
+  const fromEl=document.getElementById("dateFrom"), toEl=document.getElementById("dateTo");
+  const show=period==="Кастом";
+  if(fromEl) fromEl.style.display=show?"inline-block":"none";
+  if(toEl) toEl.style.display=show?"inline-block":"none";
+}
+function buildAutocomplete(){
+  const dl=document.getElementById("qList"); if(!dl) return; dl.innerHTML="";
+  const ids=[...new Set(DATA_SRC.map(e=>String(e.eventId)))].slice(0,20);
+  const srcs=[...new Set(DATA_SRC.map(e=>e.source))].slice(0,20);
+  const hosts=[...new Set(DATA_SRC.map(e=>e.computer))].slice(0,20);
+  [...ids, ...srcs, ...hosts].forEach(v=>{
+    const opt=document.createElement("option"); opt.value=v; dl.appendChild(opt);
+  });
+}
+function cutoffFor(p){
+  if(p==="30 мин")return 30*60*1000;
+  if(p==="1 час")return 60*60*1000;
+  if(p==="24 часа")return 24*60*60*1000;
+  if(p==="Кастом"){
+    const fromEl=document.getElementById("dateFrom"), toEl=document.getElementById("dateTo");
+    if(fromEl && fromEl.value && toEl && toEl.value){
+      return new Date(toEl.value).getTime() - new Date(fromEl.value).getTime();
+    }
+    return 2*24*60*60*1000;
+  }
+  return 2*24*60*60*1000;
+}
+function getCutoffTime(){
+  if(period==="Кастом"){
+    const fromEl=document.getElementById("dateFrom");
+    if(fromEl && fromEl.value) return new Date(fromEl.value).getTime();
+  }
+  return Date.now() - cutoffFor(period);
+}
+function filterByHost(host){ selectedHost=(selectedHost===host?"":host); buildHosts(); apply(); }
 function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+let groupDup=false;
+let currentModalEvent=null;
+document.getElementById("groupToggle")?.addEventListener("change", e=>{ groupDup=e.target.checked; apply(); });
+function openHostCard(host){
+  // Mock AD info
+  const info=`Хост: ${host}\nОС: Windows Server 2019\nIP: 10.0.1.${Math.floor(Math.random()*200+10)}\nOU: Contoso/Servers`;
+  if(confirm(info+"\n\nОткрыть в PupSeek (фильтр по хосту)?")){
+    filterByHost(host);
+    window.scrollTo({top: document.getElementById("tbody").offsetTop-100, behavior:"smooth"});
+  }
+}
 function apply(){
-  const nowMs=Date.now(), cutoff=nowMs - cutoffFor(period);
+  const cutoff=getCutoffTime();
   let rows=DATA_SRC.filter(e=>{
     const t=new Date(e.time).getTime();
     if(t<cutoff) return false;
     if(level!=="Все" && e.level!==level) return false;
+    if(logFilter!=="Все" && (e.logName||"")!==logFilter) return false;
     if(selectedHost && e.computer!==selectedHost) return false;
     if(q && !((e.message||"").toLowerCase().includes(q) || (e.source||"").toLowerCase().includes(q) || String(e.eventId).includes(q) || (e.computer||"").toLowerCase().includes(q))) return false;
     return true;
   });
-  rows.sort((a,b)=>new Date(b.time)-new Date(a.time)); rows=rows.slice(0,500);
+  // grouping
+  if(groupDup){
+    const map={};
+    rows.forEach(e=>{
+      const k=e.eventId+"|"+e.source+"|"+e.computer;
+      if(!map[k]) map[k]={...e, _cnt:0, _first:e.time};
+      map[k]._cnt++;
+      if(new Date(e.time) > new Date(map[k]._first)) map[k]= {...e, _cnt: map[k]._cnt, _first: e.time};
+    });
+    rows=Object.values(map).sort((a,b)=>new Date(b._first)-new Date(a._first));
+  }
+
+  rows.sort((a,b)=>new Date(b.time||b._first)-new Date(a.time||a._first)); rows=rows.slice(0,500);
   const tb=document.getElementById("tbody"); tb.innerHTML="";
   document.getElementById("empty").style.display=rows.length?"none":"block";
   const frag=document.createDocumentFragment();
@@ -337,12 +604,19 @@ function apply(){
     const lvl=e.level==="Critical"?`<span class="lvl crit"><span style="width:7px;height:7px;border-radius:50%;background:var(--rose);display:inline-block"></span>Critical</span>`:
             e.level==="Error"?`<span class="lvl" style="background:var(--roseL);color:var(--roseD);border:1px solid #E9C2BC"><span style="width:7px;height:7px;border-radius:50%;background:var(--rose);display:inline-block"></span>Error</span>`:
             `<span class="lvl" style="background:var(--oliveL);color:var(--oliveD);border:1px solid #C8D9C6">${esc(e.level)}</span>`;
-    tr.innerHTML=`<td class="mono" style="color:var(--muted);white-space:nowrap">${ts}</td><td>${lvl}</td><td class="hidden lg:table-cell mono" style="color:var(--muted);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.source)}">${esc(e.source)}</td><td class="mono" style="font-weight:800">${esc(e.eventId)}</td><td><span class="host-tag">${esc(e.computer)}</span></td><td><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;line-height:1.35;width:100%;max-width:100%" title="${esc(e.message)}">${esc(e.message)}</span></td><td style="text-align:right"><button class="msgBtn" style="width:28px;height:28px;border-radius:10px;border:1px solid var(--line);background:var(--bg);cursor:pointer;display:grid;place-items:center">›</button></td>`;
-    tr.querySelector('.msgBtn').onclick=()=>openModal(e.message);
+    const hostClick = `onclick="if(window.filterByHost) filterByHost('${esc(e.computer)}')" style="cursor:pointer" title="Открыть в PupSeek — фильтр по хосту"`;
+        const cntBadge = e._cnt && e._cnt>1 ? ` <span style="padding:2px 6px;border-radius:999px;background:var(--oliveL);border:1px solid #C8D9C6;font-size:10px;font-weight:800;color:var(--oliveD)">×${e._cnt}</span>` : "";
+    tr.innerHTML=`<td class="mono" style="color:var(--muted);white-space:nowrap">${ts}</td><td style="white-space:nowrap">${lvl}${cntBadge}</td><td class="hidden lg:table-cell mono" style="color:var(--muted);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.source)}">${esc(e.source)}</td><td class="mono" style="font-weight:800"><a href="#" onclick="event.stopPropagation(); openDocs('${esc(e.eventId)}'); return false;" style="color:var(--olive);text-decoration:none;border-bottom:1px dashed var(--olive)">${esc(e.eventId)}</a></td><td><span class="host-tag" onclick="event.stopPropagation(); openHostCard('${esc(e.computer)}')" style="cursor:pointer">${esc(e.computer)}</span></td><td><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;line-height:1.35;width:100%;max-width:100%" title="${esc(e.message)}">${esc(e.message)}</span></td><td style="text-align:right;display:flex;gap:4px;justify-content:flex-end"><button class="msgBtn" style="width:28px;height:28px;border-radius:10px;border:1px solid var(--line);background:var(--bg);cursor:pointer;display:grid;place-items:center">›</button></td>`;
+    const btn=tr.querySelector('.msgBtn'); if(btn) btn.onclick=()=>{ currentModalEvent=e; openModal(e.message); document.getElementById('modalRaw').textContent=JSON.stringify(e, null, 2); };
     [...tr.children].forEach(td=>{td.style.padding="11px 12px"; td.style.overflow="hidden";});
     tr.style.borderBottom="1px solid #F0E8DD";
+    tr.tabIndex=0;
+    tr.style.cursor="pointer";
     tr.onmouseenter=()=>tr.style.background="#FDF8EE";
     tr.onmouseleave=()=>tr.style.background="transparent";
+    tr.onclick=(ev)=>{ if(ev.target.closest('button')) return; openModal(e.message); };
+    tr.onkeydown=(ev)=>{ if(ev.key==='Enter'){ openModal(e.message); } };
+    tr.querySelector('.host-tag').onclick=(ev)=>{ ev.stopPropagation(); filterByHost(e.computer); };
     frag.appendChild(tr);
   });
   tb.appendChild(frag);
@@ -424,7 +698,14 @@ function buildAiSummary(){
   const byHost={}; DATA_SRC.forEach(e=>{byHost[e.computer]=(byHost[e.computer]||0)+1});
   const topHost=Object.entries(byHost).sort((a,b)=>b[1]-a[1])[0];
   const topId=Object.entries(DATA_SRC.reduce((a,e)=>{a[e.eventId]=(a[e.eventId]||0)+1; return a;},{})).sort((a,b)=>b[1]-a[1])[0];
-  el.innerHTML=`За 2 дня <b>${total}</b> событий, больше всего у <b>${topHost?topHost[0]:"—"}</b> (${topHost?topHost[1]:0}). Частая ошибка <b>ID ${topId?topId[0]:"—"}</b> ×${topId?topId[1]:0} — проверьте службу Agentless Management и DNS. Critical нет — стабильно.`;
+  const topSrc=Object.entries(DATA_SRC.reduce((a,e)=>{a[e.source]=(a[e.source]||0)+1; return a;},{})).sort((a,b)=>b[1]-a[1])[0];
+  let todo="";
+  if(topId && String(topId[0])==="7031") todo="Перезапустите службу Agentless Management: <code>Restart-Service -Name Agentless*</code> или <code>sc stop/start</code>.";
+  else if(topId && String(topId[0])==="1054") todo="Проверьте DNS: <code>nslookup</code>, <code>ipconfig /flushdns</code>, <code>gpresult /h</code>.";
+  else if(topId && String(topId[0])==="3") todo="Проверьте Kerberos: время на хостах, <code>klist purge</code>, SPN.";
+  else if(topId) todo=`Проверьте источник <b>${topSrc?topSrc[0]:"—"}</b> и ID ${topId[0]} в docs.microsoft.com.`;
+  else todo="—";
+  el.innerHTML=`За 2 дня <b>${total}</b> событий, больше всего у <b>${topHost?topHost[0]:"—"}</b> (${topHost?topHost[1]:0}). Частая ошибка <b>ID ${topId?topId[0]:"—"}</b> ×${topId?topId[1]:0}.<br><b>Что делать:</b> ${todo} Для Critical — <code>sfc /scannow</code> и проверка диска.`;
 }
 function buildCorr(){
   const el=document.getElementById("corr"); if(!el) return;
@@ -442,6 +723,36 @@ function buildCorr(){
   const top=Object.entries(pairs).sort((a,b)=>b[1]-a[1]).slice(0,3);
   if(!top.length){ el.textContent="Корреляций не найдено — события разрознены."; return; }
   el.innerHTML=top.map(([k,c])=>`• <b>${k}</b> — ${c} раз вместе`).join("<br>");
+}
+let lastCritCount = DATA_SRC.filter(e=>e.level==="Critical").length;
+let autoRefreshId=null;
+function startAutoRefresh(){
+  if(autoRefreshId) clearInterval(autoRefreshId);
+  autoRefreshId=setInterval(()=>{
+    const prevCrit=lastCritCount;
+    // In real hosting, would fetch new JSON via fetch('data/dashboard_events.json')
+    // For file://, just re-apply to simulate
+    apply();
+    const newCrit=DATA_SRC.filter(e=>e.level==="Critical").length;
+    if(newCrit>prevCrit){
+      lastCritCount=newCrit;
+      // sound on new Critical
+      try{
+        const ctx=new (window.AudioContext||window.webkitAudioContext)();
+        const o=ctx.createOscillator(); const g=ctx.createGain();
+        o.type='sine'; o.frequency.value=880; o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.12, ctx.currentTime);
+        o.start(); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.25);
+        setTimeout(()=>{o.stop(); ctx.close();}, 300);
+      }catch(e){}
+      // flash LIVE
+      const liveEl=document.querySelector('.live'); if(liveEl){ liveEl.style.transform='scale(1.05)'; setTimeout(()=>liveEl.style.transform='', 300); }
+    } else {
+      lastCritCount=newCrit;
+    }
+    // update LIVE indicator
+    const bar=document.getElementById("bar"); if(bar){ bar.style.width="100%"; setTimeout(()=>bar.style.width="0", 600); }
+  }, 30000);
 }
 function refreshBusy(){
   const bar=document.getElementById("bar"); bar.style.width="30%"; bar.style.transition="none";
@@ -479,6 +790,7 @@ function exportCsv(){
     const cutoff=Date.now() - (period==="30 мин"?30*60*1000:period==="1 час"?60*60*1000:period==="24 часа"?24*60*60*1000:2*24*60*60*1000);
     if(t<cutoff) return false;
     if(level!=="Все" && e.level!==level) return false;
+    if(logFilter!=="Все" && (e.logName||"")!==logFilter) return false;
     if(selectedHost && e.computer!==selectedHost) return false;
     if(q && !((e.message||"").toLowerCase().includes(q) || (e.source||"").toLowerCase().includes(q))) return false;
     return true;
@@ -490,7 +802,7 @@ function exportCsv(){
   const a=document.createElement("a"); a.href=url; a.download="events.csv"; a.click(); URL.revokeObjectURL(url);
 }
 loadFilters();
-buildSeg(); buildHosts(); apply();
+buildSeg(); buildLogSeg(); buildHosts(); buildAutocomplete(); updateDatePicker(); apply(); startAutoRefresh();
 if(!document.getElementById("exportBtn")){
   const controls=document.querySelector(".table-head .controls");
   if(controls){
@@ -499,6 +811,395 @@ if(!document.getElementById("exportBtn")){
     btn.onclick=exportCsv; controls.appendChild(btn);
   }
 }
+
+/* === Zabbix Agent Dashboard Z === */
+let zData=[];
+let zSelectedHost="";
+let zFilter="";
+let zSumHost=""; let zSumMetric="both";
+const zBookMap={};
+if(Array.isArray(BOOK_RAW)){
+  BOOK_RAW.forEach(e=>{
+    const h=(e.Computer||e.host||"").toLowerCase();
+    if(h){
+      const ips=(e.IPs||e.ips||"").split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+      zBookMap[h]={ip:ips[0]||"", fio:e.FIO||e.fio||"", user:e.User||e.user||""};
+    }
+  });
+}
+function switchView(v){
+  const ep=document.getElementById("eventsPanel");
+  const zp=document.getElementById("zabbixPanel");
+  const wp=document.getElementById("webPanel");
+  const bE=document.getElementById("viewEvents");
+  const bZ=document.getElementById("viewZabbix");
+  const bW=document.getElementById("viewWeb");
+  [bE,bZ,bW].forEach(b=>b&&b.classList.remove("on"));
+  ep.style.display="none"; zp.style.display="none"; if(wp) wp.style.display="none";
+  if(v==="zabbix"){ zp.style.display="block"; bZ&&bZ.classList.add("on"); buildZabbixData(); }
+  else if(v==="web"){ if(wp) wp.style.display="block"; bW&&bW.classList.add("on"); if(window.renderWeb) renderWeb(); }
+  else { ep.style.display="block"; bE&&bE.classList.add("on"); }
+}
+function buildZabbixData(){
+  if(!Array.isArray(ZABBIX_RAW)||!ZABBIX_RAW.length){ zData=[]; renderZHostBar(); renderZTable(); return; }
+  const cutoff=Date.now()-2*24*60*60*1000;
+  const recent=ZABBIX_RAW.filter(x=>new Date(x.time).getTime()>=cutoff);
+  const map={};
+  recent.forEach(x=>{ const k=(x.host||"").toLowerCase(); if(!map[k]||new Date(x.time)>new Date(map[k].time)) map[k]=x; });
+  zData=Object.values(map).sort((a,b)=>(a.host||"").localeCompare(b.host||""));
+  renderZHostBar(); renderZTable(); renderZSummary();
+}
+function renderZHostBar(){
+  const bar=document.getElementById("zHostBar"); bar.innerHTML="";
+  if(!zData.length){ bar.innerHTML='<span style="font-size:12px;color:var(--muted)">Нет хостов</span>'; return; }
+  zData.forEach(d=>{
+    const alive=d.agentPing&&(!d.error);
+    const active=zSelectedHost===d.host;
+    const b=document.createElement("button");
+    b.style.cssText="padding:5px 12px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid "+(active?"var(--olive)":"var(--line)")+";background:"+(active?"var(--olive)":alive?"var(--oliveL)":"var(--card)")+";color:"+(active?"#fff":alive?"var(--oliveD)":"var(--muted)")+";cursor:pointer;transition:all .15s";
+    b.textContent=d.host;
+    b.onclick=()=>{ zSelectedHost=active?"":d.host; renderZHostBar(); renderZTable(); };
+    bar.appendChild(b);
+  });
+}
+function zEsc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function renderZTable(){
+  const tb=document.getElementById("zTbody"); tb.innerHTML="";
+  const empty=document.getElementById("zEmpty");
+  const status=document.getElementById("zStatus");
+  let list=zData;
+  if(zSelectedHost) list=list.filter(x=>x.host===zSelectedHost);
+  if(zFilter) list=list.filter(x=>(x.host||"").toLowerCase().includes(zFilter.toLowerCase()));
+  const total=zData.length, alive=zData.filter(x=>x.agentPing&&!x.error).length;
+  if(status) status.textContent="Всего: "+total+" · OK: "+alive+" · ERR: "+(total-alive);
+  const lu=document.getElementById("zLastUpdate");
+  if(lu){
+    const maxT = zData.length ? Math.max(...zData.map(x=>new Date(x.time).getTime())) : (ZABBIX_RAW.length? Math.max(...ZABBIX_RAW.map(x=>new Date(x.time).getTime())) : 0);
+    lu.textContent = maxT ? new Date(maxT).toLocaleString("ru-RU") : "—";
+  }
+  if(!list.length){ empty.style.display="block"; return; }
+  empty.style.display="none";
+  const cpuW=80,cpuC=95,ramW=15,ramC=5,diskW=20,diskC=10,tempW=70,tempC=85;
+  list.forEach(d=>{
+    const bk=zBookMap[(d.host||"").toLowerCase()]||{};
+    const ip=bk.ip||"";
+    const agentOk=d.agentPing&&(!d.error);
+    const cpuCol=d.cpuLoad>=cpuC?"var(--roseD)":d.cpuLoad>=cpuW?"#D97706":"var(--fg)";
+    const ramCol=d.memPFree<=ramC?"var(--roseD)":d.memPFree<=ramW?"#D97706":"var(--fg)";
+    const tempCol=d.tempC!=null?(d.tempC>=tempC?"var(--roseD)":d.tempC>=tempW?"#D97706":"var(--fg)"):"var(--muted)";
+    let uptime="—";
+    const _up=d.uptimeSec!=null?d.uptimeSec:d.uptime;
+    if(_up>0){
+      const dd=Math.floor(_up/86400), hh=Math.floor((_up%86400)/3600);
+      uptime=dd>0?dd+"д "+hh+"ч":hh+"ч";
+    }
+    let disksHtml="—";
+    if(d.disks&&d.disks.length){
+      disksHtml=d.disks.map(function(dk){
+        const dc=dk.pfree<=diskC?"var(--roseD)":dk.pfree<=diskW?"#D97706":"var(--fg)";
+        const dbg=dk.pfree<=diskC?"var(--roseL)":dk.pfree<=diskW?"#FEF3C7":"var(--oliveL)";
+        return '<span style="display:inline-block;margin:1px 3px;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;color:'+dc+';background:'+dbg+'">'+zEsc(dk.mount)+' '+dk.pfree.toFixed(0)+'%</span>';
+      }).join("");
+    }
+    const tr=document.createElement("tr");
+    tr.style.borderBottom="1px solid #F0E8DD";
+    tr.style.cursor="pointer";
+    tr.onmouseenter=()=>tr.style.background="#FDF8EE";
+    tr.onmouseleave=()=>tr.style.background="";
+    tr.onclick=()=>openZDetail(d.host);
+    tr.title="Открыть детально →";
+    tr.innerHTML='<td style="padding:12px 14px;font-weight:700">'+zEsc(d.host)+'</td><td style="padding:12px 14px;color:var(--muted)">'+zEsc(ip)+'</td><td style="padding:12px 14px;text-align:center"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:800;'+(agentOk?"background:var(--oliveL);color:var(--oliveD);border:1px solid #C8D9C6":"background:var(--roseL);color:var(--roseD);border:1px solid #E9C2BC")+'">'+(agentOk?"OK":"ERR")+'</span></td><td style="padding:12px 14px;text-align:right;font-weight:700;color:'+cpuCol+'">'+d.cpuLoad.toFixed(1)+'</td><td style="padding:12px 14px;text-align:right;font-weight:700;color:'+ramCol+'">'+d.memPFree.toFixed(1)+'</td><td style="padding:12px 14px;text-align:right;font-weight:700;color:'+tempCol+'">'+(d.tempC!=null?d.tempC.toFixed(0)+"°":"—")+'</td><td style="padding:12px 14px">'+disksHtml+'</td><td style="padding:12px 14px;color:var(--muted)">'+uptime+'</td><td style="padding:12px 14px;color:var(--muted)">'+zEsc(d.agentVersion||"")+'</td>';
+    tb.appendChild(tr);
+  });
+}
+/* === Z Detail Panel === */
+function zFmtBytes(b){ if(b==null) return "—"; const u=["Б","КБ","МБ","ГБ","ТБ"]; let i=0, v=b; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(i===0?0:i===1?0:1)+" "+u[i]; }
+function zFmtBps(b){ if(!b) return "0"; if(b>=1e9) return (b/1e9).toFixed(1)+" Гбит/с"; if(b>=1e6) return (b/1e6).toFixed(1)+" Мбит/с"; if(b>=1e3) return (b/1e3).toFixed(0)+" Кбит/с"; return b+" бит/с"; }
+function openZDetail(host){
+  const rec = zData.find(x=>x.host===host) || ZABBIX_RAW.filter(x=>x.host===host).sort((a,b)=>new Date(b.time)-new Date(a.time))[0];
+  if(!rec) return;
+  const bk=zBookMap[(rec.host||"").toLowerCase()]||{};
+  document.getElementById("zDHost").textContent=rec.host;
+  document.getElementById("zDSub").textContent=(bk.ip||"")+(bk.fio?" · "+bk.fio:"")+" · "+new Date(rec.time).toLocaleString("ru-RU");
+  const pill=document.getElementById("zDPill");
+  const ok=rec.agentPing&&!rec.error;
+  pill.textContent=ok?"● ONLINE":"● OFFLINE";
+  pill.style.background=ok?"var(--oliveL)":"var(--roseL)"; pill.style.color=ok?"var(--oliveD)":"var(--roseD)"; pill.style.borderColor=ok?"#C8D9C6":"#E9C2BC";
+  document.getElementById("zDIcon").style.background=ok?"var(--olive)":"var(--rose)"; document.getElementById("zDIcon").textContent=ok?"◉":"◎";
+  // KPIs
+  const cpuEl=document.getElementById("zDKpiCpu"); cpuEl.textContent=(rec.cpuLoad!=null?rec.cpuLoad.toFixed(1)+"%":"—");
+  cpuEl.style.color=rec.cpuLoad>=95?"var(--roseD)":rec.cpuLoad>=80?"#D97706":"var(--fg)";
+  document.querySelector("#zDKpiCpuBar div").style.width=Math.min(100,rec.cpuLoad||0)+"%";
+  document.querySelector("#zDKpiCpuBar div").style.background=rec.cpuLoad>=95?"var(--rose)":rec.cpuLoad>=80?"#D97706":"var(--olive)";
+  const ramEl=document.getElementById("zDKpiRam"); ramEl.textContent=(rec.memPFree!=null?rec.memPFree.toFixed(1)+"%":"—");
+  ramEl.style.color=rec.memPFree<=5?"var(--roseD)":rec.memPFree<=15?"#D97706":"var(--fg)";
+  document.querySelector("#zDKpiRamBar div").style.width=(100-(rec.memPFree||0))+"%";
+  document.querySelector("#zDKpiRamBar div").style.background=rec.memPFree<=5?"var(--rose)":rec.memPFree<=15?"#D97706":"var(--olive)";
+  const _up=rec.uptimeSec!=null?rec.uptimeSec:rec.uptime;
+  let upTxt="—", upSub="";
+  if(_up>0){ const d=Math.floor(_up/86400), h=Math.floor((_up%86400)/3600), m=Math.floor((_up%3600)/60); upTxt=d>0?d+"д "+h+"ч":h>0?h+"ч "+m+"м":m+"м"; upSub="с "+new Date(Date.now()-_up*1000).toLocaleDateString("ru-RU"); }
+  document.getElementById("zDKpiUp").textContent=upTxt; document.getElementById("zDKpiUpSub").textContent=upSub;
+  document.getElementById("zDKpiVer").textContent=rec.agentVersion||"—";
+  document.getElementById("zDKpiVerSub").textContent=rec.error?("⚠ "+rec.error): (rec.agentPing?"Агент отвечает":"Нет связи");
+  document.getElementById("zDKpiVerSub").style.color=rec.error?"var(--roseD)":"var(--muted)";
+  // Disks
+  const dDiv=document.getElementById("zDDisks"); dDiv.innerHTML="";
+  if(rec.disks&&rec.disks.length){
+    rec.disks.forEach(dk=>{
+      const pct=dk.pfree!=null?dk.pfree:(dk.total?dk.free/dk.total*100:0);
+      const usedPct=100-pct;
+      const col=pct<=10?"var(--rose)":pct<=20?"#D97706":"var(--olive)";
+      const bg=pct<=10?"var(--roseL)":pct<=20?"#FEF3C7":"var(--oliveL)";
+      const row=document.createElement("div");
+      row.style.cssText="padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)";
+      row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px">'+zEsc(dk.mount)+'</b><span style="font-size:11px;font-weight:800;color:'+(pct<=10?"var(--roseD)":pct<=20?"#92400E":"var(--oliveD)")+'">'+pct.toFixed(1)+'% свободно</span></div><div style="height:6px;border-radius:10px;background:var(--bg);margin-top:6px;overflow:hidden"><div style="height:100%;width:'+usedPct.toFixed(1)+'%;background:'+col+'"></div></div><div class="mono" style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px"><span>'+zFmtBytes(dk.free)+' свободно</span><span>'+zFmtBytes(dk.total)+' всего</span></div>';
+      dDiv.appendChild(row);
+    });
+  } else dDiv.innerHTML='<div class="mono" style="font-size:12px;color:var(--muted);padding:8px">Нет данных о дисках</div>';
+  // Network
+  const nDiv=document.getElementById("zDNet"); nDiv.innerHTML="";
+  const netInfo=document.getElementById("zDNetInfo");
+  let nets=(rec.netIfs||[]).filter(n=>n.totalBps>0).sort((a,b)=>b.totalBps-a.totalBps).slice(0,4);
+  // fallback: if totalBps are huge cumulative, try to pick the real adapter (non-virtual)
+  if(!nets.length && rec.netIfs) nets=rec.netIfs.filter(n=>!/Loopback|ISATAP|Kernel|WFP|QoS/.test(n.name)).slice(0,3);
+  netInfo.textContent=nets.length?nets.length+" интерфейса":"нет трафика";
+  if(nets.length){
+    const maxBps=Math.max(...nets.map(n=>n.totalBps),1);
+    nets.forEach(n=>{
+      const short=n.name.replace("Microsoft ","").replace(" Hyper-V "," ").replace(" Network Adapter","").trim().slice(0,34);
+      const pct=Math.max(4, Math.round(n.totalBps/maxBps*100));
+      const row=document.createElement("div");
+      row.style.cssText="padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);display:flex;align-items:center;gap:10px";
+      row.innerHTML='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+zEsc(short)+'</div><div style="height:4px;border-radius:10px;background:var(--card);margin-top:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--olive)"></div></div></div><div class="mono" style="text-align:right;flex-shrink:0"><div style="font-size:11px;font-weight:800">'+zFmtBps(n.totalBps)+'</div><div style="font-size:10px;color:var(--muted)">↓ '+zFmtBps(n.inBps)+' ↑ '+zFmtBps(n.outBps)+'</div></div>';
+      nDiv.appendChild(row);
+    });
+  } else nDiv.innerHTML='<div class="mono" style="font-size:12px;color:var(--muted);padding:6px">Нет активных интерфейсов</div>';
+  // Disk I/O
+  const dioDiv=document.getElementById("zDio"); const dioInfo=document.getElementById("zDioInfo");
+  if(dioDiv){
+    const dio=rec.diskIo||[];
+    dioDiv.innerHTML="";
+    if(!dio.length){ if(dioInfo) dioInfo.textContent="нет данных"; dioDiv.innerHTML='<div class="mono" style="font-size:12px;color:var(--muted);padding:6px">Нет данных</div>'; }
+    else {
+      if(dioInfo) dioInfo.textContent=dio.length+" устр.";
+      const maxM=Math.max(...dio.map(d=>Math.max(d.readBps||0,d.writeBps||0)),1);
+      dio.slice(0,3).forEach(d=>{
+        const rPct=Math.max(4,Math.round((d.readBps||0)/maxM*100));
+        const wPct=Math.max(4,Math.round((d.writeBps||0)/maxM*100));
+        const lat=(d.readLatencyMs||0)+(d.writeLatencyMs||0);
+        const latCol=lat>20?"var(--roseD)":lat>10?"#D97706":"var(--muted)";
+        const row=document.createElement("div");
+        row.style.cssText="padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);display:flex;flex-direction:column;gap:4px";
+        row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:11px">'+zEsc(d.device||d.mount||"?")+':</b><span class="mono" style="font-size:10px;color:'+latCol+'">'+(lat?lat.toFixed(1)+" мс":"")+'</span></div><div style="display:flex;gap:6px;align-items:center"><span class="mono" style="font-size:9px;color:var(--muted);width:22px">Чт</span><div style="flex:1;height:4px;background:var(--card);border-radius:10px;overflow:hidden"><div style="height:100%;width:'+rPct+'%;background:#8FA98B"></div></div><span class="mono" style="font-size:10px;font-weight:700">'+zFmtBytes(d.readBps||0)+'/с</span></div><div style="display:flex;gap:6px;align-items:center"><span class="mono" style="font-size:9px;color:var(--muted);width:22px">Зп</span><div style="flex:1;height:4px;background:var(--card);border-radius:10px;overflow:hidden"><div style="height:100%;width:'+wPct+'%;background:#D8AFA3"></div></div><span class="mono" style="font-size:10px;font-weight:700">'+zFmtBytes(d.writeBps||0)+'/с</span></div>';
+        dioDiv.appendChild(row);
+      });
+    }
+  }
+  // Services
+  const sDiv=document.getElementById("zDSvc"); sDiv.innerHTML="";
+  const sInfo=document.getElementById("zDSvcInfo");
+  const svcs=rec.services||[];
+  const crit=svcs.filter(s=>s.isCritical);
+  const bad=crit.filter(s=>String(s.state)!=="0" && String(s.state)!=="4");
+  sInfo.textContent=crit.length? (bad.length? "⚠ "+bad.length+" проблема":"✓ все OK") : "нет данных";
+  sInfo.style.color=bad.length?"var(--roseD)":"var(--muted)";
+  if(crit.length){
+    crit.slice(0,24).forEach(s=>{
+      const st=String(s.state);
+      const isOk=st==="0"||st==="4";
+      const span=document.createElement("span");
+      span.style.cssText="padding:4px 8px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid "+(isOk?"#C8D9C6":"#E9C2BC")+";background:"+(isOk?"var(--oliveL)":"var(--roseL)")+";color:"+(isOk?"var(--oliveD)":"var(--roseD)")+";display:inline-flex;align-items:center;gap:4px";
+      span.innerHTML=(isOk?"●":"■")+" "+zEsc(s.name);
+      span.title=(s.displayName||s.name)+" · state="+st+" startup="+s.startup;
+      sDiv.appendChild(span);
+    });
+    if(crit.length>24){ const more=document.createElement("span"); more.className="mono"; more.style.cssText="padding:4px 8px;font-size:11px;color:var(--muted)"; more.textContent="+"+(crit.length-24)+" ещё"; sDiv.appendChild(more); }
+  } else sDiv.innerHTML='<span class="mono" style="font-size:12px;color:var(--muted)">Службы не отслеживаются</span>';
+  // History sparkline for this host
+  const hist=ZABBIX_RAW.filter(x=>x.host===host && new Date(x.time).getTime()>=Date.now()-2*24*60*60*1000).sort((a,b)=>new Date(a.time)-new Date(b.time));
+  document.getElementById("zDHistInfo").textContent=hist.length+" точек";
+  const cpuHist=document.getElementById("zDHistCpu"); cpuHist.innerHTML="";
+  const ramHist=document.getElementById("zDHistRam"); ramHist.innerHTML="";
+  if(hist.length>1){
+    const cpuMax=Math.max(...hist.map(h=>h.cpuLoad||0),1);
+    const ramMax=100;
+    hist.slice(-20).forEach(h=>{
+      const cH=Math.max(3, Math.round((h.cpuLoad||0)/cpuMax*100));
+      const rH=Math.max(3, Math.round((h.memPFree||0)/ramMax*100));
+      const cBar=document.createElement("div"); cBar.style.cssText="flex:1;height:"+cH+"%;background:"+(h.cpuLoad>=80?"var(--rose)":h.cpuLoad>=50?"#D97706":"var(--olive)")+";border-radius:6px;opacity:.9"; cBar.title=new Date(h.time).toLocaleString()+" CPU "+(h.cpuLoad||0).toFixed(1)+"%"; cpuHist.appendChild(cBar);
+      const rBar=document.createElement("div"); rBar.style.cssText="flex:1;height:"+rH+"%;background:"+(h.memPFree<=10?"var(--rose)":h.memPFree<=20?"#D97706":"var(--olive)")+";border-radius:6px;opacity:.9"; rBar.title=new Date(h.time).toLocaleString()+" RAM free "+(h.memPFree||0).toFixed(1)+"%"; ramHist.appendChild(rBar);
+    });
+  } else {
+    cpuHist.innerHTML='<span class="mono" style="font-size:11px;color:var(--muted)">мало данных</span>';
+    ramHist.innerHTML='<span class="mono" style="font-size:11px;color:var(--muted)">мало данных</span>';
+  }
+  document.getElementById("zDetail").style.display="grid";
+  document.body.style.overflow="hidden";
+}
+function closeZDetail(){
+  document.getElementById("zDetail").style.display="none";
+  document.body.style.overflow="";
+}
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeZDetail(); });
+document.getElementById("zSearch").addEventListener("input",function(e){ zFilter=e.target.value; renderZTable(); });
+function renderZSummary(){
+  const svg=document.getElementById("zSumSvg"); const legend=document.getElementById("zSumLegend"); const info=document.getElementById("zSumInfo");
+  const btnCpu=document.getElementById("zSumBtnCpu"), btnRam=document.getElementById("zSumBtnRam"), btnBoth=document.getElementById("zSumBtnBoth");
+  if(btnCpu){ const on=zSumMetric==='cpu'; btnCpu.style.background=on?'var(--olive)':'var(--card)'; btnCpu.style.color=on?'#fff':'var(--muted)'; btnCpu.style.borderColor=on?'var(--olive)':'var(--line)'; }
+  if(btnRam){ const on=zSumMetric==='ram'; btnRam.style.background=on?'var(--olive)':'var(--card)'; btnRam.style.color=on?'#fff':'var(--muted)'; btnRam.style.borderColor=on?'var(--olive)':'var(--line)'; }
+  if(btnBoth){ const on=zSumMetric==='both'; btnBoth.style.background=on?'var(--olive)':'var(--card)'; btnBoth.style.color=on?'#fff':'var(--muted)'; btnBoth.style.borderColor=on?'var(--olive)':'var(--line)'; }
+  if(!svg) return;
+  svg.innerHTML="";
+  if(!Array.isArray(ZABBIX_RAW)||!ZABBIX_RAW.length){ if(info) info.textContent="нет данных"; if(legend) legend.innerHTML='<span class="mono" style="font-size:11px;color:var(--muted)">Нет данных</span>'; return; }
+  const cutoff=Date.now()-2*24*60*60*1000;
+  let recent=ZABBIX_RAW.filter(x=>new Date(x.time).getTime()>=cutoff && x.host);
+  if(zSumHost) recent=recent.filter(x=>x.host===zSumHost);
+  if(!recent.length){ if(info) info.textContent="нет данных за 2д"; if(svg) svg.innerHTML='<text x="400" y="110" text-anchor="middle" font-size="12" fill="var(--muted)">Нет данных для '+zEsc(zSumHost)+'</text>'; return; }
+  const hosts=zSumHost? [zSumHost] : [...new Set(recent.map(x=>x.host))].sort();
+  const pal=["#8FA98B","#D8AFA3","#A8B8A5","#C9BFB5","#B87E73","#6E8A6E","#9A8F86","#E8DDD0","#5A7A5A","#C08A7A"];
+  const allHosts=[...new Set(ZABBIX_RAW.filter(x=>new Date(x.time).getTime()>=cutoff).map(x=>x.host))].sort();
+  const perHost={};
+  hosts.forEach(h=> perHost[h]=Array.from({length:24},()=>({cpu:[], ram:[], net:[]})));
+  recent.forEach(r=>{
+    const hr=new Date(r.time).getHours();
+    const h=perHost[r.host]; if(!h) return;
+    if(r.cpuLoad!=null) h[hr].cpu.push(r.cpuLoad);
+    if(r.memPFree!=null) h[hr].ram.push(r.memPFree);
+    let net=0;
+    if(Array.isArray(r.netIfs)) net=r.netIfs.reduce((s,n)=>s+(n.totalBps||0),0);
+    h[hr].net.push(net);
+  });
+  let maxNet=1;
+  const avgPerHost={};
+  hosts.forEach(h=>{
+    avgPerHost[h]=perHost[h].map(b=>{
+      const cpu=b.cpu.length? b.cpu.reduce((a,c)=>a+c,0)/b.cpu.length : null;
+      const ram=b.ram.length? b.ram.reduce((a,c)=>a+c,0)/b.ram.length : null;
+      const net=b.net.length? b.net.reduce((a,c)=>a+c,0)/b.net.length : null;
+      if(net!=null && net>maxNet) maxNet=net;
+      return {cpu, ram, net};
+    });
+  });
+  if(info) info.textContent=(zSumHost? zSumHost+" · " : hosts.length+" хостов · ")+"24ч · "+(zSumMetric==='cpu'?"CPU":zSumMetric==='ram'?"RAM":zSumMetric==='both'?"CPU+RAM":"")+" · клик по хосту — фильтр";
+  if(legend){
+    legend.innerHTML="";
+    // all hosts buttons (for filtering)
+    allHosts.forEach((h,i)=>{
+      const c=pal[allHosts.indexOf(h)%pal.length];
+      const active=zSumHost===h;
+      const sp=document.createElement("button");
+      sp.style.cssText="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:10px;font-size:11px;font-weight:700;border:1px solid "+(active?"var(--olive)":"var(--line)")+";background:"+(active?"var(--olive)":"var(--card)")+";color:"+(active?"#fff": "var(--fg)")+";cursor:pointer";
+      sp.innerHTML='<span style="width:12px;height:3px;background:'+c+';display:inline-block;border-radius:10px"></span>'+zEsc(h);
+      sp.onclick=()=>{ zSumHost=active?"":h; renderZSummary(); };
+      legend.appendChild(sp);
+    });
+    if(zSumHost){
+      const clr=document.createElement("button"); clr.textContent="✕ Сброс"; clr.style.cssText="padding:4px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:11px;font-weight:700;cursor:pointer"; clr.onclick=()=>{ zSumHost=""; renderZSummary(); }; legend.appendChild(clr);
+    }
+  }
+  // SVG grid
+  const W=800,H=200, padL=36, padR=10, padT=10, padB=20;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  let g='<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="var(--bg)"/>';
+  for(let i=0;i<=4;i++){ const y=padT+plotH*i/4; g+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="var(--line)" stroke-width="0.7" stroke-dasharray="3 4"/>'; g+='<text x="4" y="'+(y+3)+'" font-size="8" fill="var(--muted)">'+(100-i*25)+'%</text>'; }
+  for(let hr=0; hr<=24; hr+=6){ const x=padL+plotW*hr/24; g+='<line x1="'+x+'" y1="'+padT+'" x2="'+x+'" y2="'+(H-padB)+'" stroke="var(--line)" stroke-width="0.5"/>'; }
+  svg.innerHTML=g;
+  hosts.forEach((h,idx)=>{
+    const col=pal[allHosts.indexOf(h)%pal.length];
+    const pts=avgPerHost[h];
+    const showCpu = zSumMetric==='cpu' || zSumMetric==='both';
+    const showRam = zSumMetric==='ram' || zSumMetric==='both';
+    if(showCpu){
+      let dCpu="", first=true;
+      pts.forEach((b,hr)=>{
+        if(b.cpu==null) return;
+        const x=padL+plotW*(hr+0.5)/24;
+        const y=padT+plotH*(1 - b.cpu/100);
+        dCpu+= (first?"M":" L")+x.toFixed(1)+" "+y.toFixed(1);
+        first=false;
+      });
+      if(dCpu){ const p=document.createElementNS("http://www.w3.org/2000/svg","path"); p.setAttribute("d",dCpu); p.setAttribute("fill","none"); p.setAttribute("stroke",col); p.setAttribute("stroke-width","1.9"); p.setAttribute("stroke-linejoin","round"); p.setAttribute("stroke-linecap","round"); svg.appendChild(p); }
+    }
+    if(showRam){
+      let dRam="", firstR=true;
+      pts.forEach((b,hr)=>{
+        if(b.ram==null) return;
+        const x=padL+plotW*(hr+0.5)/24;
+        const y=padT+plotH*(1 - b.ram/100);
+        dRam+= (firstR?"M":" L")+x.toFixed(1)+" "+y.toFixed(1);
+        firstR=false;
+      });
+      if(dRam){ const p=document.createElementNS("http://www.w3.org/2000/svg","path"); p.setAttribute("d",dRam); p.setAttribute("fill","none"); p.setAttribute("stroke",col); p.setAttribute("stroke-width","1.6"); p.setAttribute("stroke-dasharray", zSumMetric==='both'?"6 3":""); p.setAttribute("opacity", zSumMetric==='both'?"0.85":"0.95"); svg.appendChild(p); }
+    }
+    // dots
+    pts.forEach((b,hr)=>{
+      const has = (showCpu && b.cpu!=null) || (showRam && b.ram!=null);
+      if(!has) return;
+      const x=padL+plotW*(hr+0.5)/24;
+      const yCpu = b.cpu!=null? padT+plotH*(1 - b.cpu/100) : null;
+      const yRam = b.ram!=null? padT+plotH*(1 - b.ram/100) : null;
+      const y = showCpu && b.cpu!=null ? yCpu : yRam;
+      const c=document.createElementNS("http://www.w3.org/2000/svg","circle"); c.setAttribute("cx",x); c.setAttribute("cy",y); c.setAttribute("r","2.3"); c.setAttribute("fill",col); c.setAttribute("stroke","var(--card)"); c.setAttribute("stroke-width","0.9");
+      const title=document.createElementNS("http://www.w3.org/2000/svg","title"); title.textContent=h+" "+String(hr).padStart(2,"0")+":00 CPU "+(b.cpu!=null?b.cpu.toFixed(1)+"%":"—")+" RAM "+(b.ram!=null?b.ram.toFixed(1)+"%":"—");
+      c.appendChild(title); svg.appendChild(c);
+    });
+  });
+}
+function renderWeb(){
+  const tb=document.getElementById("webTbody"); const empty=document.getElementById("webEmpty"); const status=document.getElementById("webStatus");
+  if(!tb) return;
+  tb.innerHTML="";
+  const urls=Array.isArray(WEB_URLS)? WEB_URLS : [];
+  const hist=Array.isArray(WEB_HIST)? WEB_HIST : [];
+  const total=urls.length, enabled=urls.filter(u=>u.enabled!==false).length;
+  if(status) status.textContent="Всего: "+total+" · Вкл: "+enabled;
+  if(!urls.length){ if(empty) empty.style.display="block"; return; }
+  if(empty) empty.style.display="none";
+  urls.forEach(u=>{
+    const recs=hist.filter(h=>h.url===u.url).sort((a,b)=>new Date(b.time)-new Date(a.time));
+    const last=recs[0];
+    const ok=last? last.ok : null;
+    const code=last? last.statusCode : "—";
+    const ms=last? last.ms : null;
+    const time=last? new Date(last.time).toLocaleString("ru-RU") : "—";
+    const msCol=ms==null?"var(--muted)":ms>2000?"var(--roseD)":ms>800?"#D97706":"var(--fg)";
+    const stHtml=ok==null?'<span class="mono" style="padding:3px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:11px">—</span>': ok?'<span style="padding:3px 8px;border-radius:10px;background:var(--oliveL);color:var(--oliveD);border:1px solid #C8D9C6;font-size:11px;font-weight:800">OK</span>':'<span style="padding:3px 8px;border-radius:10px;background:var(--roseL);color:var(--roseD);border:1px solid #E9C2BC;font-size:11px;font-weight:800">DOWN</span>';
+    const tr=document.createElement("tr"); tr.style.borderBottom="1px solid #F0E8DD"; tr.style.cursor="pointer";
+    tr.onmouseenter=()=>tr.style.background="#FDF8EE"; tr.onmouseleave=()=>tr.style.background="";
+    tr.onclick=()=>showWebDetail(u.url);
+    tr.innerHTML='<td style="padding:10px 12px;font-weight:700">'+esc(u.name||u.url)+'</td><td style="padding:10px 12px;color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(u.url)+'">'+esc(u.url)+'</td><td style="padding:10px 12px;text-align:center">'+stHtml+'</td><td style="padding:10px 12px;text-align:center" class="mono">'+esc(String(code))+'</td><td style="padding:10px 12px;text-align:right;font-weight:700;color:'+msCol+'" class="mono">'+(ms!=null?ms:"—")+'</td><td style="padding:10px 12px;color:var(--muted)" class="mono">'+time+'</td>';
+    tb.appendChild(tr);
+  });
+}
+function showWebDetail(url){
+  const hist=(Array.isArray(WEB_HIST)? WEB_HIST:[]).filter(h=>h.url===url).sort((a,b)=>new Date(a.time)-new Date(b.time)).slice(-20);
+  const urls=(Array.isArray(WEB_URLS)? WEB_URLS:[]); const meta=urls.find(u=>u.url===url)||{name:url,url:url};
+  document.getElementById("webDetailTitle").textContent=meta.name+" — "+meta.url;
+  document.getElementById("webDetailLink").href=meta.url;
+  const list=document.getElementById("webDetailList"); list.innerHTML="";
+  const recent=hist.slice(-10).reverse();
+  if(!recent.length) list.innerHTML='<div style="color:var(--muted)">Нет проверок</div>';
+  else recent.forEach(h=>{
+    const d=document.createElement("div"); d.style.cssText="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)";
+    const col=h.ok?"var(--olive)":"var(--rose)"; const dot='<span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block"></span>';
+    d.innerHTML=dot+'<span class="mono" style="font-size:11px">'+new Date(h.time).toLocaleString("ru-RU")+'</span><span style="margin-left:auto;font-size:11px;font-weight:700;color:'+(h.ok?"var(--oliveD)":"var(--roseD)")+'">'+(h.ok?"OK "+h.statusCode:"ERR "+(h.error||h.statusCode))+'</span><span class="mono" style="font-size:11px;width:60px;text-align:right">'+h.ms+'мс</span>';
+    list.appendChild(d);
+  });
+  const graph=document.getElementById("webDetailGraph"); graph.innerHTML="";
+  if(hist.length){
+    const maxMs=Math.max(...hist.map(h=>h.ms||0),1);
+    hist.forEach(h=>{
+      const hgt=Math.max(4, Math.round((h.ms/maxMs)*100));
+      const bar=document.createElement("div"); bar.style.cssText="flex:1;height:"+hgt+"%;background:"+(h.ok? (h.ms>2000?"var(--rose)":h.ms>800?"#D97706":"var(--olive)"):"var(--rose)")+";border-radius:6px;opacity:.9";
+      bar.title=new Date(h.time).toLocaleString()+" "+h.ms+"мс "+(h.ok?"OK":"ERR");
+      graph.appendChild(bar);
+    });
+  }
+  document.getElementById("webDetail").style.display="block";
+  document.getElementById("webDetail").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function webCheckNow(){ renderWeb(); const b=document.querySelector('#webPanel button[onclick*=\"webCheckNow\"]'); if(b){ const t=b.textContent; b.textContent="Обновлено"; setTimeout(()=>b.textContent=t,1200); } }
+
 </script>
 
 <div id="msgModal" style="display:none;position:fixed;inset:0;z-index:50;align-items:center;justify-content:center;padding:20px">
@@ -509,14 +1210,43 @@ if(!document.getElementById("exportBtn")){
       <button onclick="closeModal()" style="width:28px;height:28px;border-radius:10px;border:1px solid var(--line);background:var(--bg);cursor:pointer">✕</button>
     </div>
     <div id="modalText" style="padding:16px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.5;color:var(--fg)"></div>
+    <details style="margin:0 16px 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden"><summary class="mono" style="padding:8px 12px;background:var(--bg);cursor:pointer;font-size:11px;font-weight:700">Сырой XML / JSON</summary><pre id="modalRaw" style="padding:12px;white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:240px;overflow:auto;background:var(--card)"></pre></details>
+    <div style="padding:0 16px 12px;display:flex;gap:8px">
+      <button onclick="openHostCard(currentModalEvent.computer)" style="padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:12px;font-weight:700;cursor:pointer">Открыть хост в PupSeek</button>
+      <button onclick="window.open('eventvwr.msc','_blank')" style="padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:12px;font-weight:700;cursor:pointer">Открыть eventvwr.msc</button>
+    </div>
     <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="translateModal()" style="padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:12px;font-weight:700;cursor:pointer">RU</button>
       <button onclick="navigator.clipboard.writeText(document.getElementById('modalText').textContent)" style="padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:12px;font-weight:700;cursor:pointer">Копировать</button>
       <button onclick="closeModal()" style="padding:7px 12px;border-radius:10px;background:var(--olive);color:#fff;font-weight:700;font-size:12px;border:1px solid var(--olive);cursor:pointer">Закрыть</button>
     </div>
   </div>
 </div>
 <script>
-function openModal(text){ document.getElementById('modalText').textContent=text; document.getElementById('msgModal').style.display='flex'; }
+let originalModalText="";
+function openModal(text){
+  originalModalText=text;
+  document.getElementById('modalText').textContent=text;
+  document.getElementById('msgModal').style.display='flex';
+  // Reset RU button
+  const ruBtn=document.querySelector('#msgModal button[onclick="translateModal()"]');
+  if(ruBtn) ruBtn.textContent="RU";
+}
+function translateModal(){
+  const el=document.getElementById('modalText');
+  const btn=document.querySelector('#msgModal button[onclick="translateModal()"]');
+  if(el.textContent===originalModalText){
+    // Simple mock translation: just add prefix and keep original (in real app, would call API)
+    el.textContent="[Перевод] " + originalModalText;
+    if(btn) btn.textContent="EN";
+  } else {
+    el.textContent=originalModalText;
+    if(btn) btn.textContent="RU";
+  }
+}
+function openDocs(eventId){
+  window.open(`https://learn.microsoft.com/en-us/search/?terms=Event+ID+${eventId}`, '_blank');
+}
 function closeModal(){ document.getElementById('msgModal').style.display='none'; }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
 </script>

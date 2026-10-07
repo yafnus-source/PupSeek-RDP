@@ -1,0 +1,8 @@
+# TODO.шная — отдельная папка
+# Разрешаем GET/POST, закрываем листинг
+Options -Indexes
+<IfModule mod_headers.c>
+  Header always set Access-Control-Allow-Origin "*"
+  Header always set Access-Control-Allow-Methods "GET, POST, DELETE, OPTIONS"
+  Header always set Access-Control-Allow-Headers "Authorization, Content-Type"
+</IfModule>

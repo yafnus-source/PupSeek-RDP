@@ -125,6 +125,7 @@ namespace ShadowRDP.Services
                         .ToList() ?? new List<AddressBookEntry>();
                     var json = JsonSerializer.Serialize(list, _jsonOpts);
                     File.WriteAllText(_path, json, new UTF8Encoding(false));
+                    AppPaths.SyncToMonitor(_path, "addressbook.json");
                     Logger.Info($"AddressBookStore: saved {list.Count} entries to {_path}");
                 }
                 catch (Exception ex)

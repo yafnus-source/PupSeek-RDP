@@ -46,5 +46,20 @@ namespace ShadowRDP.Models
         // polls this computer's Windows Event Log for Error/Critical events.
         [JsonPropertyName("Monitored")]
         public bool Monitored { get; set; } = false;
+
+        // Monitored via SNMP (Zabbix dash). When true, the dash polls this host
+        // over UDP/161 instead of (and before) the Zabbix agent. C#-only field —
+        // the .ps1 ignores it on load and drops it on save (same policy as Phone).
+        [JsonPropertyName("SnmpMonitored")]
+        public bool SnmpMonitored { get; set; } = false;
+
+        // Per-host SNMP overrides. null/empty = use global defaults from
+        // ZabbixAgentSettings (port 161, community "public", version v2c).
+        [JsonPropertyName("SnmpCommunity")]
+        public string? SnmpCommunity { get; set; }
+        [JsonPropertyName("SnmpPort")]
+        public int? SnmpPort { get; set; }
+        [JsonPropertyName("SnmpVersion")]
+        public string? SnmpVersion { get; set; }
     }
 }

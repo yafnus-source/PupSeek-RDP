@@ -67,6 +67,14 @@ namespace ShadowRDP.Services
         }
 
         // ---- Events ----
+        // v3.9.3 Фаза 3 — кэш в памяти: файл 400КБ+ читался и парсился на
+        // КАЖДЫЙ вызов (поллеры, нотификации, фильтры). Валиден пока совпадают
+        // mtime+размер; SaveEvents инвалидирует. Возвращаем копию списка
+        // (элементы те же — семантика мутаций как раньше).
+        private static List<DashboardEvent>? _eventsCache;
+        private static DateTime _eventsCacheMtime = DateTime.MinValue;
+        private static long _eventsCacheLen = -1;
+
         public static List<DashboardEvent> LoadEvents()
         {
             lock (_lock)
@@ -74,14 +82,20 @@ namespace ShadowRDP.Services
                 try
                 {
                     var path = AppPaths.DashboardEventsPath;
-                    if (!File.Exists(path)) return new List<DashboardEvent>();
+                    if (!File.Exists(path)) { _eventsCache = new List<DashboardEvent>(); return new List<DashboardEvent>(); }
+                    var fi = new FileInfo(path);
+                    if (_eventsCache != null && fi.LastWriteTimeUtc == _eventsCacheMtime && fi.Length == _eventsCacheLen)
+                        return new List<DashboardEvent>(_eventsCache);
                     var json = File.ReadAllText(path, Encoding.UTF8);
                     if (string.IsNullOrWhiteSpace(json)) return new List<DashboardEvent>();
                     var list = JsonSerializer.Deserialize<List<DashboardEvent>>(json) ?? new List<DashboardEvent>();
                     // cleanup >2 days
                     var cutoff = DateTime.Now.AddDays(-2);
                     var filtered = list.Where(e => e.Time >= cutoff).OrderByDescending(e => e.Time).ToList();
-                    return filtered;
+                    _eventsCache = filtered;
+                    _eventsCacheMtime = fi.LastWriteTimeUtc;
+                    _eventsCacheLen = fi.Length;
+                    return new List<DashboardEvent>(filtered);
                 }
                 catch (Exception ex) { try { Logger.Warn($"LoadEvents failed: {ex.Message}"); } catch { } return new List<DashboardEvent>(); }
             }
@@ -99,6 +113,8 @@ namespace ShadowRDP.Services
                     var cutoff = DateTime.Now.AddDays(-2);
                     var toSave = (events ?? new List<DashboardEvent>()).Where(e => e.Time >= cutoff).OrderByDescending(e => e.Time).Take(2000).ToList();
                     File.WriteAllText(path, JsonSerializer.Serialize(toSave, _opts), new UTF8Encoding(false));
+                    _eventsCache = null; // v3.9.3 Фаза 3 — инвалидация кэша
+                    AppPaths.SyncToMonitor(path, "dashboard_events.json");
                 }
                 catch (Exception ex) { try { Logger.Warn($"SaveEvents failed: {ex.Message}"); } catch { } }
             }

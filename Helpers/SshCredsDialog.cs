@@ -32,7 +32,7 @@ namespace ShadowRDP.Helpers
                 MaximizeBox = false,
                 MinimizeBox = false,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = UiTheme.Background
+                BackColor = UiTheme.DialogBackground
             };
 
             var lblUser = new Label
@@ -88,14 +88,13 @@ namespace ShadowRDP.Helpers
             // gray for Cancel = secondary). User reported Cancel was visually
             // cut in half when MakeFlat was force-sized — MakeFilled draws
             // a proper filled rectangle so no AutoSize weirdness.
-            var okBtn = UiButtons.MakeFilled("OK", null,
-                ShadowRDP.Helpers.UiTheme.HeaderBar, width: 96, radius: 1);
-            okBtn.Location = new Point(236, 144);
+            var okBtn = UiButtons.MakeCompactFilled("OK", 100);
+            okBtn.Location = new Point(227, 153);
             dlg.Controls.Add(okBtn);
 
-            var cancelBtn = UiButtons.MakeFilled("Отмена", null,
-                UiTheme.MutedForeground, width: 96, radius: 1);
-            cancelBtn.Location = new Point(344, 144);
+            var cancelBtn = UiButtons.MakeCompactFilled("Отмена", 100,
+                bgOverride: UiTheme.MutedForeground);
+            cancelBtn.Location = new Point(335, 153);
             dlg.Controls.Add(cancelBtn);
 
             // Hidden buttons for Enter/Esc routing.
@@ -125,7 +124,7 @@ namespace ShadowRDP.Helpers
             cancelBtn.Click += (_, _) => dlg.DialogResult = DialogResult.Cancel;
 
             dlg.Shown += (_, _) => tbUser.Focus();
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
     }
 }

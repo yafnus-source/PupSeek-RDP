@@ -25,16 +25,19 @@ namespace ShadowRDP
     public class ShadowRdpAppContext : ApplicationContext
     {
         private readonly NotifyIcon _notifyIcon;
-        private readonly Helpers.ThemedContextMenu _trayMenu;
+        private Helpers.ThemedContextMenu _trayMenu = null!;
         // Not readonly — installed on Shown, not in ctor.
         private GlobalMouseHook? _mouseHook;
         private static bool _realExit;
         private static ShadowRdpAppContext? _instance;
-        public static void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
+        // v3.9.1 — клик по баллуну Todo-напоминаний открывает TODO.шную, а не Даш W
+        private volatile bool _balloonOpenTodo;
+        public static void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info, bool openTodo = false)
         {
             try
             {
                 if (_instance?._notifyIcon == null) return;
+                _instance._balloonOpenTodo = openTodo;
                 _instance._notifyIcon.BalloonTipTitle = title;
                 _instance._notifyIcon.BalloonTipText = text;
                 _instance._notifyIcon.BalloonTipIcon = icon;
@@ -57,9 +60,8 @@ namespace ShadowRDP
 
             // === Tray context menu (themed popup) — без header только в трее ===
             _trayMenu = new Helpers.ThemedContextMenu();
-            _trayMenu.AddItem("Показать", "play", () => ShowMainForm());
-            _trayMenu.AddItem("Пароли…", "shield", () => ShowVaultForm());
-            _trayMenu.AddItem("Выход", "delete", () => ExitApplication());
+            RebuildTrayMenu();
+            try { Services.ModuleManager.StateChanged += (id, on) => RebuildTrayMenu(); } catch { }
 
             // === Tray icon ===
             _notifyIcon = new NotifyIcon
@@ -85,7 +87,17 @@ namespace ShadowRDP
             };
             _notifyIcon.BalloonTipClicked += (s, e) =>
             {
-                try { var f = Forms.RdpManagerForm.Instance; f.Show(); if (f.WindowState == FormWindowState.Minimized) f.WindowState = FormWindowState.Normal; f.Activate(); try { f.ShowDashboard(); } catch { } } catch { }
+                try
+                {
+                    var f = Forms.RdpManagerForm.Instance; f.Show(); if (f.WindowState == FormWindowState.Minimized) f.WindowState = FormWindowState.Normal; f.Activate();
+                    // v4.7 — клик по баллуну Todo открывает модуль, только если
+                    // он включён; иначе — обычный дашборд.
+                    bool todoOn = false;
+                    try { todoOn = Services.ModuleManager.IsEnabled("todo"); } catch { }
+                    if (_balloonOpenTodo && todoOn) { _balloonOpenTodo = false; f.ShowModule("todo"); }
+                    else { _balloonOpenTodo = false; try { f.ShowDashboard(); } catch { } }
+                }
+                catch { }
             };
 
             // Override the X-button behaviour: hide to tray instead of exit.
@@ -180,6 +192,9 @@ namespace ShadowRDP
             // custom_sessions.json and calls Show() at the end (replaces the
             // old direct .Show() call which left the sidebar empty).
             rdpForm.RestoreSessions();
+            // v4.7 — фоновые сервисы стартуют только у включённых модулей
+            // (бывшие безусловные TodoSyncService/TodoReminderService).
+            try { Services.ModuleManager.StartEnabled(); } catch (Exception ex) { try { Logger.Warn($"ModuleManager StartEnabled failed: {ex.Message}"); } catch { } }
         }
 
         // Build a popup with one row per active RDP Manager session and
@@ -229,6 +244,42 @@ namespace ShadowRDP
             Logger.Info($"Quick-switch menu → activated session '{computer}'");
         }
 
+// v4.7 — трей собирается из включённых модулей (бывшая жёсткая TODO.шная):
+            // выключенный модуль убирает свой пункт. Пересобирается ЗАНОВО
+            // (новый экземпляр меню) и вживую по ModuleManager.StateChanged:
+            // ThemedContextMenu строит Items из спеки один раз при Show.
+            private void RebuildTrayMenu()
+            {
+                try
+                {
+                    Helpers.ThemedContextMenu menu = new Helpers.ThemedContextMenu();
+                    menu.AddItem("Показать", "play", () => ShowMainForm());
+                    try
+                    {
+                        foreach (var m in Services.ModuleManager.GetEnabled())
+                        {
+                            string label = "";
+                            try { label = m.TrayLabel ?? ""; } catch { }
+                            if (string.IsNullOrWhiteSpace(label)) continue;
+                            var mid = m.Id;
+                            var icon = "tasks";
+                            try { if (!string.IsNullOrWhiteSpace(m.IconKey)) icon = m.IconKey; } catch { }
+                            menu.AddItem(label, icon, () => ShowModuleForm(mid));
+                        }
+                    }
+                    catch { }
+                    menu.AddItem("Пароли…", "shield", () => ShowVaultForm());
+                    // v3.9.3E — гарантированный перезапуск (крестик только
+                    // прячет окно в трей, старая версия продолжает работать).
+                    menu.AddItem("Перезапустить", "restart", () => RestartApplication());
+                    menu.AddItem("Выход", "delete", () => ExitApplication());
+                    var old = _trayMenu;
+                    _trayMenu = menu;
+                    try { old?.Dispose(); } catch { }
+                }
+                catch { }
+            }
+
         private void ShowMainForm()
         {
             var form = Forms.RdpManagerForm.Instance;
@@ -250,11 +301,35 @@ namespace ShadowRDP
             form.Activate();
         }
 
+        // v4.7 — пункт трея модуля (бывший ShowTodoForm): открывает вкладку
+        // модуля, только если он включён.
+        private void ShowModuleForm(string id)
+        {
+            var form = Forms.RdpManagerForm.Instance;
+            form.Show();
+            if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
+            form.Activate();
+            try { form.ShowModule(id); } catch { }
+        }
+
         private void ExitApplication()
         {
             _realExit = true;
             _notifyIcon.Visible = false;
             ExitThread();
+        }
+
+        // v3.9.3E — перезапуск новой версии: стартуем свежий процесс,
+        // затем выходим (иначе старая версия висит в трее вечно).
+        private void RestartApplication()
+        {
+            try
+            {
+                string exe = Application.ExecutablePath;
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true });
+            }
+            catch { }
+            ExitApplication();
         }
 
         // Make sure the tray icon is removed even if ExitThread isn't called

@@ -8,9 +8,9 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>PupSeekRDP</AssemblyName>
     <RootNamespace>ShadowRDP</RootNamespace>
-    <Version>3.9.0.0</Version>
-    <AssemblyVersion>3.9.0.0</AssemblyVersion>
-    <FileVersion>3.9.0.0</FileVersion>
+    <Version>3.9.3.0</Version>
+    <AssemblyVersion>3.9.3.0</AssemblyVersion>
+    <FileVersion>3.9.3.0</FileVersion>
     <Company>M.A.D.</Company>
     <Product>Pup Seek RDP — управление RDP shadow-сессиями</Product>
     <Title>Pup Seek RDP</Title>
@@ -38,8 +38,10 @@
          in the system OEM code page (866 on Russian Windows). This package
          re-enables legacy code pages — registered at startup via
          Encoding.RegisterProvider(CodePagesEncodingProvider.Instance). -->
+    <PackageReference Include="FluentFTP" Version="52.8.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
     <PackageReference Include="pt.KeePassLibStd" Version="2.50.0.4849" />
+    <PackageReference Include="QRCoder" Version="1.4.3" />
     <PackageReference Include="ScottPlot.WinForms" Version="5.0.55" />
     <PackageReference Include="SSH.NET" Version="2025.0.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />

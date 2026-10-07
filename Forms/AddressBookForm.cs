@@ -24,12 +24,8 @@ namespace ShadowRDP.Forms
     // reliably when Windows restores saved placement.
     public class AddressBookForm : Form
     {
-        private readonly CaretHidingTextBox _searchBox;
-        private readonly Label _searchPlaceholder;
+        private readonly ShadowRDP.Controls.CaretHidingTextBox _searchBox;
         private readonly Panel _searchWrapper;
-        // v3.0.23 — "✕" clear button inside the search wrapper, shown only
-        // when the search box has text. Click → empty the box + re-filter.
-        private Label _searchClearBtn = null!;
         private readonly DataGridView _grid;
         private DataGridViewColumn? _fillerCol;
         private bool _suppressWidthSave;
@@ -46,6 +42,9 @@ namespace ShadowRDP.Forms
         // static fields turns each paint into a hash lookup + GDI call.
         private static readonly Font _headerFont = new Font("Segoe UI Semibold", 9F);
         private static readonly Font _groupBadgeFont = new Font("Segoe UI Semibold", 8.5F);
+        // v4.5.0 — тот же класс багов, что v2.1.63: шрифт бейджа «События»
+        // создавался на КАЖДУЮ отрисованную ячейку при каждом кадре.
+        private static readonly Font _newEventsFont = new Font("Segoe UI Semibold", 7f);
         private static readonly Brush _headerGapBrush = new SolidBrush(Color.White);
         private static readonly Brush _headerBgBrush = new SolidBrush(Color.White);
         private static readonly Brush _headerTextBrush = new SolidBrush(Helpers.UiTheme.Foreground);
@@ -62,6 +61,14 @@ namespace ShadowRDP.Forms
         private readonly HashSet<string> _rdpActiveSessions = new(StringComparer.OrdinalIgnoreCase);
         private bool _rdpSessionsCached;
 
+        // v4.5.3 — тултипы БЕЗ расшаривания строк. Раньше ReloadGrid писал
+        // cell.ToolTipText (Monitored/NewEvents) → строка становилась
+        // unshared → DataGridView красил такие и НИЖЕЛЕЖАЩИЕ строки другим
+        // путём с серыми бордерами-коробками (доказано харнессом livetest:
+        // без Monitored/событий коробок нет). Теперь только сеты + событие
+        // CellToolTipTextNeeded (виртуальные тултипы, состояние не трогают).
+        private readonly HashSet<string> _monitoredComputers = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, int> _newEventCounts = new(StringComparer.OrdinalIgnoreCase);
         // v3.1.x: group badge GDI objects are cached per group key instead
         // of being allocated (SolidBrush/Pen/GraphicsPath) for every painted
         // cell. The rounded path is pure geometry — cached by size so it can
@@ -69,10 +76,9 @@ namespace ShadowRDP.Forms
         private static readonly Dictionary<string, (SolidBrush bg, Pen border)> _badgeGdiCache = new();
         private static readonly Dictionary<(int w, int h), System.Drawing.Drawing2D.GraphicsPath> _badgePathCache = new();
 
-        // v3.1.x: search-box debounce — ApplySearchFilter used to run on
-        // EVERY keystroke (loop over all rows × all cells + status recount).
-        // A short timer collapses a typing burst into one filter pass.
-        private readonly System.Windows.Forms.Timer _searchDebounce;
+        // v4.5.0 — схлопывает пачки перезагрузок от поллера событий в один
+        // проход (каждый ReloadGrid — полный перечит JSON + ресорт + репейнт).
+        private readonly System.Windows.Forms.Timer _reloadDebounce;
 
         // v2.1.78: WM_SETREDRAW for batch updates in ReloadGrid.
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
@@ -97,6 +103,14 @@ namespace ShadowRDP.Forms
         // BackColor=Transparent is genuinely transparent.
         private readonly Dictionary<string, Label> _filterButtons = new();
         private string _groupFilter = "";
+        // v4.9.4 — активность пилы хранится явно. Раньше определялась по
+        // ForeColor == PillActiveFg, но при кастомных цветах (colors.json)
+        // PillActiveFg может совпадать с Foreground темы — тогда фон
+        // PillActiveBg (#F0A050) красился всем пилам сразу.
+        private readonly HashSet<Label> _activePills = new();
+        // v4.9.5 — ховер пилы хранится явно (вместо ForeColor), чтобы не
+        // менять цвет шрифта на ховере, но оставить AccentSoft-заливку.
+        private readonly HashSet<Label> _hoverPills = new();
         // v3.8.x — right-click group-management menu on the filter pills.
         private string _ctxGroupKey = "";
 
@@ -108,9 +122,11 @@ namespace ShadowRDP.Forms
         // the "Пользователи" tab is active. Sends a popup message to the
         // computers of the users currently shown in that tab.
         private readonly Label _messageAllBtn;
-        // Inventory button — "Инвентаризация ПО". Visible on the "Все" tab.
+        // Inventory button — "Инвентаризация SOFT". Visible on the "Все" tab.
         // Opens SoftwareInventoryForm to scan all address-book computers.
         private readonly Label _inventoryBtn;
+        // v3.9.3BD — "Сводная таблица HARD": железо компьютеров.
+        private readonly Label _hardBtn;
 
         // Sort state for column-header click. Null = no sort (load order).
         private string? _sortColumn;
@@ -180,6 +196,9 @@ namespace ShadowRDP.Forms
             BackColor = Helpers.UiTheme.Background;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
+            // v3.9.3CY — перестройка пил при смене их цвета из «Настроек цвета».
+            Helpers.UiTheme.PillColorsChanged += OnPillColorsChanged;
+            Disposed += (s, e) => { try { Helpers.UiTheme.PillColorsChanged -= OnPillColorsChanged; } catch { } };
 
             // === Header panel ===
             // Figma layout: a strip with logo on the left, "Адресная книга"
@@ -212,135 +231,27 @@ namespace ShadowRDP.Forms
             // tab inside RDP Manager, so a button to open the manager
             // from inside the book would be circular.)
 
-            // Search box wrapped in a Panel so we can give it rounded corners
-            // (WinForms TextBox has no border-radius property; the wrapper's
-            // Region clips the TextBox to a rounded rectangle).
-            // v2.0.6: height reduced 40 → 32 (-20%), corner radius 6px.
-            var searchWrapper = new Panel
+            // Единый поиск (UiSearchBox): подпись + поле с нативным кью + крест.
+            // Дебаунс 120мс внутри; ApplySearchFilter вызывается готовым текстом.
+            var searchWrapper = Helpers.UiSearchBox.Create("Поиск…", txt =>
             {
-                Location = new Point(640, 12),
-                Size = new Size(640, 32),
-                BackColor = Helpers.UiTheme.Muted,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
-            };
-            using (var path = RoundedRect(new Rectangle(0, 0, 640, 32), 6))
-            {
-                searchWrapper.Region = new System.Drawing.Region(path);
-            }
-            _searchWrapper = searchWrapper;
-
-            // v2.1.62: CaretHidingTextBox subclass — hides the blinking |
-            // cursor while focused. Was plain TextBox + event-based
-            // HideCaret (unreliable).
-            _searchBox = new ShadowRDP.Controls.CaretHidingTextBox
-            {
-                Location = new Point(10, 4),
-                // v3.0.23: width 620 → 590 to leave room for the clear button
-                // on the right (24×24 + 6px gap + 10px right margin).
-                Size = new Size(590, 24),
-                // Multiline=true is the ONLY way to make a WinForms TextBox
-                // honour its Size.Height — single-line boxes auto-size to the
-                // font and ignore Height. We don't actually want line breaks
-                // in a search field, but TextChanged fires per keystroke and
-                // we don't gate on Enter, so Multiline's behaviour is fine.
-                Multiline = true,
-                BorderStyle = BorderStyle.None,
-                BackColor = Helpers.UiTheme.Muted,
-                ForeColor = Helpers.UiTheme.Foreground,
-                Font = new Font("Segoe UI", 12F),
-                TextAlign = HorizontalAlignment.Left
-            };
-            // v3.1.x: debounce — typing collapses into one ApplySearchFilter.
-            _searchDebounce = new System.Windows.Forms.Timer { Interval = 120 };
-            _searchDebounce.Tick += (s, e) =>
-            {
-                _searchDebounce.Stop();
                 if (IsDisposed || _grid == null || _grid.IsDisposed) return;
                 ApplySearchFilter();
-            };
-
-            _searchBox.TextChanged += (s, e) =>
+            }, width: 640, height: 32, background: Color.White);
+            searchWrapper.Location = new Point(640, 12);
+            searchWrapper.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _searchWrapper = searchWrapper;
+            _searchBox = (ShadowRDP.Controls.CaretHidingTextBox)Helpers.UiSearchBox.GetBox(searchWrapper);
+            header.Controls.Add(searchWrapper);
+            // v4.5.0 — поллер событий может выстрелить серией; схлопываем в
+            // один ReloadGrid за 400мс вместо перестройки таблицы на событие.
+            _reloadDebounce = new System.Windows.Forms.Timer { Interval = 400 };
+            _reloadDebounce.Tick += (s, e) =>
             {
-                _searchDebounce.Stop();
-                _searchDebounce.Start();
-                var hasText = !string.IsNullOrEmpty(_searchBox.Text);
-                // Show/hide placeholder overlay — EM_SETCUEBANNER doesn't
-                // work on Multiline TextBoxes (Win32 limitation), so we
-                // emulate it with a Label that floats over the input.
-                if (_searchPlaceholder != null)
-                {
-                    _searchPlaceholder.Visible = !hasText;
-                }
-                // v3.0.23 — toggle the clear button.
-                if (_searchClearBtn != null)
-                {
-                    _searchClearBtn.Visible = hasText;
-                }
+                _reloadDebounce.Stop();
+                if (IsDisposed || _grid == null || _grid.IsDisposed) return;
+                ReloadGrid();
             };
-            // v2.1.52: focus feedback — lighten the field on Enter, restore
-            // the default Muted bg on Leave. Background (#F5F0EB) is ~10%
-            // lighter than Muted (#EDE8E2): noticeably different, but not
-            // the stark Card (#FAF7F4) white we had before.
-            // v2.1.62: caret (|) hiding now handled by CaretHidingTextBox
-            // subclass — see Controls/OptimizedControls.cs.
-            _searchBox.Enter += (s, e) =>
-            {
-                searchWrapper.BackColor = Helpers.UiTheme.Background;
-                _searchBox.BackColor = Helpers.UiTheme.Background;
-            };
-            _searchBox.Leave += (s, e) =>
-            {
-                searchWrapper.BackColor = Helpers.UiTheme.Muted;
-                _searchBox.BackColor = Helpers.UiTheme.Muted;
-            };
-            searchWrapper.Controls.Add(_searchBox);
-
-            // Placeholder overlay — looks like cue banner but works on Multiline.
-            _searchPlaceholder = new Label
-            {
-                Text = "Поиск…",
-                // v2.1.90: was AutoSize=true (default) → text not vertically
-                // aligned with typed text in the TextBox below. Now AutoSize
-                // =false + Size matching TextBox + TextAlign=MiddleLeft.
-                Location = new Point(14, 6),
-                Size = new Size(200, 22),
-                ForeColor = Helpers.UiTheme.MutedForeground,
-                // v2.1.52: Transparent so it inherits searchWrapper's bg,
-                // which flips between Muted (default) and Card (focused).
-                BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12F),
-                Cursor = Cursors.IBeam
-            };
-            _searchPlaceholder.Click += (s, e) => _searchBox.Focus();
-            searchWrapper.Controls.Add(_searchPlaceholder);
-            // Z-order: placeholder added AFTER textbox so it sits on top.
-            _searchPlaceholder.BringToFront();
-
-            // v3.0.23 — clear button. Sits at the right edge of the wrapper,
-            // visible only when the search box has text. Click → wipe + focus.
-            _searchClearBtn = new Label
-            {
-                Text = "✕",
-                Location = new Point(606, 4),
-                Size = new Size(24, 24),
-                Font = new Font("Segoe UI Symbol", 11F, FontStyle.Bold),
-                ForeColor = Helpers.UiTheme.MutedForeground,
-                BackColor = Color.Transparent,
-                Cursor = Cursors.Hand,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Visible = false
-            };
-            _searchClearBtn.Click += (s, e) =>
-            {
-                _searchBox.Text = "";
-                _searchBox.Focus();
-            };
-            _searchClearBtn.MouseEnter += (s, e) =>
-                _searchClearBtn.ForeColor = Helpers.UiTheme.Foreground;
-            _searchClearBtn.MouseLeave += (s, e) =>
-                _searchClearBtn.ForeColor = Helpers.UiTheme.MutedForeground;
-            searchWrapper.Controls.Add(_searchClearBtn);
-            _searchClearBtn.BringToFront();
 
             header.Controls.Add(searchWrapper);
 
@@ -382,24 +293,33 @@ namespace ShadowRDP.Forms
             _messageAllBtn.Visible = false;
             _tabsPanel.Controls.Add(_messageAllBtn);
 
-            // "Инвентаризация ПО" action button — same style. Visible on
+            // "Инвентаризация SOFT" action button — same style. Visible on
             // the "Все" tab. Opens the domain-wide software inventory scanner.
-            _inventoryBtn = MakeOpenFilesButton("Инвентаризация ПО", fx, 10);
+            _inventoryBtn = MakeOpenFilesButton("Инвентаризация SOFT", fx, 10, Color.FromArgb(0x2A, 0x4F, 0x7A));
             _inventoryBtn.Click += (s, e) => OnInventoryClicked();
             _inventoryBtn.Visible = true;  // "Все" is the default active filter
             _tabsPanel.Controls.Add(_inventoryBtn);
+            // v3.9.3BD — "Сводная таблица HARD" справа от SOFT: железо
+            // компьютеров (процессор, RAM, диски) в таблице стиля Монитор.
+            _hardBtn = MakeOpenFilesButton("Сводная таблица HARD", _inventoryBtn.Right + 10, 10, Color.FromArgb(0x2A, 0x4F, 0x7A));
+            _hardBtn.Click += (s, e) => OnHardInventoryClicked();
+            _hardBtn.Visible = true;
+            _tabsPanel.Controls.Add(_hardBtn);
 
             // v3.9.0 — group-management context menu is built on demand in
             // ShowGroupMenu() as a themed popup (see below).
 
             // === Grid ===
             // Sits directly below the tabs panel. Y = HeaderHeight + TabsHeight.
-            // v2.1.69: was DoubleBufferedDataGridView subclass — persisted
-            // rendering artifacts (faint #C0C0C0 column lines + #BDBCBB row
-            // lines) that previously cleared on scroll. Plain DataGridView +
-            // reflection-set DoubleBuffered avoids the subclass code path
-            // that triggered the persistent-buffer issue.
-            _grid = new DataGridView
+            // v4.5.2: вернулся сабкласс DoubleBufferedDataGridView
+            // (OnPaintBackground заливает весь клиент — иначе отражение
+            // DoubleBuffered + AllPaintingInWmPaint оставляет чёрные щели
+            // в буфере при скролле, см. OptimizedControls.cs:61-66).
+            // Артефакты v2.1.69 (#C0C0C0 столбцы, #BDBCBB строки) были от
+            // БОРДЕРОВ, а не от буфера — бордеры теперь полностью убраны
+            // (CellBorderStyle=None + Advanced*=None ниже), так что сабкласс
+            // безопасен. Поле остаётся типа DataGridView — смена только здесь.
+            _grid = new DoubleBufferedDataGridView
             {
                 Location = new Point(3, Helpers.UiTheme.HeaderHeight + Helpers.UiTheme.TabsHeight + 5),
                 Size = new Size(1296, 524),
@@ -421,14 +341,14 @@ namespace ShadowRDP.Forms
                 BackgroundColor = Helpers.UiTheme.RowBase,
                 BorderStyle = BorderStyle.None,
                 ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                // (CellBorderStyle здесь не задаём — ApplyUnified ниже ставит
+                // SingleHorizontal, поверх сразу None; бордеров нет по дизайну.)
                 GridColor = Helpers.UiTheme.BorderSubtle,
-                // Row height: 26 base + 10 top + 10 bottom. Was 26+30 in v2.0
-                // but user feedback said rows were too tall. v2.01: -10 (5 each).
-                RowTemplate = { Height = 26 + 20 },
+                RowTemplate = { Height = 36 },
                 DefaultCellStyle = {
                     BackColor = Helpers.UiTheme.RowBase,  // v2.1.77: restore original
                     ForeColor = Helpers.UiTheme.Foreground,
+                    // v3.9.3BI — выбор #E8ECE8.
                     SelectionBackColor = Helpers.UiTheme.AccentSoft,
                     SelectionForeColor = Helpers.UiTheme.GridSelectionFore
                 },
@@ -444,11 +364,13 @@ namespace ShadowRDP.Forms
                 ColumnHeadersHeight = 36,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing
             };
-            // v2.1.77: DoubleBuffered (reflection-set or subclass) was the
-            // reason the previously-transient #BDBCBB borders became
-            // PERSISTENT — the offscreen buffer freezes them in place.
-            // Removed; grid renders directly to screen, borders clear on
-            // scroll/repaint like in v2.1.62.
+            // v4.5.2 — буферизация теперь от сабкласса (DoubleBuffered=true
+            // + заливка всего клиента в OnPaintBackground); хак с рефлексией
+            // Control.DoubleBuffered удалён — он включал AllPaintingInWmPaint
+            // без полной заливки фона, из-за чего непрокрашенные щели
+            // буфера при скролле показывались чёрными линиями.
+            // v2.1.77-история закрыта: персистентность давали бордеры,
+            // которых больше нет (см. выше); чистый буфер = чистый кадр.
             // v2.1.65: CellBorderStyle=None alone wasn't killing the faint
             // horizontal dividers — DataGridView has AdvancedCellBorderStyle
             // as a separate per-edge layer that's NOT controlled by
@@ -462,6 +384,16 @@ namespace ShadowRDP.Forms
             // row and first body row).
             _grid.AdvancedColumnHeadersBorderStyle.All = DataGridViewAdvancedCellBorderStyle.None;
             _grid.AdvancedColumnHeadersBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.None;
+            // Unified style — white header, dark font, 36 height, Segoe UI 9F, gap 3px.
+            Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36, whiteRows: true);
+            // v4.5.1 — CellBorderStyle=None поверх SingleHorizontal из
+            // ApplyUnified (подстраховка): убирает 1px полосы из layout;
+            // разделители невидимы по дизайну (чересполосица — стилями строк).
+            _grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
+            // AddressBook allows inline edit of FullName/Phone — restore editable mode after unified (which sets ReadOnly true).
+            _grid.ReadOnly = false;
+            _grid.MultiSelect = true;
+            _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
             // Ping status column (image). Hidden for now — populated when the
             // async refresh module is added. Kept so the column order matches
@@ -515,6 +447,7 @@ namespace ShadowRDP.Forms
                 DefaultCellStyle = new DataGridViewCellStyle
                 {
                     Alignment = DataGridViewContentAlignment.MiddleCenter,
+                    // v3.9.3BI — выбор #E8ECE8.
                     SelectionBackColor = Helpers.UiTheme.AccentSoft,
                     SelectionForeColor = Helpers.UiTheme.GridSelectionFore
                 }
@@ -596,8 +529,12 @@ namespace ShadowRDP.Forms
             // handler with e.PaintBackground(CellBounds, false). RowPostPaint
             // approach triggered the bordered-paint path too.
             _grid.CellPainting += OnCellPainting;
-            // v4.0 — auto-refresh "События" counts when new dashboard events arrive
-            try { Services.EventPollerService.OnNewEvents += _ => { try { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => { if (!IsDisposed) ReloadGrid(); })); } catch { } }; } catch { }
+            // v4.5.3 — виртуальные тултипы вместо записи в ячейки (см. поля).
+            _grid.CellToolTipTextNeeded += OnCellToolTipTextNeeded;
+            // v4.0 — auto-refresh "События" counts when new dashboard events arrive.
+            // v4.5.0 — через дебаунс: серия событий = один ReloadGrid, а не
+            // перестройка таблицы на каждое событие (JSON + ресорт + репейнт).
+            try { Services.EventPollerService.OnNewEvents += _ => { try { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => { if (!IsDisposed) { _reloadDebounce.Stop(); _reloadDebounce.Start(); } })); } catch { } }; } catch { }
 
             // Commit the edit on Enter / click-away so CellValueChanged fires
             // immediately. Without this the user has to navigate away from
@@ -650,6 +587,11 @@ namespace ShadowRDP.Forms
             };
 
             Controls.Add(_grid);
+            // v4.4.0 — своя тонкая полоса вместо системной (колесо едет через
+            // NativeWindow-хук внутри AttachGrid). v4.5.2: грид — сабкласс
+            // DoubleBufferedDataGridView (был запрет из-за v2.1.69, но причина
+            // была в бордерах, а не в подклассе — снят).
+            ShadowScroll.AttachGrid(_grid);
 
             // v2.1.52: when user clicks ANYWHERE outside the search field
             // and it's empty, blur the field so the bg reverts to Muted.
@@ -667,7 +609,9 @@ namespace ShadowRDP.Forms
             };
             void HookBlur(Control c)
             {
-                if (ReferenceEquals(c, _searchWrapper) || ReferenceEquals(c, _searchBox) || ReferenceEquals(c, _searchPlaceholder) || ReferenceEquals(c, _searchClearBtn)) return;
+                // Весь подтри поиска — своя зона фокуса (клик внутри
+                // враппера фокусит поле сам).
+                if (ReferenceEquals(c, _searchWrapper) || _searchWrapper.Contains(c)) return;
                 c.MouseDown += blurIfEmpty;
                 foreach (Control child in c.Controls) HookBlur(child);
             }
@@ -681,7 +625,7 @@ namespace ShadowRDP.Forms
             FormClosed += (s, e) =>
             {
                 Forms.RdpManagerForm.SessionListChanged -= OnRdpSessionListChanged;
-                _searchDebounce?.Dispose();
+                try { Helpers.UiSearchBox.Dispose(_searchWrapper); } catch { }
             };
 
             // === Status label ===
@@ -762,20 +706,15 @@ namespace ShadowRDP.Forms
             Shown += (s, e) =>
             {
                 SyncLayout();
-                // v2.1.71: force a repaint of the grid after first show.
-                // Without this the grid renders in a "stale" pre-focus state
-                // with faint #BDBCBB borders between every row + column;
-                // clicking any cell clears them (because click → repaint
-                // with focused state). Calling Focus + Invalidate here
-                // replicates the click-induced repaint at first show, so
-                // the borders never appear.
+                // v4.5.2: Force+Invalidate оставили (нужны фокус для колеса и
+                // первый полный кадр), v2.1.71-комментарий про #BDBCBB —
+                // история: бордеров больше нет.
                 try
                 {
                     _grid.Focus();
                     _grid.Invalidate();
-                    // Also re-assert CurrentCell after a tiny delay to catch
-                    // the post-Shown layout pass that some DataGridView
-                    // versions do asynchronously.
+                    // Повторный Invalidate через 50мс — догоняет асинхронный
+                    // post-Shown layout-проход DataGridView.
                     var t = new System.Windows.Forms.Timer { Interval = 50 };
                     t.Tick += (_, _) =>
                     {
@@ -800,6 +739,7 @@ namespace ShadowRDP.Forms
             FormClosing += (s, e) =>
             {
                 try { _cts?.Cancel(); } catch { }
+                try { _reloadDebounce?.Stop(); } catch { }
                 try { SaveColumnWidths(); } catch { /* best-effort */ }
             };
 
@@ -922,10 +862,7 @@ namespace ShadowRDP.Forms
             const int searchH = 32;
             _searchWrapper.Location = new Point(w - searchW - 24, (headerH - searchH) / 2);
             _searchWrapper.Size = new Size(searchW, searchH);
-            using (var path = RoundedRect(new Rectangle(0, 0, searchW, searchH), 6))
-            {
-                _searchWrapper.Region = new System.Drawing.Region(path);
-            }
+            _searchWrapper.Invalidate();
 
             // Filter pills keep their construction-time X positions inside
             // the tabs panel (they're left-aligned). Only width/height need
@@ -946,10 +883,14 @@ namespace ShadowRDP.Forms
             _messageAllBtn.Size = new Size(
                 _messageAllBtn.Tag is int mw ? mw : MeasureButtonTextWidth("Сообщение всем", 28), pillH);
             _messageAllBtn.Location = new Point(_messageAllBtn.Location.X, pillY);
-            // "Инвентаризация ПО" action button — same vertical centring.
+            // "Инвентаризация SOFT" action button — same vertical centring.
             _inventoryBtn.Size = new Size(
-                _inventoryBtn.Tag is int iw ? iw : MeasureButtonTextWidth("Инвентаризация ПО", 28), pillH);
+                _inventoryBtn.Tag is int iw ? iw : MeasureButtonTextWidth("Инвентаризация SOFT", 28), pillH);
             _inventoryBtn.Location = new Point(_inventoryBtn.Location.X, pillY);
+            // v3.9.3BD — "Сводная таблица HARD": держим справа от SOFT.
+            _hardBtn.Size = new Size(
+                _hardBtn.Tag is int hw ? hw : MeasureButtonTextWidth("Сводная таблица HARD", 28), pillH);
+            _hardBtn.Location = new Point(_inventoryBtn.Right + 10, pillY);
 
             // Grid fills the middle band, edge-to-edge (flush left/right/top).
             _grid.Location = new Point(0, gridTop);
@@ -1023,7 +964,6 @@ namespace ShadowRDP.Forms
             var unknownIcon = Helpers.PingStatusIcon.Get(Helpers.PingStatusIcon.State.Unknown);
             var aliveIcon  = Helpers.PingStatusIcon.Get(Helpers.PingStatusIcon.State.Alive);
             var deadIcon   = Helpers.PingStatusIcon.Get(Helpers.PingStatusIcon.State.Dead);
-            int idx = 0;
             // v2.1.78: wrap the row-add loop in WM_SETREDRAW off + Suspend/
             // Resume layout. Without this, DataGridView fires a repaint
             // PER ROW added (Rows.Add triggers OnRowsAdded → paint). For
@@ -1034,7 +974,10 @@ namespace ShadowRDP.Forms
             SendMessage(gridHandle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
             _grid.SuspendLayout();
             // v4.0 — cache new-events counts per computer for "События" column
-            var newCounts = Services.EventDashboardStore.LoadEvents().Where(ev => !ev.Notified).GroupBy(ev => ev.Computer, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            // v4.5.3 — счётчики живут в поле (нужны CellToolTipTextNeeded).
+            _newEventCounts = Services.EventDashboardStore.LoadEvents().Where(ev => !ev.Notified).GroupBy(ev => ev.Computer, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            var newCounts = _newEventCounts;
+            _monitoredComputers.Clear();
             try
             {
                 foreach (var e in entries)
@@ -1052,21 +995,13 @@ namespace ShadowRDP.Forms
                 // Rdp cell stays null — painted on the fly by OnCellPainting
                 // (blue dot when RdpManagerForm has a live session for this computer).
                 var rowIdx = _grid.Rows.Add(icon, null, e.Group ?? "", e.Computer, e.FullName, e.User, e.Phone, e.IPs, e.LastSeen, newEventsText);
-                var row = _grid.Rows[rowIdx];
-                if (e.Monitored) row.Cells["Computer"].ToolTipText = "Отслеживается в дашборде";
-                if (newCnt > 0) row.Cells["NewEvents"].ToolTipText = $"{newCnt} новых событий — откройте Дашбоард";
-
-                // v2.1.77: restore per-cell alternating row coloring. This
-                // was the working setup in v2.1.62 — AlternatingRowsDefaultCellStyle
-                // broke it (different paint path).
-                if (idx % 2 == 1)
-                {
-                    foreach (DataGridViewCell cell in row.Cells)
-                    {
-                        cell.Style.BackColor = Helpers.UiTheme.RowAlt;
-                    }
-                }
-                idx++;
+                // v4.5.3 — БЕЗ cell.ToolTipText: запись тултипа расшаривает
+                // строку (см. поля выше). Мониторимые — в сет для события.
+                if (e.Monitored && !string.IsNullOrWhiteSpace(e.Computer)) _monitoredComputers.Add(e.Computer.Trim());
+                // v4.5.0 — по-ячеечный Style.BackColor для нечётных строк
+                // удалён: честная чересполосица уже задана
+                // AlternatingRowsDefaultCellStyle в ApplyUnified, а этот цикл
+                // аллоцировал ~N×C CellStyle-объектов на каждый ReloadGrid.
             }
             }
             finally
@@ -1079,21 +1014,15 @@ namespace ShadowRDP.Forms
             // Reapply the current filter so newly-loaded rows respect it.
             ApplySearchFilter();
             UpdateStatus();
-            // v2.1.72: set CurrentCell after load. Without this the grid
-            // renders in a pre-click "no current cell" state that draws
-            // faint #BDBCBB borders between every row + column (cosmetic
-            // quirk in DataGridView's pre-focus paint path). Setting
-            // CurrentCell replicates the post-click state where borders
-            // disappear. ClearSelection right after keeps the visual "no
-            // selection" look without re-introducing the no-current-cell
-            // paint path.
+            // v4.5.2 — CurrentCell НЕ ставим: 1px фокус-рамка вокруг текущей
+            // ячейки рисовалась постоянно (hookBlur держит фокус на гриде)
+            // и выглядела как неснимаемая «рамка». v2.1.72-хак (CurrentCell=
+            // Rows[0] против #BDBCBB-бордеров pre-focus состояния) больше не
+            // нужен: бордеров нет вообще, а подложку заливает сабкласс.
             try
             {
-                if (_grid.Rows.Count > 0 && _grid.Columns.Count > 0)
-                {
-                    _grid.CurrentCell = _grid.Rows[0].Cells[0];
-                    _grid.ClearSelection();
-                }
+                _grid.CurrentCell = null;
+                _grid.ClearSelection();
             }
             catch { /* best-effort */ }
         }
@@ -1173,13 +1102,9 @@ namespace ShadowRDP.Forms
                     int newWidth = MeasureButtonTextWidth(newText, 28);
                     kv.Value.Tag = newWidth;
                     kv.Value.Size = new Size(newWidth, 26);
-                    // Re-apply rounded region for the new size.
-                    if (!kv.Value.IsDisposed && newWidth > 0 && kv.Value.Height > 0)
-                    {
-                        kv.Value.Region?.Dispose();
-                        using var path = RoundedRect(new Rectangle(0, 0, newWidth, kv.Value.Height), 2);
-                        kv.Value.Region = new System.Drawing.Region(path);
-                    }
+                    // v4.8.1 — Region удалён (красит гладкий фил); ресайз
+                    // перерисовывается сам через Paint.
+                    try { if (!kv.Value.IsDisposed) kv.Value.Invalidate(); } catch { }
                 }
             }
             catch (Exception ex)
@@ -2267,11 +2192,11 @@ namespace ShadowRDP.Forms
             var bgVar = bgBase;
             lbl.Paint += (s, e) =>
             {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
-                using var path = RoundedRect(r, radius);
-                using var brush = new SolidBrush(bgVar);
-                e.Graphics.FillPath(brush, path);
+    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
+        using var path = RoundedRect(r, radius);
+        using var brush = new SolidBrush(bgVar);
+        e.Graphics.FillPath(brush, path);
                 TextRenderer.DrawText(e.Graphics, text, font, r,
                     Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             };
@@ -2346,7 +2271,7 @@ namespace ShadowRDP.Forms
         private void AddFilterButton(string key, string label, int x, int y, bool isDefault)
         {
             int width = MeasureButtonTextWidth(label, 28);
-            var lbl = new Label
+            var lbl = new Helpers.UiButtons.CustomPaintLabel
             {
                 Text = label,
                 Location = new Point(x, y),
@@ -2359,34 +2284,46 @@ namespace ShadowRDP.Forms
                 Cursor = Cursors.Hand
             };
             ApplyPillStyle(lbl, isDefault);
-            ApplyRoundedRegion(lbl, 1);
+            // v4.8.1 — фон гладкой отрисовкой по состоянию (был Region: лесенка).
+            // v4.9.4 — активность по явному флагу _activePills, не по ForeColor.
+            // v4.9.5 — ховер-заливку рисуем по явному флагу _hoverPills: цвет
+            // шрифта пила на ховере меняться не должен.
+            Helpers.UiButtons.EnableSmoothFill(lbl, () =>
+            {
+                if (_activePills.Contains(lbl)) return Helpers.UiTheme.PillActiveBg;
+                if (_hoverPills.Contains(lbl)) return Helpers.UiTheme.AccentSoft;
+                return Color.Transparent;
+            }, 10, splitCounterDigits: true, opaqueBg: Helpers.UiTheme.Card);
             // Active state gets a 1px rounded border (PillActiveBorder). The
             // base Label already paints the bg/fg; we just overlay the border.
             lbl.Paint += (s, e) =>
             {
-                if (lbl.ForeColor != Helpers.UiTheme.PillActiveFg) return;
+                if (!_activePills.Contains(lbl)) return;
                 var g = e.Graphics;
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 // Draw the border INSIDE the edge so it isn't clipped by the
                 // control's rounded Region (the outer half of a centred stroke
                 // was being cut off — worst on the left side).
-                using var path = Helpers.UiButtons.RoundedRect(new Rectangle(0, 0, lbl.Width - 1, lbl.Height - 1), 1);
+                using var path = Helpers.UiButtons.RoundedRect(new Rectangle(0, 0, lbl.Width - 1, lbl.Height - 1), 10);
                 using var pen = new Pen(Helpers.UiTheme.PillActiveBorder, 1);
                 pen.Alignment = System.Drawing.Drawing2D.PenAlignment.Inset;
                 g.DrawPath(pen, path);
             };
             // Hover — AccentSoft bg INSET 5px each side so it doesn't touch
-            // neighbouring pills. Region shrinks on enter, restores on leave.
+            // neighbouring pills. v4.8.1: красит гладкий фил (BackColor
+            // всегда Transparent, иначе квадратные углы торчат).
+            // v4.9.5: цвет шрифта НЕ меняем — только заливка.
             lbl.MouseEnter += (s, e) =>
             {
                 if (_groupFilter == key) return;
-                lbl.BackColor = Helpers.UiTheme.AccentSoft;
-                lbl.ForeColor = Helpers.UiTheme.Accent;
+                _hoverPills.Add(lbl);
+                lbl.Invalidate();
             };
             lbl.MouseLeave += (s, e) =>
             {
                 if (_groupFilter == key) return;
-                ApplyPillStyle(lbl, active: false);
+                _hoverPills.Remove(lbl);
+                lbl.Invalidate();
             };
             // v3.8.x — left-click filters the table; right-click opens the
             // group-management menu. Using MouseUp (not Click) keeps the two
@@ -2405,7 +2342,7 @@ namespace ShadowRDP.Forms
         // after the last pill so the caller can place the action buttons.
         private int BuildFilterPills()
         {
-            const int pillGap = 18;
+            const int pillGap = 28;   // v4.9.32: +10px между пилами
             const int pillStart = 24;
             int fx = pillStart;
             AddFilterButton("", "Все", fx, 10, true);
@@ -2441,6 +2378,12 @@ namespace ShadowRDP.Forms
                 activePill.BringToFront();
         }
 
+        // v3.9.3CY — отклик на смену цвета пил из «Инструменты → Настройки цвета».
+        private void OnPillColorsChanged()
+        {
+            try { if (!IsDisposed) RebuildFilterPills(); } catch { }
+        }
+
         // Pick black-ish or white text for legibility on an arbitrary background.
         private static Color ContrastColor(Color c)
         {
@@ -2463,16 +2406,7 @@ namespace ShadowRDP.Forms
                 menu.AddItem("Удалить", "delete", () => DeleteGroup(_ctxGroupKey));
             }
             menu.AddSeparator();
-            menu.AddItem("Изменить цвет пилы…", "info", () =>
-            {
-                using var dlg = new ColorDialog { AnyColor = true, FullOpen = true };
-                try { dlg.Color = Helpers.UiTheme.PillActiveBg; } catch { }
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    Helpers.UiTheme.SetPillColors(dlg.Color, ContrastColor(dlg.Color), dlg.Color);
-                    RebuildFilterPills();
-                }
-            });
+            // v3.9.3CY — «Изменить цвет пилы» перенесён в «Инструменты → Настройки цвета».
             menu.Show(this, sender.PointToScreen(loc));
         }
 
@@ -2532,7 +2466,7 @@ namespace ShadowRDP.Forms
         // manually (antialiased rounded fill) instead of a Region mask so
         // every corner stays smooth — the Region clip looked "bitten off"
         // at the top and square at the bottom (v3.7.x).
-        private Label MakeOpenFilesButton(string text, int x, int y)
+        private Label MakeOpenFilesButton(string text, int x, int y, Color? bg = null)
         {
             var font = new Font("Segoe UI Semibold", 9F);
             var lbl = new Label
@@ -2547,25 +2481,26 @@ namespace ShadowRDP.Forms
                 Cursor = Cursors.Hand,
                 BackColor = Color.Transparent
             };
-            var bgVar = Helpers.UiTheme.Accent;
+            var bgVar = bg ?? Helpers.UiTheme.Accent;
+            var bgHoverFixed = bg.HasValue ? ControlPaint.Dark(bg.Value, 0.12f) : Color.Empty;
             lbl.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
-                using var path = RoundedRect(r, 6);
-                using var brush = new SolidBrush(bgVar);
-                e.Graphics.FillPath(brush, path);
+        var r = new Rectangle(0, 0, lbl.Width, lbl.Height);
+        using var path = RoundedRect(r, 6);
+        using var brush = new SolidBrush(bgVar);
+        e.Graphics.FillPath(brush, path);
                 TextRenderer.DrawText(e.Graphics, text, font, r,
                     Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             };
             lbl.MouseEnter += (s, e) =>
             {
-                bgVar = Helpers.UiTheme.AccentHover;
+                bgVar = bg.HasValue ? bgHoverFixed : Helpers.UiTheme.AccentHover;
                 lbl.Invalidate();
             };
             lbl.MouseLeave += (s, e) =>
             {
-                bgVar = Helpers.UiTheme.Accent;
+                bgVar = bg ?? Helpers.UiTheme.Accent;
                 lbl.Invalidate();
             };
             return lbl;
@@ -2576,7 +2511,7 @@ namespace ShadowRDP.Forms
             try
             {
                 using var dlg = new OpenFilesForm();
-                dlg.ShowDialog(this);
+                Helpers.UiModal.ShowDimmed(this, dlg);
             }
             catch (Exception ex)
             {
@@ -2589,11 +2524,25 @@ namespace ShadowRDP.Forms
             try
             {
                 using var dlg = new SoftwareInventoryForm();
-                dlg.ShowDialog(this);
+                Helpers.UiModal.ShowDimmed(this, dlg);
             }
             catch (Exception ex)
             {
                 Logger.Error("SoftwareInventoryForm failed: " + ex.Message);
+            }
+        }
+
+        // v3.9.3BD — "Сводная таблица HARD": железо компьютеров книги.
+        private void OnHardInventoryClicked()
+        {
+            try
+            {
+                using var dlg = new HardwareInventoryForm();
+                Helpers.UiModal.ShowDimmed(this, dlg);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("HardwareInventoryForm failed: " + ex.Message);
             }
         }
 
@@ -2670,18 +2619,23 @@ namespace ShadowRDP.Forms
             }
         }
 
-        private static void ApplyPillStyle(Label lbl, bool active)
+        private void ApplyPillStyle(Label lbl, bool active)
         {
+            // v4.8.1 — BackColor всегда Transparent (фон рисует гладкий фил
+            // из AddFilterButton); иначе квадратные углы торчат из-под пила.
+            // v4.9.4 — активность трекаем явно (_activePills).
+            lbl.BackColor = Color.Transparent;
+            if (active) _activePills.Add(lbl); else _activePills.Remove(lbl);
             if (active)
             {
-                lbl.BackColor = Helpers.UiTheme.PillActiveBg;
                 lbl.ForeColor = Helpers.UiTheme.PillActiveFg;
                 lbl.Font = new Font("Segoe UI Semibold", 9F);
             }
             else
             {
-                lbl.BackColor = Color.Transparent;
-                lbl.ForeColor = Helpers.UiTheme.MutedForeground;
+                // v4.9.4 — inactive в цвет темы, а не MutedForeground: на
+                // Olive тот отдаёт чёрным «грязным» текстом на светлых пилах.
+                lbl.ForeColor = Helpers.UiTheme.Foreground;
                 lbl.Font = new Font("Segoe UI", 9F);
             }
         }
@@ -2732,6 +2686,8 @@ namespace ShadowRDP.Forms
             _openFilesBtn.Visible = string.Equals(key, Helpers.ComputerGroup.Servers, StringComparison.OrdinalIgnoreCase);
             _messageAllBtn.Visible = string.Equals(key, Helpers.ComputerGroup.Users, StringComparison.OrdinalIgnoreCase);
             _inventoryBtn.Visible = string.IsNullOrEmpty(key);
+            // v3.9.3BD — HARD видна там же, где SOFT.
+            _hardBtn.Visible = string.IsNullOrEmpty(key);
             Logger.Info($"Filter pill clicked: key='{key}'");
         }
 
@@ -2776,24 +2732,9 @@ namespace ShadowRDP.Forms
         // experimental manual FillRectangle + RowPostPaint variants.
         private void OnCellPainting(object? sender, DataGridViewCellPaintingEventArgs e)
         {
-            // === Header cells: white bg, dark text, 4px gap ===
-            if (e.RowIndex == -1 && e.ColumnIndex >= 0)
-            {
-                e.Graphics!.FillRectangle(_headerGapBrush, e.CellBounds);
-                var inner = new Rectangle(
-                    e.CellBounds.X + 2, e.CellBounds.Y + 2,
-                    e.CellBounds.Width - 3, e.CellBounds.Height - 4);
-                e.Graphics.FillRectangle(_headerBgBrush, inner);
-                var headerText = _grid.Columns[e.ColumnIndex].HeaderText;
-                var textRect = new Rectangle(
-                    inner.X + 12, inner.Y, inner.Width - 12, inner.Height);
-                TextRenderer.DrawText(e.Graphics, headerText, _headerFont, textRect,
-                    Helpers.UiTheme.Foreground,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter
-                    | TextFormatFlags.EndEllipsis);
-                e.Handled = true;
-                return;
-            }
+            // Хедер красит UiGridStyle.PaintHeaders (подписан раньше в
+            // ApplyUnified) — дубль здесь удалён в v4.5.0 (двойная отрисовка
+            // шапки на каждый кадр).
 
             // === Body cells ===
             if (e.ColumnIndex < 0 || e.RowIndex < 0) return;
@@ -2802,7 +2743,8 @@ namespace ShadowRDP.Forms
             // === Ping column: draw status dot over the bitmap icon ===
             if (colName == "Ping")
             {
-                e.PaintBackground(e.CellBounds, false);
+                // v3.9.3CW — true: активная строка красит и эту колонку.
+                e.PaintBackground(e.CellBounds, true);
                 var computer = _grid.Rows[e.RowIndex].Cells["Computer"].Value?.ToString() ?? "";
                 Color dotColor;
                 if (!string.IsNullOrEmpty(computer) &&
@@ -2837,7 +2779,8 @@ namespace ShadowRDP.Forms
             // === RDP column: blue dot when a live session exists ===
             if (colName == "Rdp")
             {
-                e.PaintBackground(e.CellBounds, false);
+                // v3.9.3CW — true: активная строка красит и эту колонку.
+                e.PaintBackground(e.CellBounds, true);
                 var computer = _grid.Rows[e.RowIndex].Cells["Computer"].Value?.ToString() ?? "";
                 if (!_rdpSessionsCached) RefreshRdpSessions();
                 if (!string.IsNullOrEmpty(computer) && _rdpActiveSessions.Contains(computer))
@@ -2868,9 +2811,13 @@ namespace ShadowRDP.Forms
                 var rect = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - w) / 2, e.CellBounds.Y + (e.CellBounds.Height - h) / 2, w, h);
                 using var path = Helpers.UiButtons.RoundedRect(rect, 6);
                 using var brush = new SolidBrush(bg);
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                // v4.5.3 — Save/Restore как в остальных ветках: раньше
+                // AntiAlias протекал на все последующие ячейки кадра.
+                var gstate4 = e.Graphics!.Save();
+                e.Graphics!.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 e.Graphics.FillPath(brush, path);
-                TextRenderer.DrawText(e.Graphics, txt, new Font("Segoe UI Semibold", 7f), rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                e.Graphics.Restore(gstate4);
+                TextRenderer.DrawText(e.Graphics, txt, _newEventsFont, rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 e.Handled = true;
                 return;
             }
@@ -2878,7 +2825,8 @@ namespace ShadowRDP.Forms
             // === Group column: colored badge ===
             if (colName != "Group") return;
 
-            e.PaintBackground(e.CellBounds, false);
+            // v3.9.3CW — true: активная строка красит и эту колонку.
+            e.PaintBackground(e.CellBounds, true);
             var key = e.Value?.ToString() ?? "";
             var info = Helpers.ComputerGroup.ByKey(key);
             var badgeColors = Helpers.ComputerGroup.BadgeFor(key);
@@ -2892,8 +2840,9 @@ namespace ShadowRDP.Forms
                 var (bgBrush, borderPen) = gdi;
                 // v3.8.x — badge is 10% smaller than the cell-derived box,
                 // kept centred within the cell.
-                int w = (int)((e.CellBounds.Width - 56) * 0.81f);
-                int h = (int)((e.CellBounds.Height - 18) * 0.81f);
+                // v3.9.1 — -15px width, +10px height vs the v3.8.x box; then -2px both.
+                int w = (int)((e.CellBounds.Width - 56) * 0.81f) - 17;
+                int h = (int)((e.CellBounds.Height - 18) * 0.81f) + 8;
                 int offX = e.CellBounds.X + (e.CellBounds.Width - w) / 2;
                 int offY = e.CellBounds.Y + (e.CellBounds.Height - h) / 2;
                 if (!_badgePathCache.TryGetValue((w, h), out var path))
@@ -2902,6 +2851,9 @@ namespace ShadowRDP.Forms
                     _badgePathCache[(w, h)] = path;
                 }
                 var state = e.Graphics!.Save();
+                // v3.9.3 — сглаживание углов бейджа (был Default → лесенка).
+                // Restore(state) ниже вернёт прежний режим сам.
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 e.Graphics.TranslateTransform(offX, offY);
                 e.Graphics.FillPath(bgBrush, path);
                 e.Graphics.DrawPath(borderPen, path);
@@ -2913,6 +2865,27 @@ namespace ShadowRDP.Forms
                     | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
             }
             e.Handled = true;
+        }
+
+        // v4.5.3 — виртуальные тултипы: событие вместо записи в ячейки.
+        // Запись cell.ToolTipText в ReloadGrid расшаривала строки, после
+        // чего DataGridView красил unshared-путь с серыми бордерами-коробками
+        // на строках ниже тултипной (доказано харнессом livetest). Событие
+        // отдаёт тултипы по требованию и состояние строк не трогает.
+        private void OnCellToolTipTextNeeded(object? sender, DataGridViewCellToolTipTextNeededEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            try
+            {
+                var colName = _grid.Columns[e.ColumnIndex].Name;
+                var computer = _grid.Rows[e.RowIndex].Cells["Computer"].Value?.ToString()?.Trim() ?? "";
+                if (colName == "Computer" && !string.IsNullOrEmpty(computer) && _monitoredComputers.Contains(computer))
+                    e.ToolTipText = "Отслеживается в дашборде";
+                else if (colName == "NewEvents" && !string.IsNullOrEmpty(computer)
+                    && _newEventCounts.TryGetValue(computer, out var cnt) && cnt > 0)
+                    e.ToolTipText = $"{cnt} новых событий — откройте Дашбоард";
+            }
+            catch { }
         }
 
         private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(Rectangle r, int radius)
@@ -2957,7 +2930,7 @@ namespace ShadowRDP.Forms
         private string GetSelectedGroup()
         {
             if (_grid.SelectedRows.Count == 0) return "";
-            return _grid.SelectedRows[0].Cells["Group"].Value?.ToString() ?? "";
+            return CellTextByName(_grid.SelectedRows[0], "Group");
         }
 
         private System.Collections.Generic.List<DataGridViewRow> GetSelectedBookRows()
@@ -2966,6 +2939,21 @@ namespace ShadowRDP.Forms
             foreach (DataGridViewRow r in _grid.SelectedRows)
                 if (!r.IsNewRow) list.Add(r);
             return list;
+        }
+
+        // Безопасное чтение ячейки по имени колонки: в выбор может попасть
+        // строка без такой ячейки (например, не-дата строка) — раньше это
+        // роняло UI-поток ArgumentException (debug.log 16.09.2026 08:54:13,
+        // AssignGroupRows: столбец "Computer" не найден).
+        private static string CellTextByName(DataGridViewRow row, string columnName)
+        {
+            try
+            {
+                if (row.DataGridView == null) return "";
+                if (!row.DataGridView.Columns.Contains(columnName)) return "";
+                return row.Cells[columnName].Value?.ToString() ?? "";
+            }
+            catch { return ""; }
         }
 
         // Assigns a group to every selected row and persists to JSON.
@@ -2990,7 +2978,7 @@ namespace ShadowRDP.Forms
             int patched = 0;
             foreach (DataGridViewRow row in rows)
             {
-                var computer = row.Cells["Computer"].Value?.ToString() ?? "";
+                var computer = CellTextByName(row, "Computer");
                 if (string.IsNullOrEmpty(computer)) continue;
                 foreach (var e in entries)
                 {

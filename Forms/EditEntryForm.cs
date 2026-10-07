@@ -30,6 +30,7 @@ namespace ShadowRDP.Forms
         private readonly TextBox _ipsBox;
         private readonly TextBox _lastSeenBox;
         private readonly ComboBox _groupBox;
+        private readonly Panel _card;
         private readonly Label _saveBtn;
         private readonly Label _cancelBtn;
 
@@ -50,16 +51,26 @@ namespace ShadowRDP.Forms
             // v2.2.10: was 440 — Save + Cancel made of MakeFlat Label were
             // overlapping on hover (AutoSize=true + close X positions).
             // Now 480 + MakeFilled buttons width 120/96 with proper gap.
+            // v4.9.34 — корпоративный вид: hero + карточка + футер.
             Text = isAddMode ? "Добавить запись в книгу" : "Редактирование записи";
-            ClientSize = new Size(480, 340);  // v2.2.12: 310 → 340 for shifted buttons
+            ClientSize = new Size(480, 488);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             Font = new Font("Segoe UI", 9F);
-            BackColor = ShadowRDP.Helpers.UiTheme.Background;
+            BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground;
 
-            int y = 16;
+            var hero = ShadowRDP.Helpers.UiModal.Hero(
+                isAddMode ? "Добавить запись в книгу" : "Редактирование записи",
+                "Данные записи адресной книги",
+                "add");
+            Controls.Add(hero);
+
+            _card = ShadowRDP.Helpers.UiModal.Card(12, 90, 456, 358, "Запись", "add", withHeader: false);
+            Controls.Add(_card);
+
+            int y = 14;
 
             _computerBox  = AddRow(ref y, "Компьютер:",    entry.Computer ?? "");
             _fullNameBox  = AddRow(ref y, "Имя (ФИО):",    entry.FullName ?? "");
@@ -72,17 +83,16 @@ namespace ShadowRDP.Forms
 
             // v2.2.10: Save = MakeFilled (#296AA0), Cancel = MakeFilled
             // (MutedForeground gray). Same width range → no overlap on hover.
-            _saveBtn = ShadowRDP.Helpers.UiButtons.MakeFilled(
-                isAddMode ? "Добавить" : "Сохранить", null,
-                ShadowRDP.Helpers.UiTheme.HeaderBar, width: 120, radius: 1);
-            // v2.2.12: shifted down +20px and left +40px per user request.
-            _saveBtn.Location = new Point(204, y + 20);
+            // v4.9.34 — футер корпоративного диалога.
+            _saveBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled(
+                isAddMode ? "Добавить" : "Сохранить", 100);
+            _saveBtn.Location = new Point(247, 458);
             _saveBtn.Click += (s, e) => OnSave();
             Controls.Add(_saveBtn);
 
-            _cancelBtn = ShadowRDP.Helpers.UiButtons.MakeFilled("Отмена", null,
-                ShadowRDP.Helpers.UiTheme.MutedForeground, width: 96, radius: 1);
-            _cancelBtn.Location = new Point(332, y + 20);
+            _cancelBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled("Отмена", 100,
+                bgOverride: ShadowRDP.Helpers.UiTheme.MutedForeground);
+            _cancelBtn.Location = new Point(355, 458);
             _cancelBtn.Click += (s, e) => { _saved = false; Close(); };
             Controls.Add(_cancelBtn);
 
@@ -102,24 +112,18 @@ namespace ShadowRDP.Forms
 
         private TextBox AddRow(ref int y, string label, string value)
         {
-            const int labelX = 16, boxX = 110, boxW = 314;
-            var lbl = new Label
-            {
-                Text = label,
-                Location = new Point(labelX, y + 4),
-                Size = new Size(boxX - labelX - 8, 22),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(60, 60, 60)
-            };
-            Controls.Add(lbl);
+            // v4.9.34 — корпоративный ряд: подпись 7.5pt над полем.
+            var lbl = ShadowRDP.Helpers.UiModal.FieldLabel(label.TrimEnd(':'), 16, y);
+            _card.Controls.Add(lbl);
             var tb = new TextBox
             {
                 Text = value ?? "",
-                Location = new Point(boxX, y),
-                Size = new Size(boxW, 22)
+                Location = new Point(16, y + 16),
+                Size = new Size(424, 26),
+                Font = new Font("Segoe UI", 10F)
             };
-            Controls.Add(tb);
-            y += 30;
+            _card.Controls.Add(tb);
+            y += 48;
             return tb;
         }
 
@@ -128,21 +132,14 @@ namespace ShadowRDP.Forms
         // (not the display label) so OnSave writes the right value to JSON.
         private ComboBox AddGroupRow(ref int y, string label, string currentValue)
         {
-            const int labelX = 16, boxX = 110, boxW = 314;
-            var lbl = new Label
-            {
-                Text = label,
-                Location = new Point(labelX, y + 4),
-                Size = new Size(boxX - labelX - 8, 22),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(60, 60, 60)
-            };
-            Controls.Add(lbl);
+            var lbl = ShadowRDP.Helpers.UiModal.FieldLabel(label.TrimEnd(':'), 16, y);
+            _card.Controls.Add(lbl);
             var cb = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Location = new Point(boxX, y),
-                Size = new Size(boxW, 22)
+                Location = new Point(16, y + 16),
+                Size = new Size(424, 26),
+                Font = new Font("Segoe UI", 10F)
             };
             // Build items by adding display strings directly to Items — bypasses
             // data binding entirely. Two earlier attempts (ValueTuple, then a
@@ -176,8 +173,8 @@ namespace ShadowRDP.Forms
             int sel = keys.FindIndex(k => string.Equals(k, currentValue, StringComparison.OrdinalIgnoreCase));
             if (sel < 0) sel = 0;
             if (cb.Items.Count > 0) cb.SelectedIndex = sel;
-            Controls.Add(cb);
-            y += 30;
+            _card.Controls.Add(cb);
+            y += 48;
             return cb;
         }
 
@@ -261,7 +258,7 @@ namespace ShadowRDP.Forms
         public static bool ShowEditDialog(IWin32Window owner, AddressBookEntry entry)
         {
             using var dlg = new EditEntryForm(entry);
-            dlg.ShowDialog(owner);
+            UiModal.ShowDimmed(owner, dlg);
             return dlg._saved;
         }
 
@@ -273,7 +270,7 @@ namespace ShadowRDP.Forms
         {
             var fresh = new AddressBookEntry();
             using var dlg = new EditEntryForm(fresh, isAddMode: true);
-            dlg.ShowDialog(owner);
+            UiModal.ShowDimmed(owner, dlg);
             if (!dlg._saved) return null;
             return dlg._addResult;
         }

@@ -141,33 +141,32 @@ namespace ShadowRDP.Helpers
             else base.Show(screenLocation);
         }
 
-        private const int CornerRadius = 4;
+        private const int CornerRadius = 4; // v4.8.1: окна скругляет DWM (см. выше), константа — для истории
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // v4.8.1 — скругление ОКНА меню отдаём DWM (гладко на Win11, как в
+            // вебе): Region режет без сглаживания. На Win10 игнорируется.
+            try
+            {
+                int pref = 2; // DWMWCP_ROUND; attr 33 = DWMWA_WINDOW_CORNER_PREFERENCE
+                DwmSetWindowAttribute(Handle, 33, ref pref, sizeof(int));
+            }
+            catch { }
+        }
+
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
-            ApplyRoundedRegion();
         }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            ApplyRoundedRegion();
-        }
-
-        private void ApplyRoundedRegion()
-        {
-            if (Width <= 0 || Height <= 0) return;
-            var old = Region;
-            using var path = new System.Drawing.Drawing2D.GraphicsPath();
-            int r = CornerRadius;
-            path.AddArc(0, 0, r, r, 180, 90);
-            path.AddArc(Width - r, 0, r, r, 270, 90);
-            path.AddArc(Width - r, Height - r, r, r, 0, 90);
-            path.AddArc(0, Height - r, r, r, 90, 90);
-            path.CloseAllFigures();
-            Region = new Region(path);
-            old?.Dispose();
         }
 
         // === layout ===

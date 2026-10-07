@@ -32,7 +32,7 @@ namespace ShadowRDP
                 MaximizeBox = false,
                 MinimizeBox = false,
                 Font = new Font("Segoe UI", 9F),
-                BackColor = ShadowRDP.Helpers.UiTheme.Background
+                BackColor = ShadowRDP.Helpers.UiTheme.DialogBackground
             };
 
             var lbl = new Label
@@ -129,7 +129,7 @@ namespace ShadowRDP
             var okBtn = new NeoButton
             {
                 Text = "OK",
-                Location = new Point(248, 158),
+                Location = new Point(239, 145),
                 Size = new Size(80, 30),
                 Accent = true
             };
@@ -138,7 +138,7 @@ namespace ShadowRDP
             var cancelBtn = new NeoButton
             {
                 Text = "Отмена",
-                Location = new Point(344, 158),
+                Location = new Point(335, 145),
                 Size = new Size(80, 30),
                 Accent = false
             };
@@ -194,7 +194,7 @@ namespace ShadowRDP
                 }
             };
 
-            return dlg.ShowDialog(owner) == DialogResult.OK ? result : null;
+            return Helpers.UiModal.ShowDimmed(owner, dlg) == DialogResult.OK ? result : null;
         }
 
         // Cryptographically strong password generator. Guarantees at least

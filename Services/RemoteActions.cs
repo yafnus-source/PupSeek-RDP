@@ -194,6 +194,10 @@ namespace ShadowRDP.Services
         // book has an IP for this computer, uses the IP; otherwise uses the
         // computer name directly. The manager is a singleton — repeated calls
         // add new tabs instead of new windows.
+        //
+        // v3.9.3 — transient: подключение из книги НЕ пишет сессию
+        // в сайдбар и на диск (вкладка открывается, следа нет).
+        // Повторный коннект к тому же хосту переиспользует вкладку.
         public static bool LaunchRdp(string computer)
         {
             if (string.IsNullOrWhiteSpace(computer)) return false;
@@ -215,10 +219,15 @@ namespace ShadowRDP.Services
                 }
                 catch { /* fall through with computer name */ }
 
-                // Open in RDP Manager (singleton — adds tab if already open).
+                // Open in RDP Manager (singleton — reuses tab if already open).
                 var mgr = Forms.RdpManagerForm.Instance;
-                mgr.AddSession(computer.Trim(), ip);
-                Logger.Info($"RDP Manager: session added for {computer} (target: {ip ?? computer})");
+                if (mgr.TryShowSession(computer.Trim()))
+                {
+                    Logger.Info($"RDP Manager: reused existing tab for {computer}");
+                    return true;
+                }
+                mgr.AddSession(computer.Trim(), ip, transient: true);
+                Logger.Info($"RDP Manager: transient session for {computer} (target: {ip ?? computer}), no sidebar trace");
                 return true;
             }
             catch (Exception ex)

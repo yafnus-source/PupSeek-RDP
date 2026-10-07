@@ -107,21 +107,23 @@ namespace ShadowRDP.Services
                 new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency, CancellationToken = ct },
                 (computer, token) =>
                 {
-                    int count = 0;
-                    try
+                    return new ValueTask(Task.Run(async () =>
                     {
-                        var entries = ScanOne(computer);
-                        count = entries.Count;
-                        foreach (var e in entries)
-                            results.Add(e);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn($"SoftwareInventory scan failed for {computer}: {ex.Message}");
-                    }
-                    int current = Interlocked.Increment(ref done);
-                    onProgress?.Invoke(current, total, computer, count);
-                    return ValueTask.CompletedTask;
+                        int count = 0;
+                        try
+                        {
+                            var entries = await ScanOneAsync(computer, token);
+                            count = entries.Count;
+                            foreach (var e in entries)
+                                results.Add(e);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Warn($"SoftwareInventory scan failed for {computer}: {ex.Message}");
+                        }
+                        int current = Interlocked.Increment(ref done);
+                        onProgress?.Invoke(current, total, computer, count);
+                    }, token));
                 });
 
             return results
@@ -131,11 +133,13 @@ namespace ShadowRDP.Services
         }
 
         [SupportedOSPlatform("windows")]
-        private static List<SoftwareEntry> ScanOne(string computer)
+        // v3.9.3 Фаза 2 — async: никакого .Wait() на пуле (раньше Remote
+        // Registry держал поток до 3с на хост → голодание пула).
+        private static async Task<List<SoftwareEntry>> ScanOneAsync(string computer, CancellationToken ct)
         {
             var entries = new List<SoftwareEntry>();
 
-            if (!PingService.IsAlive(computer, 1500))
+            if (!await PingService.IsAliveAsync(computer, 1500).ConfigureAwait(false))
             {
                 Logger.Info($"SoftwareInventory {computer}: ping failed, skipped");
                 return entries;
@@ -186,7 +190,8 @@ namespace ShadowRDP.Services
                         }
                     }
                 });
-                if (!rrTask.Wait(TimeSpan.FromSeconds(3)))
+                                var completed = await Task.WhenAny(rrTask, Task.Delay(3000, ct)).ConfigureAwait(false);
+                if (completed != rrTask)
                 {
                     Logger.Info($"SoftwareInventory {computer}: Remote Registry timed out (3s)");
                     entries.Clear();

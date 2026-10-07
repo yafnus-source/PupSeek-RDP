@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace ShadowRDP
@@ -68,6 +69,72 @@ namespace ShadowRDP
         public static string DashboardEventsPath => Path.Combine(DataDir, "dashboard_events.json");
         public static string DashboardSettingsPath => Path.Combine(DataDir, "dashboard_settings.json");
         public static string MonitoredComputersPath => Path.Combine(DataDir, "monitored_computers.json");
+        // v4.1 — Zabbix Agent direct (без сервера): история опроса агентов
+        public static string ZabbixAgentHistoryPath => Path.Combine(DataDir, "zabbix_agent_history.json");
+        public static string ZabbixAgentSettingsPath => Path.Combine(DataDir, "zabbix_agent_settings.json");
+        // v4.3.x — ручные записи мониторинга (даш Z «Добавить запись»): хосты,
+        // которые пользователь добавил в мониторинг прямо из даша, без книги.
+        public static string ZabbixManualHostsPath => Path.Combine(DataDir, "zabbix_manual_hosts.json");
+        // v4.6 — мониторинг web-ресурсов (даш Z, ряд WEB): URL для проверок,
+        // история точек (код + время ответа), настройки опроса.
+        public static string WebMonitorUrlsPath => Path.Combine(DataDir, "webmon_urls.json");
+        public static string WebMonitorHistoryPath => Path.Combine(DataDir, "webmon_history.json");
+        public static string WebMonitorSettingsPath => Path.Combine(DataDir, "webmon_settings.json");
+        // v4.2 — FTP выгрузка (общий для W и Z)
+        public static string FtpSettingsPath => Path.Combine(DataDir, "ftp_upload_settings.json");
+        // v4.7 — ICMP-пинг хостов даша Z (колонка «Пинг», опрос раз в час).
+        public static string HostPingPath => Path.Combine(DataDir, "hostping.json");
+        // v4.3 — TODO.шная (изолированный модуль, удаление todo.json = откат фичи)
+        public static string TodoPath => Path.Combine(DataDir, "todo.json");
+        public static string TodoSettingsPath => Path.Combine(DataDir, "todo_settings.json");
+        // v4.7 — реестр встраиваемых модулей: id → включён (modules.json).
+        // Отсутствие записи = выключен по умолчанию («не установлен»).
+        public static string ModulesSettingsPath => Path.Combine(DataDir, "modules.json");
+        // v3.9.3BD — кэш сводки железа (Сводная таблица HARD).
+        public static string HardwareInventoryPath => Path.Combine(DataDir, "hardware_inventory.json");
+
+        // Путь к data/ директории сайта монитора (для синхронизации JSON)
+        private static string? _monitorDataDir;
+        public static string MonitorDataDir
+        {
+            get
+            {
+                if (_monitorDataDir != null) return _monitorDataDir;
+                // 1) Рядом с exe: monitor_data
+                var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+                var c1 = Path.Combine(exeDir, "monitor_data");
+                if (Directory.Exists(c1)) { _monitorDataDir = c1; return _monitorDataDir; }
+                // 2) %PROGRAMDATA%\PupSeekRDP\monitor_data
+                var c2 = Path.Combine(DataDir, "monitor_data");
+                if (Directory.Exists(c2)) { _monitorDataDir = c2; return _monitorDataDir; }
+                // 3) Dev: относительно исходников — C:\temp\Clo\cpro\monitor\data
+                var c3 = @"C:\temp\Clo\cpro\monitor\data";
+                if (Directory.Exists(c3)) { _monitorDataDir = c3; return _monitorDataDir; }
+                // 4) Создаём рядом с exe
+                Directory.CreateDirectory(c1);
+                _monitorDataDir = c1;
+                return _monitorDataDir;
+            }
+        }
+
+        public static void SyncToMonitor(string srcPath, string fileName)
+        {
+            // Пишем во все возможные папки — чтобы сайт точно увидел
+            string[] targets = {
+                MonitorDataDir,                                     // определённый путь
+                @"C:\temp\Clo\cpro\monitor\data",                  // dev-сайт
+                Path.Combine(DataDir, "monitor_data")              // %PROGRAMDATA%
+            };
+            var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var dir in targets)
+            {
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+                var dst = Path.Combine(dir, fileName);
+                var normDir = Path.GetFullPath(dir);
+                if (written.Contains(normDir)) continue;
+                try { File.Copy(srcPath, dst, true); written.Add(normDir); } catch { }
+            }
+        }
 
         public static void EnsureDataDir()
         {

@@ -37,7 +37,7 @@ namespace ShadowRDP.Helpers
         public static GroupEditResult? Show(IWin32Window? owner, ComputerGroup.Info? existing)
         {
             using var dlg = new GroupEditDialog(existing);
-            return dlg.ShowDialog(owner) == DialogResult.OK
+            return UiModal.ShowDimmed(owner, dlg) == DialogResult.OK
                 ? new GroupEditResult(dlg._nameBox.Text.Trim(), dlg._accent)
                 : null;
         }
@@ -125,14 +125,14 @@ namespace ShadowRDP.Helpers
             var okBtn = new Button
             {
                 Text = "OK",
-                Location = new Point(262, 178),
+                Location = new Point(247, 169),
                 Size = new Size(80, 28),
                 DialogResult = DialogResult.OK
             };
             var cancelBtn = new Button
             {
                 Text = "Отмена",
-                Location = new Point(350, 178),
+                Location = new Point(335, 169),
                 Size = new Size(80, 28),
                 DialogResult = DialogResult.Cancel
             };

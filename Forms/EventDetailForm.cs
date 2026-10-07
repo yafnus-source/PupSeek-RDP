@@ -1,19 +1,20 @@
 using System;
 using System.Drawing;
-using System.IO;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Helpers;
 
 namespace ShadowRDP.Forms
 {
+    // Детали события дашборда (двойной клик по записи).
+    //
+    // v4.3.3 — редизайн в стиле FTP-эталона (как окно «Ответ ИИ»):
+    // градиентный hero (все метаданные события в подзаголовке), текст
+    // в карточке, «Закрыть» в футере. Логика показа без изменений.
     public class EventDetailForm : Form
     {
-        private readonly Panel _header;
-        private readonly Panel _infoPanel;
-        private readonly TextBox _txtBox;
-        private readonly Panel _btnBar;
-        private readonly Label _btnClose;
-        private const int BarH = 40;
+        private readonly ScrollHiddenTextBox _txtBox;
+        private readonly Label _closeBtn;
 
         public EventDetailForm(int eventId, string source, string level, string computer, string message, string detailedDescription)
         {
@@ -23,37 +24,29 @@ namespace ShadowRDP.Forms
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
             KeyPreview = true;
-            BackColor = UiTheme.Card;
+            BackColor = UiTheme.DialogBackground;
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); } };
 
-            _header = new Panel { BackColor = UiTheme.HeaderBar };
-            var titleLabel = new Label
-            {
-                Text = $"EventID {eventId} — {source}",
-                Font = new Font("Segoe UI Semibold", 11f),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                AutoSize = true,
-                Location = new Point(16, 14)
-            };
-            _header.Controls.Add(titleLabel);
+            // ——— 1. Hero (без крестика: у окна есть штатный) ———
+            var hero = UiModal.Hero($"EventID {eventId}",
+                $"{source}  •  Уровень: {level}  •  Хост: {computer}", "info");
 
-            _infoPanel = new Panel { BackColor = UiTheme.Muted, Padding = new Padding(12, 8, 12, 8) };
-            var infoLabel = new Label
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 8.5f),
-                ForeColor = UiTheme.Foreground,
-                Text = $"Уровень: {level}  |  Хост: {computer}"
-            };
-            _infoPanel.Controls.Add(infoLabel);
+            // ——— 2. Content: detail text inside a section card ———
+            var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };
+            var cardText = UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            cardText.Dock = DockStyle.Fill;
+            content.Controls.Add(cardText);
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { cardText.Region?.Dispose(); cardText.Region = null; } catch { }
 
-            _txtBox = new TextBox
+            // v4.4.0 — подкласс без системной полосы (пилот ShadowScroll).
+            _txtBox = new ScrollHiddenTextBox
             {
                 Multiline = true,
                 ReadOnly = true,
                 WordWrap = true,
                 ScrollBars = ScrollBars.Vertical,
-                BackColor = UiTheme.Card,
+                BackColor = UiTheme.DialogCard,
                 ForeColor = UiTheme.Foreground,
                 Font = new Font("Segoe UI", 10f),
                 BorderStyle = BorderStyle.None,
@@ -61,24 +54,32 @@ namespace ShadowRDP.Forms
                 HideSelection = false,
                 Text = string.IsNullOrWhiteSpace(detailedDescription) ? message : detailedDescription
             };
+            cardText.Controls.Add(_txtBox);
+            cardText.Resize += (s, e) => FitCardChild(cardText, _txtBox);
+            FitCardChild(cardText, _txtBox);
+            ShadowScroll.AttachTextBox(_txtBox);
 
-            _btnClose = UiButtons.MakeCompactFilled("Закрыть", 80);
-            _btnClose.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
-            _btnBar = new Panel { BackColor = UiTheme.Card };
-            _btnBar.Controls.Add(_btnClose);
+            // ——— 3. Footer with close button ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            _closeBtn = UiButtons.MakeCompactFilled("Закрыть", 100);
+            _closeBtn.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
+            footer.Controls.Add(_closeBtn);
+            footer.Resize += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
 
-            Controls.Add(_header);
-            Controls.Add(_infoPanel);
-            Controls.Add(_txtBox);
-            Controls.Add(_btnBar);
+            // Dock order: content Fill first, hero Top, footer Bottom last —
+            // the last added docks first, so the footer hugs the bottom edge.
+            Controls.Add(content);
+            Controls.Add(hero);
+            Controls.Add(footer);
 
-            _txtBox.BringToFront();
-            _btnBar.BringToFront();
-            _btnClose.BringToFront();
-
-            ApplyLayout();
-            Resize += (s, e) => ApplyLayout();
-            KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); } };
+            var dpiScale = UiModal.ApplyDpiScale(this);
+            if (dpiScale > 1.001f)
+                ClientSize = new Size((int)Math.Round(ClientSize.Width * dpiScale), (int)Math.Round(ClientSize.Height * dpiScale));
 
             Shown += (s, e) =>
             {
@@ -88,43 +89,26 @@ namespace ShadowRDP.Forms
                 Left = Math.Max(wa.Left, Math.Min(Left, wa.Right - Width));
                 Top = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height));
 
-                ApplyLayout();
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
                 ActiveControl = null;
 
                 BeginInvoke(new Action(() =>
                 {
                     _txtBox.Select(0, 0);
                     _txtBox.ScrollToCaret();
-                    DumpDiag("Shown+afterBeginInvoke");
                 }));
             };
         }
 
-        private void ApplyLayout()
+        // Child of a headerless card: uniform 14px padding on all sides.
+        private static void FitCardChild(Panel card, Control child)
         {
-            var cw = ClientSize.Width;
-            var ch = ClientSize.Height;
-            _header.SetBounds(0, 0, cw, 48);
-            _infoPanel.SetBounds(0, 48, cw, 60);
-            _txtBox.SetBounds(0, 108, cw, ch - 108 - BarH);
-            _btnBar.SetBounds(0, ch - BarH, cw, BarH);
-            _btnClose.Location = new Point(cw - 98, (BarH - _btnClose.Height) / 2);
+            child.Bounds = new Rectangle(14, 14,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 28));
         }
 
-        private void DumpDiag(string tag)
-        {
-            try
-            {
-                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PupSeekRDP");
-                Directory.CreateDirectory(dir);
-                var path = Path.Combine(dir, "eventdetail_diag.log");
-                var wa = Screen.FromControl(this).WorkingArea;
-                using var sw = new StreamWriter(path, append: true);
-                sw.WriteLine($"{DateTime.Now:HH:mm:ss.fff} | {tag} | Form=({Left},{Top}) {Width}x{Height} Client={ClientSize.Width}x{ClientSize.Height} DPI={DeviceDpi} WorkArea=({wa.Left},{wa.Top},{wa.Width},{wa.Height})");
-                sw.WriteLine($"  header={_header.Bounds} info={_infoPanel.Bounds} txt={_txtBox.Bounds} bar={_btnBar.Bounds} btn={_btnClose.Bounds} btnVisible={_btnClose.Visible} btnParent={_btnBar.Bounds}");
-                sw.WriteLine($"  txt Multiline={_txtBox.Multiline} Wrap={_txtBox.WordWrap} Scroll={_txtBox.ScrollBars} Len={_txtBox.TextLength} Sel={_txtBox.SelectionStart}+{_txtBox.SelectionLength} ActiveControl={ActiveControl?.Name}");
+        // Скругление углов: режем Region контрола по скруглённому rect.
             }
-            catch { }
-        }
-    }
 }
