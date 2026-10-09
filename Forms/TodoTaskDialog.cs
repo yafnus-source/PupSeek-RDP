@@ -137,6 +137,7 @@ namespace ShadowRDP.Forms
             _cbRemind.Items.AddRange(new object[] {
                 "В срок", "За 10 минут", "За 15 минут", "За 20 минут", "За 30 минут" });
             _cbRemind.SelectedIndex = 1;
+            Helpers.UiCombo.Apply(_cbRemind);
             cardRem.Controls.Add(_cbRemind);
             _chkRepeatRem = new CheckBox
             {

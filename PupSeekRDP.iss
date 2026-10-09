@@ -29,7 +29,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
 Source: "C:\temp\Clo\cpro\bin\Release\net8.0-windows\win-x64\publish\PupSeekRDP.exe"; DestDir: "{app}"; Flags: ignoreversion
-; TODO.шная bundle: APK меняется простой заменой файла тем же именем, .iss трогать не надо
+; TODO/шня bundle: APK меняется простой заменой файла тем же именем, .iss трогать не надо
 Source: "C:\temp\Clo\cpro\Bundle\Android\TODO-shnaya.apk"; DestDir: "{app}\Android"; Flags: ignoreversion
 Source: "C:\temp\Clo\cpro\Bundle\Server\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "C:\temp\Clo\cpro\Bundle\Docs\*"; DestDir: "{app}\Docs"; Flags: ignoreversion

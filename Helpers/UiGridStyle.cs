@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
@@ -238,6 +239,55 @@ namespace ShadowRDP.Helpers
                 grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = BlueHeadText;
             }
             PaintHeaders(grid, 12);
+        }
+
+        // v3.9.5 — стиль таблицы из «Открытых файлов» (OpenFilesForm):
+        // ApplyUnified + кремовые строки #FDFBF7 + скруглённые углы 7px +
+        // системный скролл ShadowScroll. Применять к гридам новых окон,
+        // чтобы они выглядели как в образце.
+        public static void ApplyCardGrid(DataGridView grid, int rowHeight = 36, int headerHeight = 36)
+        {
+            ApplyUnified(grid, rowHeight, headerHeight);
+            grid.DefaultCellStyle.BackColor = Color.FromArgb(0xFD, 0xFB, 0xF7);
+            RoundCorners(grid, 7);
+            try { ShadowRDP.Controls.ShadowScroll.AttachGrid(grid); } catch { }
+        }
+
+        // То же + присоединение к headerless-карточке (UiModal.Card с
+        // withHeader:false) с равномерным отступом 14px — как FitCardChild
+        // в OpenFilesForm.
+        public static void ApplyCardGrid(DataGridView grid, Panel card, int rowHeight = 36, int headerHeight = 36)
+        {
+            ApplyCardGrid(grid, rowHeight, headerHeight);
+            card.Controls.Add(grid);
+            void Fit() => grid.Bounds = new Rectangle(14, 14,
+                Math.Max(50, card.ClientSize.Width - 28),
+                Math.Max(50, card.ClientSize.Height - 28));
+            card.Resize += (s, e) => { Fit(); try { card.Invalidate(true); } catch { } };
+            grid.Resize += (s, e) => { try { grid.Invalidate(); } catch { } };
+            grid.ColumnWidthChanged += (s, e) => { try { grid.Invalidate(); } catch { } };
+            Fit();
+        }
+
+        // Скруглённые углы через Region (копия OpenFilesForm.RoundCorners).
+        private static void RoundCorners(Control c, int radius)
+        {
+            void Update()
+            {
+                if (c.IsDisposed || c.Width <= 0 || c.Height <= 0) return;
+                c.Region?.Dispose();
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                var r = new Rectangle(0, 0, c.Width, c.Height);
+                int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                c.Region = new Region(path);
+            }
+            c.Resize += (s, e) => Update();
+            Update();
         }
     }
 }

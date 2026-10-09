@@ -93,6 +93,7 @@ namespace ShadowRDP.Forms
             };
             _groupBox.Items.AddRange((existingGroups ?? System.Array.Empty<string>()).Select(g => (object)g).ToArray());
             _groupBox.Text = group ?? "";
+            Helpers.UiCombo.Apply(_groupBox);
             card.Controls.Add(_groupBox);
 
             var lblNotes = Helpers.UiModal.FieldLabel("Заметки", 16, 206);

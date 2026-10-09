@@ -404,6 +404,7 @@ namespace ShadowRDP.Forms
             var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
             c.Items.AddRange(new object[] { "FTP plain 21", "FTPS Explicit 21", "SFTP 22" });
             c.SelectedIndex = protocol == FtpProtocol.Sftp ? 2 : protocol == FtpProtocol.FtpsExplicit ? 1 : 0;
+            Helpers.UiCombo.Apply(c);
             return c;
         }
 
@@ -413,6 +414,7 @@ namespace ShadowRDP.Forms
             c.Items.AddRange(new object[] { "Passive", "Active" });
             c.SelectedItem = data;
             if (c.SelectedIndex < 0) c.SelectedIndex = 0;
+            Helpers.UiCombo.Apply(c);
             return c;
         }
 
@@ -421,14 +423,16 @@ namespace ShadowRDP.Forms
             var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
             c.Items.AddRange(new object[] { "Пароль", "Ключ (PK)" });
             c.SelectedIndex = mode == SftpAuthMode.PrivateKey ? 1 : 0;
+            Helpers.UiCombo.Apply(c);
             return c;
         }
 
         private static ComboBox SchedCombo(FtpScheduleMode mode)
         {
             var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-            c.Items.AddRange(new object[] { "Интервал", "Ежедневно", "Еженедельно" });
+            c.Items.AddRange(new object[] { "Каждые N мин", "Ежедневно", "Еженедельно" });
             c.SelectedIndex = mode == FtpScheduleMode.Daily ? 1 : mode == FtpScheduleMode.Weekly ? 2 : 0;
+            Helpers.UiCombo.Apply(c);
             return c;
         }
 

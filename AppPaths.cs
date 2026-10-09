@@ -86,9 +86,12 @@ namespace ShadowRDP
         public static string FtpSettingsPath => Path.Combine(DataDir, "ftp_upload_settings.json");
         // v4.7 — ICMP-пинг хостов даша Z (колонка «Пинг», опрос раз в час).
         public static string HostPingPath => Path.Combine(DataDir, "hostping.json");
-        // v4.3 — TODO.шная (изолированный модуль, удаление todo.json = откат фичи)
+        // v4.3 — TODO/шня (изолированный модуль, удаление todo.json = откат фичи)
         public static string TodoPath => Path.Combine(DataDir, "todo.json");
         public static string TodoSettingsPath => Path.Combine(DataDir, "todo_settings.json");
+        // v3.9.5 — настройка палитры команд (Ctrl+K): ключи скрытых строк
+        // каталога { "hidden": [...] }. Нет файла = всё видно.
+        public static string PalettePath => Path.Combine(DataDir, "palette.json");
         // v4.7 — реестр встраиваемых модулей: id → включён (modules.json).
         // Отсутствие записи = выключен по умолчанию («не установлен»).
         public static string ModulesSettingsPath => Path.Combine(DataDir, "modules.json");

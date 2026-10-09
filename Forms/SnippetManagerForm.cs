@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Models;
 using ShadowRDP.Services;
 
@@ -12,10 +14,15 @@ namespace ShadowRDP.Forms
     // имя удаляется, чтобы не оставалось дублей.
     public class SnippetManagerForm : Form
     {
-        private readonly ListView _list;
+        private readonly DataGridView _grid;
         private readonly TextBox _nameBox;
         private readonly TextBox _groupBox;
+        private readonly TextBox _descBox;
         private readonly TextBox _cmdBox;
+        private readonly TextBox _searchBox;
+        private readonly ComboBox _groupCombo;
+        private readonly List<string> _groupValues = new() { "" };
+        private bool _fillingGroups;
         private readonly Label _saveBtn;
         private readonly Label _delBtn;
         private readonly Label _closeBtn;
@@ -29,16 +36,20 @@ namespace ShadowRDP.Forms
 
         public SnippetManagerForm()
         {
-            Text = "Сниппеты SSH";
+            Text = "Управление сниппетами";
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
+            // v3.9.5 — регулировка мышкой + запоминание размера; минимум
+            // под фильтры + список + карточку редактирования.
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
             MinimizeBox = false;
+            MinimumSize = new Size(900, 860);
             Font = new Font("Segoe UI", 9F);
             BackColor = Helpers.UiTheme.DialogBackground;
-            ClientSize = new Size(470, 620);
+            // v3.9.5 — размер как у пикера «Сниппеты SSH» (1120×1050).
+            ClientSize = new Size(1120, 1050);
 
-            var hero = Helpers.UiModal.Hero("Сниппеты SSH",
+            var hero = Helpers.UiModal.Hero("Управление сниппетами",
                 "сохранённые команды для терминала", "terminal");
             hero.Dock = DockStyle.Top;
             Controls.Add(hero);
@@ -70,47 +81,93 @@ namespace ShadowRDP.Forms
             };
             Controls.Add(footer);
 
-            _list = new ListView
+            // v3.9.5 — поиск + фильтр по группам над списком.
+            var filterBar = new Panel
             {
-                Location = new Point(12, 92),
-                Size = new Size(446, 196),
-                View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                HideSelection = false,
-                BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.Foreground,
-                BorderStyle = BorderStyle.FixedSingle
+                Location = new Point(12, 86),
+                Size = new Size(1096, 40),
+                BackColor = Helpers.UiTheme.DialogBackground
             };
-            _list.Columns.Add("Имя", 130, HorizontalAlignment.Left);
-            _list.Columns.Add("Группа", 90, HorizontalAlignment.Left);
-            _list.Columns.Add("Команда", 210, HorizontalAlignment.Left);
-            _list.SelectedIndexChanged += (_, _) => OnSelect();
-            Controls.Add(_list);
+            filterBar.Controls.Add(Helpers.UiModal.FieldLabel("Поиск", 0, 10));
+            _searchBox = new TextBox();
+            var searchWrap = Helpers.UiModal.Field(_searchBox, 380);
+            searchWrap.Location = new Point(56, 6);
+            filterBar.Controls.Add(searchWrap);
+            filterBar.Controls.Add(Helpers.UiModal.FieldLabel("Группа", 448, 10));
+            _groupCombo = new ComboBox
+            {
+                Location = new Point(508, 6),
+                Size = new Size(240, 26),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Segoe UI", 9F)
+            };
+            Helpers.UiCombo.Apply(_groupCombo);
+            filterBar.Controls.Add(_groupCombo);
+            var resetBtn = Helpers.UiButtons.MakeCompactFlat("Сброс", 70);
+            resetBtn.Location = new Point(760, 8);
+            resetBtn.Click += (_, _) =>
+            {
+                try { _searchBox.Text = ""; } catch { }
+                try { _groupCombo.SelectedIndex = 0; } catch { }
+            };
+            filterBar.Controls.Add(resetBtn);
+            Controls.Add(filterBar);
+            _searchBox.TextChanged += (_, _) => RenderGrid(null);
+            _groupCombo.SelectedIndexChanged += (_, _) =>
+            {
+                if (!_fillingGroups) RenderGrid(null);
+            };
 
-            var card = Helpers.UiModal.Card(12, 300, 446, 246, "Команда", "terminal");
+            // v3.9.5 — список сниппетов в стиле «Открытых файлов».
+            var cardList = Helpers.UiModal.Card(12, 134, 1096, 358, "", "", withHeader: false);
+            try { cardList.Region?.Dispose(); cardList.Region = null; } catch { }
+            Controls.Add(cardList);
+
+            _grid = new DoubleBufferedDataGridView
+            {
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                MultiSelect = false
+            };
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Name", HeaderText = "Имя", FillWeight = 25, MinimumWidth = 90 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Group", HeaderText = "Группа", FillWeight = 15, MinimumWidth = 60 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Command", HeaderText = "Команда", FillWeight = 40, MinimumWidth = 120 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Description", HeaderText = "Пояснение", FillWeight = 20, MinimumWidth = 100 });
+            Helpers.UiGridStyle.ApplyCardGrid(_grid, cardList);
+            _grid.SelectionChanged += (_, _) => OnSelect();
+
+            var card = Helpers.UiModal.Card(12, 504, 1096, 482, "Команда", "terminal");
             Controls.Add(card);
 
             card.Controls.Add(Helpers.UiModal.FieldLabel("Имя", 16, 48));
             _nameBox = new TextBox();
-            var nameWrap = Helpers.UiModal.Field(_nameBox, 414);
+            var nameWrap = Helpers.UiModal.Field(_nameBox, 1064);
             nameWrap.Location = new Point(16, 64);
             card.Controls.Add(nameWrap);
 
-            card.Controls.Add(Helpers.UiModal.FieldLabel("Группа (необязательно)", 16, 108));
+            card.Controls.Add(Helpers.UiModal.FieldLabel("Группа (необязательно)", 16, 104));
             _groupBox = new TextBox();
-            var groupWrap = Helpers.UiModal.Field(_groupBox, 414);
-            groupWrap.Location = new Point(16, 124);
+            var groupWrap = Helpers.UiModal.Field(_groupBox, 1064);
+            groupWrap.Location = new Point(16, 120);
             card.Controls.Add(groupWrap);
 
-            card.Controls.Add(Helpers.UiModal.FieldLabel("Команда", 16, 168));
+            card.Controls.Add(Helpers.UiModal.FieldLabel("Пояснение (необязательно)", 16, 160));
+            _descBox = new TextBox();
+            var descWrap = Helpers.UiModal.Field(_descBox, 1064);
+            descWrap.Location = new Point(16, 176);
+            card.Controls.Add(descWrap);
+
+            card.Controls.Add(Helpers.UiModal.FieldLabel("Команда", 16, 216));
             _cmdBox = new TextBox
             {
                 Multiline = true,
                 AcceptsReturn = true,
                 ScrollBars = ScrollBars.Vertical,
-                Location = new Point(16, 184),
-                Size = new Size(414, 50),
+                Location = new Point(16, 232),
+                Size = new Size(1064, 238),
                 BorderStyle = BorderStyle.FixedSingle
             };
             card.Controls.Add(_cmdBox);
@@ -129,32 +186,117 @@ namespace ShadowRDP.Forms
             _closeBtn.Click += (_, _) => Close();
 
             Render(null);
+
+            // v3.9.5 — ресайз: фильтры/список/карточка по ширине окна,
+            // карточка редактирования прижата к футеру, список тянется.
+            Resize += (_, _) => LayoutContent();
+            LayoutContent();
+            Services.WindowStateStore.Register(this, "snippetManager");
+
+            void LayoutContent()
+            {
+                try
+                {
+                    int w = ClientSize.Width, h = ClientSize.Height;
+                    int cw = Math.Max(600, w - 24);
+                    filterBar.Width = cw;
+                    cardList.Width = cw;
+                    card.Width = cw;
+                    card.Top = Math.Max(314, h - 52 - 12 - 482);
+                    cardList.Height = Math.Max(140, card.Top - 134 - 12);
+
+                    int iw = Math.Max(300, card.ClientSize.Width - 32);
+                    nameWrap.Width = iw;
+                    groupWrap.Width = iw;
+                    descWrap.Width = iw;
+                    _cmdBox.Width = iw;
+                    _cmdBox.Height = Math.Max(80, card.ClientSize.Height - 232 - 12);
+                }
+                catch { }
+            }
         }
 
         private void Render(string? selectName)
         {
-            _list.BeginUpdate();
-            _list.Items.Clear();
-            foreach (var s in SshSnippetStore.All())
+            RenderGroups();
+            RenderGrid(selectName);
+        }
+
+        private void RenderGroups()
+        {
+            _fillingGroups = true;
+            try
             {
-                var item = new ListViewItem(new[] { s.Name, s.Group, s.Command });
-                item.Tag = s.Name;
-                _list.Items.Add(item);
+                string cur = _groupValues.Count > 0 && _groupCombo.SelectedIndex >= 0
+                    && _groupCombo.SelectedIndex < _groupValues.Count
+                    ? _groupValues[_groupCombo.SelectedIndex] : "";
+                var groups = SshSnippetStore.All()
+                    .Select(s => s.Group ?? "")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                _groupValues.Clear();
+                _groupValues.Add("");
+                _groupCombo.Items.Clear();
+                _groupCombo.Items.Add("Все группы");
+                foreach (var g in groups)
+                {
+                    _groupValues.Add(g);
+                    _groupCombo.Items.Add(g.Length == 0 ? "(без группы)" : g);
+                }
+                int idx = _groupValues.FindIndex(v =>
+                    string.Equals(v, cur, StringComparison.OrdinalIgnoreCase));
+                _groupCombo.SelectedIndex = idx >= 0 ? idx : 0;
+            }
+            finally { _fillingGroups = false; }
+        }
+
+        private void RenderGrid(string? selectName)
+        {
+            string q = (_searchBox.Text ?? "").Trim();
+            string g = _groupValues.Count > 0 && _groupCombo.SelectedIndex >= 0
+                && _groupCombo.SelectedIndex < _groupValues.Count
+                ? _groupValues[_groupCombo.SelectedIndex] : "";
+            var list = SshSnippetStore.All();
+            if (g.Length > 0)
+                list = list.Where(s => string.Equals(s.Group ?? "", g,
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+            if (q.Length > 0)
+                list = list.Where(s =>
+                    s.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (s.Group ?? "").IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    s.Command.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    s.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+            list = list
+                .OrderBy(s => s.Group ?? "", StringComparer.OrdinalIgnoreCase)
+                .ThenBy(s => s.Name ?? "", StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _grid.SuspendLayout();
+            _grid.Rows.Clear();
+            foreach (var s in list)
+            {
+                int ri = _grid.Rows.Add(s.Name, s.Group, s.Command, s.Description);
+                _grid.Rows[ri].Tag = s.Name;
                 if (selectName != null && string.Equals(s.Name, selectName,
                     StringComparison.OrdinalIgnoreCase))
-                    item.Selected = true;
+                {
+                    _grid.ClearSelection();
+                    _grid.Rows[ri].Selected = true;
+                    try { _grid.FirstDisplayedScrollingRowIndex = ri; } catch { }
+                }
             }
-            _list.EndUpdate();
+            _grid.ResumeLayout();
         }
 
         private void OnSelect()
         {
-            if (_list.SelectedItems.Count == 0) return;
-            var name = _list.SelectedItems[0].Text;
+            if (_grid.SelectedRows.Count == 0) return;
+            var name = _grid.SelectedRows[0].Cells[0].Value?.ToString() ?? "";
             var s = SshSnippetStore.Find(name);
             if (s == null) return;
             _nameBox.Text = s.Name;
             _groupBox.Text = s.Group;
+            _descBox.Text = s.Description;
             _cmdBox.Text = s.Command;
             _selected = s.Name;
         }
@@ -163,9 +305,10 @@ namespace ShadowRDP.Forms
         {
             _nameBox.Text = "";
             _groupBox.Text = "";
+            _descBox.Text = "";
             _cmdBox.Text = "";
             _selected = null;
-            foreach (ListViewItem i in _list.SelectedItems) i.Selected = false;
+            _grid.ClearSelection();
         }
 
         private void Save()
@@ -182,6 +325,7 @@ namespace ShadowRDP.Forms
             {
                 Name = name,
                 Group = _groupBox.Text.Trim(),
+                Description = _descBox.Text.Trim(),
                 Command = _cmdBox.Text
             };
             // Переименование выбранной записи: сначала убрать старое имя.

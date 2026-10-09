@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Models;
 using ShadowRDP.Services;
 
@@ -14,7 +15,7 @@ namespace ShadowRDP.Forms
     // в json не сохраняются. Статусы — из ForwardManager (StateChanged).
     public class PortForwardForm : Form
     {
-        private readonly ListView _list;
+        private readonly DataGridView _grid;
         private readonly TextBox _nameBox;
         private readonly ComboBox _sessionCombo;
         private readonly ComboBox _kindCombo;
@@ -39,9 +40,12 @@ namespace ShadowRDP.Forms
         {
             Text = "Туннели SSH";
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
+            // v3.9.5 — регулировка мышкой + запоминание размера; минимум
+            // под ряд «Имя · Сессия SSH» и «Тип · Порт · Назначение».
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
             MinimizeBox = false;
+            MinimumSize = new Size(680, 480);
             Font = new Font("Segoe UI", 9F);
             BackColor = Helpers.UiTheme.DialogBackground;
             ClientSize = new Size(780, 560);
@@ -81,27 +85,34 @@ namespace ShadowRDP.Forms
             };
             Controls.Add(footer);
 
-            _list = new ListView
+            // v3.9.5 — список туннелей в стиле «Открытых файлов».
+            var cardList = Helpers.UiModal.Card(12, 92, 756, 176, "", "", withHeader: false);
+            try { cardList.Region?.Dispose(); cardList.Region = null; } catch { }
+            Controls.Add(cardList);
+
+            _grid = new DoubleBufferedDataGridView
             {
-                Location = new Point(12, 92),
-                Size = new Size(756, 176),
-                View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                HideSelection = false,
-                BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.Foreground,
-                BorderStyle = BorderStyle.FixedSingle
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                MultiSelect = false
             };
-            _list.Columns.Add("Имя", 150);
-            _list.Columns.Add("Тип", 90);
-            _list.Columns.Add("Порт", 60, HorizontalAlignment.Right);
-            _list.Columns.Add("Назначение", 230);
-            _list.Columns.Add("SSH", 150);
-            _list.Columns.Add("Статус", 66);
-            _list.SelectedIndexChanged += (_, _) => OnSelect();
-            _list.DoubleClick += (_, _) => _ = ToggleRunAsync();
-            Controls.Add(_list);
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Name", HeaderText = "Имя", FillWeight = 20, MinimumWidth = 90 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Kind", HeaderText = "Тип", FillWeight = 12, MinimumWidth = 70 });
+            var colBind = new DataGridViewTextBoxColumn
+            { Name = "Bind", HeaderText = "Порт", FillWeight = 8, MinimumWidth = 50 };
+            colBind.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            colBind.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight;
+            _grid.Columns.Add(colBind);
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Target", HeaderText = "Назначение", FillWeight = 31, MinimumWidth = 130 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Ssh", HeaderText = "SSH", FillWeight = 20, MinimumWidth = 110 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Status", HeaderText = "Статус", FillWeight = 9, MinimumWidth = 66 });
+            Helpers.UiGridStyle.ApplyCardGrid(_grid, cardList);
+            _grid.SelectionChanged += (_, _) => OnSelect();
+            _grid.CellDoubleClick += (_, _) => _ = ToggleRunAsync();
 
             var card = Helpers.UiModal.Card(12, 280, 756, 176, "Параметры", "gear");
 
@@ -120,6 +131,7 @@ namespace ShadowRDP.Forms
                 BackColor = Helpers.UiTheme.DialogCard,
                 ForeColor = Helpers.UiTheme.Foreground
             };
+            Helpers.UiCombo.Apply(_sessionCombo);
             card.Controls.Add(_sessionCombo);
 
             card.Controls.Add(Helpers.UiModal.FieldLabel("Тип", 16, 108));
@@ -133,6 +145,7 @@ namespace ShadowRDP.Forms
             };
             _kindCombo.Items.AddRange(new object[] { "локальный", "удалённый", "SOCKS5 (dynamic)" });
             _kindCombo.SelectedIndex = 0;
+            Helpers.UiCombo.Apply(_kindCombo);
             card.Controls.Add(_kindCombo);
 
             card.Controls.Add(Helpers.UiModal.FieldLabel("Порт", 200, 108));
@@ -147,7 +160,8 @@ namespace ShadowRDP.Forms
             thWrap.Location = new Point(296, 124);
             card.Controls.Add(thWrap);
 
-            card.Controls.Add(Helpers.UiModal.FieldLabel("Порт назнач.", 550, 108));
+            var tpLbl = Helpers.UiModal.FieldLabel("Порт назнач.", 550, 108);
+            card.Controls.Add(tpLbl);
             _targetPortBox = new TextBox();
             var tpWrap = Helpers.UiModal.Field(_targetPortBox, 80);
             tpWrap.Location = new Point(550, 124);
@@ -179,6 +193,36 @@ namespace ShadowRDP.Forms
             ForwardManager.StateChanged += OnStateChanged;
             FormClosed += (_, _) => ForwardManager.StateChanged -= OnStateChanged;
             Render(null);
+
+            // v3.9.5 — ресайз: карточки по ширине окна, «Параметры»
+            // прижата к футеру, список тянется в остаток высоты.
+            Resize += (_, _) => LayoutContent();
+            LayoutContent();
+            Services.WindowStateStore.Register(this, "portForward");
+
+            void LayoutContent()
+            {
+                try
+                {
+                    int w = ClientSize.Width, h = ClientSize.Height;
+                    int cw = Math.Max(400, w - 24);
+                    cardList.Width = cw;
+                    card.Width = cw;
+                    // Параметры — над футером (штатный отступ 52px),
+                    // список не ниже 80px (92 + 80 + зазор 12).
+                    card.Top = Math.Max(184, h - 52 - 52 - 176);
+                    cardList.Height = Math.Max(80, card.Top - 92 - 12);
+
+                    int iw = card.ClientSize.Width;
+                    _sessionCombo.Width = Math.Max(300, iw - 306 - 16);
+                    // «Порт назнач.» прижат вправо, хост тянется в остаток.
+                    int tpLeft = Math.Max(380, iw - 96);
+                    tpLbl.Left = tpLeft;
+                    tpWrap.Left = tpLeft;
+                    thWrap.Width = Math.Max(160, tpLeft - 8 - 296);
+                }
+                catch { }
+            }
         }
 
         private void OnStateChanged()
@@ -208,30 +252,23 @@ namespace ShadowRDP.Forms
         private void Render(string? selectId)
         {
             var selected = selectId ?? _selectedId;
-            _list.BeginUpdate();
-            _list.Items.Clear();
+            _grid.SuspendLayout();
+            _grid.Rows.Clear();
             foreach (var t in PortForwardStore.All())
             {
                 var sess = _sshSessions.FirstOrDefault(s => s.Id == t.SessionId);
                 var sshLabel = sess != null ? sess.Target : "—";
                 var target = t.Kind == "dynamic" ? "SOCKS5" : $"{t.TargetHost}:{t.TargetPort}";
                 var running = ForwardManager.IsRunning(t.Id);
-                var item = new ListViewItem(new[]
-                {
-                    t.Name,
-                    t.Kind,
-                    t.BindPort.ToString(),
-                    target,
-                    sshLabel,
-                    running ? "запущен" : "стоп"
-                })
-                { Tag = t.Id };
-                item.ForeColor = running ? Color.FromArgb(56, 161, 105) : Helpers.UiTheme.Foreground;
-                _list.Items.Add(item);
+                int ri = _grid.Rows.Add(t.Name, t.Kind, t.BindPort.ToString(),
+                    target, sshLabel, running ? "запущен" : "стоп");
+                var row = _grid.Rows[ri];
+                row.Tag = t.Id;
+                if (running) row.DefaultCellStyle.ForeColor = Color.FromArgb(56, 161, 105);
                 if (selected != null && string.Equals(t.Id, selected, StringComparison.OrdinalIgnoreCase))
-                    item.Selected = true;
+                    row.Selected = true;
             }
-            _list.EndUpdate();
+            _grid.ResumeLayout();
             UpdateRunButton();
         }
 
@@ -243,8 +280,8 @@ namespace ShadowRDP.Forms
 
         private PortForward? Current()
         {
-            if (_list.SelectedItems.Count == 0) return null;
-            var id = _list.SelectedItems[0].Tag as string;
+            if (_grid.SelectedRows.Count == 0) return null;
+            var id = _grid.SelectedRows[0].Tag as string;
             return id == null ? null : PortForwardStore.Find(id);
         }
 
@@ -272,7 +309,7 @@ namespace ShadowRDP.Forms
             _targetHostBox.Text = "";
             _targetPortBox.Text = "";
             _selectedId = null;
-            foreach (ListViewItem i in _list.SelectedItems) i.Selected = false;
+            _grid.ClearSelection();
             UpdateRunButton();
         }
 

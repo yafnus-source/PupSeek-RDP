@@ -28,6 +28,7 @@ namespace ShadowRDP
         private Helpers.ThemedContextMenu _trayMenu = null!;
         // Not readonly — installed on Shown, not in ctor.
         private GlobalMouseHook? _mouseHook;
+        private Helpers.GlobalKeyboardHook? _kbdHook;
         private static bool _realExit;
         private static ShadowRdpAppContext? _instance;
         // v3.9.1 — клик по баллуну Todo-напоминаний открывает TODO.шную, а не Даш W
@@ -124,6 +125,13 @@ namespace ShadowRDP
                 _mouseHook = new GlobalMouseHook();
                 _mouseHook.CtrlMiddleButtonDown += OnCtrlMiddleClick;
                 _mouseHook.Start();
+                // v3.9.5 — глобальный Ctrl+K: работает из любого места,
+                // пока активно наше окно (RDP-сессия, WebView2, Даш).
+                // Колбэк хука обязан вернуться мгновенно, поэтому палитру
+                // открываем асинхронно через BeginInvoke.
+                _kbdHook = new Helpers.GlobalKeyboardHook();
+                _kbdHook.CtrlKDown += (_, _) => OpenPaletteFromHook();
+                _kbdHook.Start();
             };
 
             // v3.7.0 — KeePass startup flow. The master password is NEVER
@@ -195,6 +203,9 @@ namespace ShadowRDP
             // v4.7 — фоновые сервисы стартуют только у включённых модулей
             // (бывшие безусловные TodoSyncService/TodoReminderService).
             try { Services.ModuleManager.StartEnabled(); } catch (Exception ex) { try { Logger.Warn($"ModuleManager StartEnabled failed: {ex.Message}"); } catch { } }
+            // v3.9.5 — планировщик автобэкапа (окно Backup… в Инструментах):
+            // проверка раз в минуту + догон просроченного на старте.
+            try { Services.BackupService.StartScheduler(); } catch (Exception ex) { try { Logger.Warn($"Backup scheduler failed: {ex.Message}"); } catch { } }
         }
 
         // Build a popup with one row per active RDP Manager session and
@@ -203,10 +214,13 @@ namespace ShadowRDP
         private void OnCtrlMiddleClick(object? sender, Point screenLoc)
         {
             var menu = new Helpers.ThemedContextMenu();
-            menu.AddHeader("Активные сессии");
             var sessions = Forms.RdpManagerForm.IsOpen
                 ? Forms.RdpManagerForm.Instance.GetActiveSessions()
                 : new System.Collections.Generic.List<Forms.RdpManagerForm.SessionInfo>();
+
+            // v3.9.5 — счётчик в хедере убран (просьба пользователя);
+            // IP остаётся в правой колонке пункта.
+            menu.AddHeader("Активные сессии");
 
             if (sessions.Count == 0)
             {
@@ -216,17 +230,41 @@ namespace ShadowRDP
             {
                 foreach (var sess in sessions)
                 {
-                    var label = string.IsNullOrEmpty(sess.Ip)
-                        ? sess.Computer
-                        : $"{sess.Computer}   ({sess.Ip})";
                     var captured = sess.Computer;  // closure capture
-                    menu.AddItem(label, "computer", () => ActivateRdpSession(captured));
+                    menu.AddItem(sess.Computer, "computer",
+                        () => ActivateRdpSession(captured),
+                        string.IsNullOrEmpty(sess.Ip) ? null : sess.Ip);
                 }
             }
 
             // menu.Show(Point) is UI-thread safe because the WH_MOUSE_LL
             // callback runs on the UI thread (it dispatches via our message pump).
             menu.Show(null, screenLoc);
+        }
+
+        // v3.9.5 — Ctrl+K из низкоуровневого хука: открываем палитру
+        // асинхронно (колбэк хука блокировать нельзя). Проверка
+        // «палитра уже открыта» — внутри, на момент исполнения.
+        private void OpenPaletteFromHook()
+        {
+            try
+            {
+                if (!Forms.RdpManagerForm.IsOpen) return;
+                var mgr = Forms.RdpManagerForm.Instance;
+                if (mgr.IsDisposed || !mgr.IsHandleCreated) return;
+                mgr.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (System.Windows.Forms.Form.ActiveForm
+                            is Forms.CommandPaletteForm) return;
+                        if (!Forms.RdpManagerForm.IsOpen) return;
+                        mgr.ShowPalette(System.Windows.Forms.Form.ActiveForm);
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
         }
 
         private void ActivateRdpSession(string computer)
@@ -244,7 +282,7 @@ namespace ShadowRDP
             Logger.Info($"Quick-switch menu → activated session '{computer}'");
         }
 
-// v4.7 — трей собирается из включённых модулей (бывшая жёсткая TODO.шная):
+// v4.7 — трей собирается из включённых модулей (бывшая жёсткая TODO/шня):
             // выключенный модуль убирает свой пункт. Пересобирается ЗАНОВО
             // (новый экземпляр меню) и вживую по ModuleManager.StateChanged:
             // ThemedContextMenu строит Items из спеки один раз при Show.

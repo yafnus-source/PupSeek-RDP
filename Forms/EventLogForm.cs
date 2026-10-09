@@ -61,16 +61,19 @@ namespace ShadowRDP.Forms
             _logCombo = new ComboBox { Location = new Point(70, 80), Size = new Size(140, 22), DropDownStyle = ComboBoxStyle.DropDownList };
             _logCombo.Items.AddRange(new object[] { "System", "Application", "Security", "Setup", "Windows PowerShell" });
             _logCombo.SelectedIndex = 0;
+            Helpers.UiCombo.Apply(_logCombo);
 
             var lblPeriod = new Label { Text = "Период:", Location = new Point(220, 82), Size = new Size(50, 22), TextAlign = ContentAlignment.MiddleLeft };
             _periodCombo = new ComboBox { Location = new Point(274, 80), Size = new Size(90, 22), DropDownStyle = ComboBoxStyle.DropDownList };
             _periodCombo.Items.AddRange(new object[] { "1 час", "4 часа", "24 часа", "7 дней", "30 дней", "Всё время" });
             _periodCombo.SelectedIndex = 2;
+            Helpers.UiCombo.Apply(_periodCombo);
 
             var lblLevel = new Label { Text = "Уровень:", Location = new Point(374, 82), Size = new Size(60, 22), TextAlign = ContentAlignment.MiddleLeft };
             _levelCombo = new ComboBox { Location = new Point(434, 80), Size = new Size(120, 22), DropDownStyle = ComboBoxStyle.DropDownList };
-            _levelCombo.Items.AddRange(new object[] { "Любой", "Critical", "Error", "Warning", "Information" });
+            _levelCombo.Items.AddRange(new object[] { "Все", "Critical", "Error", "Warning", "Information" });
             _levelCombo.SelectedIndex = 1;
+            Helpers.UiCombo.Apply(_levelCombo);
 
             _findBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Найти");
             _findBtn.Location = new Point(564, 78);

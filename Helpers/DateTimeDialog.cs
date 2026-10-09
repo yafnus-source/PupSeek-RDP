@@ -4,7 +4,7 @@ using System.Windows.Forms;
 
 namespace ShadowRDP.Helpers
 {
-    // "Выбрать дату..." в TODO.шная — сразу видимые календарь и часы.
+    // "Выбрать дату..." в TODO/шня — сразу видимые календарь и часы.
     // Возвращает выбранные дату+время или null при отмене (Esc/Отмена).
     public static class DateTimeDialog
     {

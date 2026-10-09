@@ -173,6 +173,7 @@ namespace ShadowRDP.Forms
             int sel = keys.FindIndex(k => string.Equals(k, currentValue, StringComparison.OrdinalIgnoreCase));
             if (sel < 0) sel = 0;
             if (cb.Items.Count > 0) cb.SelectedIndex = sel;
+            Helpers.UiCombo.Apply(cb);
             _card.Controls.Add(cb);
             y += 48;
             return cb;
