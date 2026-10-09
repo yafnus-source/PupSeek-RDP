@@ -1124,7 +1124,7 @@ namespace ShadowRDP.Forms
                         var title = string.IsNullOrWhiteSpace(s.DisplayName) ? s.Computer : s.DisplayName;
                         var rdpTitle = title;
                         items.Add(new Forms.PaletteItem { Title = $"RDP: {rdpTitle}",
-                            Category = "Открытые сессии", Action = () => ActivateSession(s) });
+                            Category = "Открытые сессии", IconKey = "computer", Action = () => ActivateSession(s) });
                     }
                     foreach (var cs in _customSessions)
                     {
@@ -1137,13 +1137,15 @@ namespace ShadowRDP.Forms
                             _ => "SSH"
                         };
                         items.Add(new Forms.PaletteItem { Title = $"{kind}: {cTitle}",
-                            Category = "Открытые сессии", Action = () => ActivateCustomSession(cs) });
+                            Category = "Открытые сессии",
+                            IconKey = cs.Kind == Models.SessionKind.Web ? "globe" : "terminal",
+                            Action = () => ActivateCustomSession(cs) });
                     }
                     foreach (var es in _embeddedSessions)
                     {
                         var eTitle = string.IsNullOrWhiteSpace(es.Entry.Name) ? es.Entry.Path : es.Entry.Name;
                         items.Add(new Forms.PaletteItem { Title = $"Встроенное: {eTitle}",
-                            Category = "Открытые сессии", Action = () => ActivateEmbeddedProgram(es) });
+                            Category = "Открытые сессии", IconKey = "gear", Action = () => ActivateEmbeddedProgram(es) });
                     }
                     var consoles = new List<Controls.ConsoleSessionControl>();
                     if (_cmdSession != null) consoles.Add(_cmdSession);
@@ -1154,7 +1156,7 @@ namespace ShadowRDP.Forms
                     {
                         var consTitle = cons.SessionTitle;
                         items.Add(new Forms.PaletteItem { Title = $"Консоль: {consTitle}",
-                            Category = "Открытые сессии", Action = () => ActivateConsoleSession(cons) });
+                            Category = "Открытые сессии", IconKey = "terminal", Action = () => ActivateConsoleSession(cons) });
                     }
 
                     // v3.9.5 — недавние консоли «Встроить ММС» (динамика,
@@ -1163,8 +1165,9 @@ namespace ShadowRDP.Forms
                     {
                         var captured = entry;
                         var mName = string.IsNullOrWhiteSpace(entry.Name) ? entry.Path : entry.Name;
-                        items.Add(new Forms.PaletteItem { Title = $"ММС: {mName}",
-                            Category = "ММС", Action = () => OpenEmbedProgram(captured) });
+                        items.Add(new Forms.PaletteItem { Key = Services.PaletteCatalog.RecentKey(entry.Path),
+                            Title = $"ММС: {mName}",
+                            Category = "ММС", IconKey = "gear", Action = () => OpenEmbedProgram(captured) });
                     }
 
                     // v3.9.5 — статичные строки из единого каталога
@@ -1188,6 +1191,7 @@ namespace ShadowRDP.Forms
                             Forms.RemoteConsoleForm.Show(own, null, hosts);
                         },
                         ["tunnels"] = () => Forms.PortForwardForm.Show(own),
+                        ["backup"] = () => Forms.BackupForm.Show(own),
                         ["dash-events"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events),
                         ["dash-monitor"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor),
                         ["dash-web"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Web),
@@ -1244,7 +1248,7 @@ namespace ShadowRDP.Forms
                     {
                         if (!staticActions.TryGetValue(def.Key, out var act)) continue;
                         items.Add(new Forms.PaletteItem { Key = def.Key,
-                            Title = def.Title, Category = def.Category, Action = act });
+                            Title = def.Title, Category = def.Category, IconKey = def.IconKey, Action = act });
                     }
                     var chosen = Forms.CommandPaletteForm.Run(own, items);
                     // Выполнение — после закрытия модальной палитры.
