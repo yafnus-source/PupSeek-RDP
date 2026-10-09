@@ -121,31 +121,16 @@ namespace ShadowRDP.Forms
             _grid = new DoubleBufferedDgv();
             _grid.Dock = DockStyle.Fill;
             _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            _grid.AllowUserToAddRows = false;
-            _grid.AllowUserToDeleteRows = false;
-            _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             _grid.MultiSelect = true;
-            _grid.ReadOnly = true;
-            _grid.RowTemplate.Height = 32;
-            _grid.BackgroundColor = UiTheme.Card;
-            _grid.BorderStyle = BorderStyle.None;
-            _grid.GridColor = UiTheme.BorderSubtle;
-            _grid.CellBorderStyle = DataGridViewCellBorderStyle.None;
-            _grid.ColumnHeadersDefaultCellStyle.BackColor = Color.White;
-            _grid.ColumnHeadersDefaultCellStyle.ForeColor = UiTheme.Foreground;
-            _grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9f);
-            _grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
-            _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-            _grid.ColumnHeadersHeight = 32;
-            _grid.RowHeadersVisible = false;
-            _grid.EnableHeadersVisualStyles = false;
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Date", HeaderText = "Дата", FillWeight = 90, MinimumWidth = 70 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "Время", FillWeight = 80, MinimumWidth = 60 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Summary", HeaderText = "Событие", FillWeight = 300, MinimumWidth = 150 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Location", HeaderText = "Место", FillWeight = 120, MinimumWidth = 80 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Статус", FillWeight = 80, MinimumWidth = 60 });
             _grid.CellPainting += OnGridCellPainting;
-            ShadowScroll.AttachGrid(_grid);
+            // v3.9.5 — единый стиль таблицы (как в «Открытых файлах»):
+            // ApplyUnified + #FDFBF7 + скруглённые углы + ShadowScroll.
+            UiGridStyle.ApplyCardGrid(_grid, 36, 36);
             cardGrid.Controls.Add(_grid);
             // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
             try { cardGrid.Region?.Dispose(); cardGrid.Region = null; } catch { }

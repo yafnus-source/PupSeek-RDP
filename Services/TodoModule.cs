@@ -4,27 +4,27 @@ using ShadowRDP.Models;
 
 namespace ShadowRDP.Services
 {
-    // v4.7 — первый встраиваемый модуль: TODO.шная. По умолчанию «не установлен»
+    // v4.7 — первый встраиваемый модуль: TODO/шня. По умолчанию «не установлен»
     // (кнопки в сайдбаре/трее нет, сервисы не стартуют), пока не включён в
     // «Инструменты → Модули». Отключение — это установка тумблера, данные
     // todo.json сохраняются и вернутся при повторном включении.
     public sealed class TodoModule : AppModule
     {
         public override string Id => "todo";
-        public override string Name => "TODO.шная";
+        public override string Name => "TODO/шня";
         public override string Description => "Личные задачи: список, сроки, повторы, напоминания из трея. Данные: todo.json.";
         public override string Version => "1.0";
         public override bool DefaultEnabled => false;
         public override bool ShowInSidebar => true;
         public override string IconKey => "tasks";
-        public override string TrayLabel => "TODO.шная";
+        public override string TrayLabel => "TODO/шня";
 
         public override string SidebarText()
         {
             try
             {
                 var count = TodoStore.Load().Count(x => !x.Done);
-                return count > 0 ? $"TODO.шная  • {count}" : Name;
+                return count > 0 ? $"TODO/шня  • {count}" : Name;
             }
             catch { return Name; }
         }

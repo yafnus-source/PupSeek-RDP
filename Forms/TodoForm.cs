@@ -12,7 +12,7 @@ using ShadowRDP.Services;
 
 namespace ShadowRDP.Forms
 {
-    // TODO.шная — isolated todo tab, no RDP/WMI dependency.
+    // TODO/шня — isolated todo tab, no RDP/WMI dependency.
     // Embedded like AddressBookForm / DashboardForm: TopLevel=false, Dock=Fill in RdpManagerForm._mainArea via _todoHost.
     // Data: %PROGRAMDATA%\PupSeekRDP\todo.json  (TodoStore) — deleting resets feature.
     public class TodoForm : Form
@@ -46,14 +46,14 @@ namespace ShadowRDP.Forms
 
         public TodoForm()
         {
-            Text = "TODO.шная";
+            Text = "TODO/шня";
             BackColor = UiTheme.Background;
             FormBorderStyle = FormBorderStyle.None;
             Dock = DockStyle.Fill;
 
             // Header — цвет hero выбирается пользователем (v3.9.3BH).
             var header = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = UiTheme.HeroBg };
-            var title = new Label { Text = "TODO.ШНАЯ", Font = new Font("Segoe UI Semibold", 11f), ForeColor = UiTheme.HeroFg, BackColor = Color.Transparent, AutoSize = true, Location = new Point(16, 14) };
+            var title = new Label { Text = "TODO/шня", Font = new Font("Segoe UI Semibold", 11f), ForeColor = UiTheme.HeroFg, BackColor = Color.Transparent, AutoSize = true, Location = new Point(16, 14) };
             header.Controls.Add(title);
             void RefreshHeroColors()
             {
@@ -147,7 +147,11 @@ namespace ShadowRDP.Forms
                 _btnDelSel.Enabled = false;
                 actHost.Width = ax;
             }
-            actHost.Location = new Point(200, 10);
+            // v3.9.5 — пилюли сразу за названием (как в Даше «События»/
+            // «Монитор»): отступ 12px от правого края заголовка, а не
+            // фиксированные x=200.
+            actHost.Location = new Point(
+                16 + TextRenderer.MeasureText(title.Text, title.Font).Width + 12, 10);
             header.Controls.Add(actHost);
 
             Controls.Add(header);
@@ -243,7 +247,7 @@ namespace ShadowRDP.Forms
                 var hit = _grid.HitTest(e.X, e.Y);
                 if (hit.RowIndex != -1) return; // на строке — уже обработал CellMouseDown
                 var menu = new Helpers.ThemedContextMenu();
-                menu.AddHeader("TODO.шная");
+                menu.AddHeader("TODO/шня");
                 menu.AddItem("Добавить запись", "add", () => OnAdd());
                 menu.Show(this, _grid.PointToScreen(e.Location));
             };
@@ -341,7 +345,7 @@ namespace ShadowRDP.Forms
                 if (items.Count == 0) return;
                 var preview = string.Join("\n", items.Take(3).Select(x => "• " + (((x!.Text ?? "").Length > 60) ? x.Text.Substring(0, 60) + "..." : x.Text)));
                 if (items.Count > 3) preview += $"\n…и ещё {items.Count - 3}";
-                if (MessageBox.Show(this, $"Удалить выбранные задачи ({items.Count})?\n\n{preview}", "TODO.шная",
+                if (MessageBox.Show(this, $"Удалить выбранные задачи ({items.Count})?\n\n{preview}", "TODO/шня",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                 TodoStore.DeleteMany(items.Select(x => x!.Id));
                 Reload();
@@ -462,7 +466,7 @@ namespace ShadowRDP.Forms
             menu.AddItem("Редактировать...", "edit", () => { if (TodoTaskDialog.Edit(this, it)) Reload(); });
             menu.AddItem("Удалить", "delete", () =>
             {
-                if (MessageBox.Show(this, $"Удалить задачу?\n{it.Text}", "TODO.шная", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) { TodoStore.Delete(it.Id); Reload(); }
+                if (MessageBox.Show(this, $"Удалить задачу?\n{it.Text}", "TODO/шня", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) { TodoStore.Delete(it.Id); Reload(); }
             });
             int selCount = _grid.SelectedRows.Count;
             if (selCount > 1)

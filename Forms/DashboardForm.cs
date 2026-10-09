@@ -212,7 +212,9 @@ namespace ShadowRDP.Forms
             // v4.9.23 — зазор фразы→таблица ×3: панель 64px (36px под фразами).
             // v4.9.24 — фразы внизу у таблицы: зазор 36px сверху (к hero).
             // v4.9.25 — строчка серверов поднята на 10px (паддинг 26px).
-            _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 90, BackColor = UiTheme.Card, Padding = new Padding(8, 26, 12, 26), AutoSize = false };
+            // v3.9.5 — зазор пилы→таблица как в «Даше Монитор»: 16px
+            // (панель 70 = 26 сверху + пилы 28 + 16 снизу; было 90/36).
+            _hostPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 70, BackColor = UiTheme.Card, Padding = new Padding(8, 26, 12, 16), AutoSize = false };
             Controls.Add(_hostPanel);
 
             // Grid — double-buffered (DoubleBufferedDataGridView) for smooth
@@ -432,9 +434,11 @@ namespace ShadowRDP.Forms
                 };
                 int textW = TextRenderer.MeasureText(tabText, tab.Font).Width;
                 int w = textW + 46;
-                int tabH = 38;
+                int tabH = 28;
                 tab.Size = new Size(w, tabH);
-                Color statusDot = hasCrit ? Color.FromArgb(0xB0, 0x7A, 0x72) : hasAny ? Color.FromArgb(0xB8, 0x9A, 0x7A) : UiTheme.StatusOffline;
+                // Точки статуса на синем фоне: крит — красный, есть события —
+                // янтарный, нет событий — светло-серый (как «недоступен» в Мониторе).
+                Color statusDot = hasCrit ? UiTheme.Danger : hasAny ? Color.FromArgb(0xFF, 0xC4, 0x4D) : Color.FromArgb(0xF9, 0xF8, 0xF6);
                 tab.Tag = false;
                 tab.MouseEnter += (s, e) => { tab.Tag = true; try { tab.Invalidate(); } catch { } };
                 tab.MouseLeave += (s, e) => { tab.Tag = false; try { tab.Invalidate(); } catch { } };
@@ -442,25 +446,20 @@ namespace ShadowRDP.Forms
                 {
                     e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                     bool hov = tab.Tag is true;
-                    // v3.9.3CK — дизайн как чипы Монитора: градиент +
-                    // inset-рамка + halo-точка (были стальные с белой рамкой 4px).
+                    // v3.9.5 — как в «Даше Монитор»: плоская синяя пила #296AA0,
+                    // радиус 5, h28, белый текст, рамка #1E4C78 (hover/active —
+                    // белая). Были градиент-чипы r19 h38 (v3.9.3CK).
                     var rr = new Rectangle(0, 0, tab.Width - 1, tab.Height - 1);
-                    using var path = UiButtons.RoundedRect(rr, 19);
-                    Color top = IsBlue ? Color.FromArgb(0xFC, 0xFE, 0xFF) : Color.FromArgb(0xFF, 0xFD, 0xF8);
-                    Color botBase = IsBlue ? Color.FromArgb(0xEB, 0xF0, 0xF6) : Color.FromArgb(0xF6, 0xF3, 0xE9);
-                    Color botEdge = IsBlue ? Color.FromArgb(0xD3, 0xDC, 0xE8) : Color.FromArgb(0xE2, 0xDD, 0xC9);
-                    Color ink = IsBlue ? Color.FromArgb(0x2F, 0x4A, 0x63) : Color.FromArgb(0x56, 0x5C, 0x30);
-                    Color inkDark = IsBlue ? Color.FromArgb(0x20, 0x36, 0x4E) : Color.FromArgb(0x3D, 0x42, 0x23);
-                    using var lg = new System.Drawing.Drawing2D.LinearGradientBrush(rr, top, isActive ? botBase : top, 90f);
-                    e.Graphics.FillPath(lg, path);
-                    using var pen = new Pen(hov && !isActive ? ink : botEdge, 1) { Alignment = System.Drawing.Drawing2D.PenAlignment.Inset };
+                    using var path = UiButtons.RoundedRect(rr, 5);
+                    using var bg = new SolidBrush(Color.FromArgb(0x29, 0x6A, 0xA0));
+                    e.Graphics.FillPath(bg, path);
+                    using var pen = new Pen((hov || isActive) ? Color.White : Color.FromArgb(0x1E, 0x4C, 0x78), 1) { Alignment = System.Drawing.Drawing2D.PenAlignment.Inset };
                     e.Graphics.DrawPath(pen, path);
-                    using var halo = new SolidBrush(Color.FromArgb(40, statusDot));
-                    e.Graphics.FillEllipse(halo, 11, (tab.Height - 11) / 2, 11, 11);
                     using var dot = new SolidBrush(statusDot);
-                    e.Graphics.FillEllipse(dot, 13, (tab.Height - 8) / 2, 8, 8);
-                    var textRect = new Rectangle(31, 0, Math.Max(0, tab.Width - 33), tab.Height);
-                    TextRenderer.DrawText(e.Graphics, tabText, tab.Font, textRect, isActive ? inkDark : ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                    int ds = 8, dx = 11 + (11 - ds) / 2, dy = (tab.Height - ds) / 2;
+                    e.Graphics.FillEllipse(dot, dx, dy, ds, ds);
+                    var textRect = new Rectangle(31, 0, Math.Max(0, tab.Width - 46), tab.Height);
+                    TextRenderer.DrawText(e.Graphics, tabText, tab.Font, textRect, Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
                 };
                 string captured = h;
                 tab.Click += (s, e) =>
@@ -898,7 +897,15 @@ namespace ShadowRDP.Forms
             SendMessage(hWnd, PBM_SETBARCOLOR, IntPtr.Zero, (IntPtr)ColorTranslator.ToWin32(color));
         }
 
-        private void OnNewEvents(List<DashboardEvent> list) => BeginInvoke(new Action(() => { _all = EventDashboardStore.LoadEvents(); if (Visible && !IsDisposed) ApplyFilters(); }));
+        private void OnNewEvents(List<DashboardEvent> list)
+        {
+            // v3.9.5 — гард от teardown-креша: поллер статический, событие
+            // может прийти после смерти хендла (голый BeginInvoke кидал
+            // InvalidOperationException в финализацию процесса).
+            if (IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(new Action(() => { _all = EventDashboardStore.LoadEvents(); if (Visible && !IsDisposed) ApplyFilters(); })); }
+            catch { }
+        }
         private void OnCritical(DashboardEvent ev)
         {
             try

@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Services;
 
 namespace ShadowRDP.Forms
@@ -19,7 +20,7 @@ namespace ShadowRDP.Forms
         private readonly Panel _searchWrap;
         private readonly ComboBox _resultCombo;
         private readonly Label _statusLabel;
-        private readonly ListView _list;
+        private readonly DataGridView _grid;
         private readonly Label _reloadBtn;
         private readonly Label _notepadBtn;
         private readonly Label _closeBtn;
@@ -95,6 +96,7 @@ namespace ShadowRDP.Forms
             };
             _resultCombo.Items.AddRange(new object[] { "все", "ok", "fail" });
             _resultCombo.SelectedIndex = 0;
+            Helpers.UiCombo.Apply(_resultCombo);
             card.Controls.Add(_resultCombo);
 
             _statusLabel = new Label
@@ -108,26 +110,31 @@ namespace ShadowRDP.Forms
             };
             card.Controls.Add(_statusLabel);
 
-            _list = new ListView
+            // v3.9.5 — журнал в стиле «Открытых файлов»: headerless-карточка
+            // (Anchor на карточке, грид подгоняется через FitCardChild).
+            var cardList = Helpers.UiModal.Card(12, 212, 936, 288, "", "", withHeader: false);
+            try { cardList.Region?.Dispose(); cardList.Region = null; } catch { }
+            cardList.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            Controls.Add(cardList);
+
+            _grid = new DoubleBufferedDataGridView
             {
-                Location = new Point(12, 212),
-                Size = new Size(936, 288),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-                View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                HideSelection = false,
-                BackColor = Helpers.UiTheme.DialogCard,
-                ForeColor = Helpers.UiTheme.Foreground,
-                BorderStyle = BorderStyle.FixedSingle
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                MultiSelect = false
             };
-            _list.Columns.Add("Время", 130);
-            _list.Columns.Add("Пользователь", 95);
-            _list.Columns.Add("Действие", 125);
-            _list.Columns.Add("Цель", 250);
-            _list.Columns.Add("Результат", 70);
-            _list.Columns.Add("Детали", 250);
-            Controls.Add(_list);
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Ts", HeaderText = "Время", FillWeight = 14, MinimumWidth = 110 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "User", HeaderText = "Пользователь", FillWeight = 10, MinimumWidth = 80 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Action", HeaderText = "Действие", FillWeight = 14, MinimumWidth = 100 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Target", HeaderText = "Цель", FillWeight = 27, MinimumWidth = 160 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Result", HeaderText = "Результат", FillWeight = 8, MinimumWidth = 70 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn
+            { Name = "Details", HeaderText = "Детали", FillWeight = 27, MinimumWidth = 160 });
+            Helpers.UiGridStyle.ApplyCardGrid(_grid, cardList);
 
             var hiddenClose = new Button
             {
@@ -189,16 +196,16 @@ namespace ShadowRDP.Forms
                         continue;
                     view.Add(r);
                 }
-                _list.BeginUpdate();
-                _list.Items.Clear();
+                _grid.SuspendLayout();
+                _grid.Rows.Clear();
                 foreach (var r in view)
                 {
-                    var item = new ListViewItem(new[] { r.Ts, r.User, r.Action, r.Target, r.Result, r.Details });
-                    if (r.Result == "fail") item.ForeColor = Color.FromArgb(214, 73, 73);
-                    else if (r.Result == "ok") item.ForeColor = Color.FromArgb(56, 161, 105);
-                    _list.Items.Add(item);
+                    int ri = _grid.Rows.Add(r.Ts, r.User, r.Action, r.Target, r.Result, r.Details);
+                    var row = _grid.Rows[ri];
+                    if (r.Result == "fail") row.DefaultCellStyle.ForeColor = Color.FromArgb(214, 73, 73);
+                    else if (r.Result == "ok") row.DefaultCellStyle.ForeColor = Color.FromArgb(56, 161, 105);
                 }
-                _list.EndUpdate();
+                _grid.ResumeLayout();
                 _statusLabel.Text = view.Count == _all.Count
                     ? $"Записей: {_all.Count}"
                     : $"Показано: {view.Count} из {_all.Count}";

@@ -244,8 +244,9 @@ namespace ShadowRDP.Helpers
                     tb.Font = new Font("Segoe UI", 9.5f);
                     break;
                 case ComboBox cb:
-                    cb.FlatStyle = FlatStyle.Flat;
-                    cb.BackColor = Color.White;
+                    // v3.9.5 — общий стиль списка (UiCombo): плоскость,
+                    // owner-draw-пункты с акцентом; подложка чисто белая.
+                    UiCombo.Apply(cb, back: Color.White);
                     cb.Font = new Font("Segoe UI", 9.5f);
                     break;
                 case NumericUpDown nud:

@@ -22,6 +22,14 @@ namespace ShadowRDP.Forms
         public static RdpManagerForm Instance => _instance ??= new RdpManagerForm();
         public static bool IsOpen => _instance != null && !_instance.IsDisposed;
 
+        // v3.9.5 — делегат палитры: заполняется в конструкторе (OpenPalette
+        // замыкается на ctor-локальные действия), чтобы глобальный Ctrl+K
+        // (Helpers.PaletteHotkeyFilter) открывал палитру из любого окна.
+        private Action<IWin32Window?>? _openPalette;
+
+        // Владелец модалки = активное окно (или сам менеджер).
+        public void ShowPalette(IWin32Window? owner = null) => _openPalette?.Invoke(owner);
+
         // v2.3.9: dark-blue sidebar theme.
         //   SidebarBg          = main panel bg (#1E3A5F)
         //   SidebarItemHover   = lighter shade for inactive-session hover
@@ -70,6 +78,12 @@ namespace ShadowRDP.Forms
         private readonly Panel _mainArea;
         private readonly FlowLayoutPanel _sidebarList;
         private readonly List<RdpSession> _sessions = new();
+        // v3.9.5 — флаг загрузки стора: добавление сессии в свежий
+        // (не восстановленный) менеджер перезаписывало rdp_sessions.json
+        // одними новыми записями (группы Виртуалки/Железки пропали из
+        // сайдбара именно так). AddSession сначала догружает стор.
+        private bool _restored;
+        private bool _restoring;
         // v2.1.83 — non-RDP session shortcuts (SSH/Web). Persisted separately.
         private readonly List<Models.CustomSession> _customSessions = new();
         // Lazily-created placeholder panels for each custom session. Cleared
@@ -156,7 +170,7 @@ namespace ShadowRDP.Forms
         private Label _bookTab = null!;
         private Label _passwordsTab = null!;
         private Label _zabbixAgentTab = null!;
-        // v4.7 — вкладки модулей (бывшая жёсткая TODO.шная): кнопки и хосты
+        // v4.7 — вкладки модулей (бывшая жёсткая TODO/шня): кнопки и хосты
         // строятся динамически из включённых модулей (ModuleManager).
         private Panel _modulesPanel = null!;
         private readonly System.Collections.Generic.Dictionary<string, Label> _moduleTabButtons = new(System.StringComparer.OrdinalIgnoreCase);
@@ -303,7 +317,7 @@ namespace ShadowRDP.Forms
             _mainArea.Controls.Add(_dashHost);
 
             // v4.7 — секция вкладок модулей (Dock=Top, высота по контенту):
-            // кнопки строятся из включённых модулей (бывшая TODO.шная).
+            // кнопки строятся из включённых модулей (бывшая TODO/шня).
 
             // v3.0.5: sidebar separator removed — main area now directly
             // touches the sidebar. Was a 1px Dock=Left panel (UiTheme.Border).
@@ -386,9 +400,11 @@ namespace ShadowRDP.Forms
             // is a shortcut, not a tab toggle.
             // v4.8 — единый Дашборд (внутри пил Events/Monitor/Web) — на месте Z.
             // v3.9.3CC — синяя тема: тёмно-синий вместо бордо.
+            // v3.9.5 — фоны «Дашборд» и «Инструменты» поменяны местами
+            // (акцентный синий у Инструментов, приглушённый у Дашборда).
             bool isBlue = ShadowRDP.Helpers.UiTheme.CurrentName != "Olive";
             _zabbixAgentTab = Helpers.UiButtons.MakeFilled("Дашборд", "dashboard",
-                isBlue ? Color.FromArgb(0x24, 0x46, 0x6B) : Color.FromArgb(0x48, 0x30, 0x2F), width: 166, radius: 0);
+                isBlue ? Color.FromArgb(0x2E, 0x6D, 0xA4) : Color.FromArgb(0x56, 0x5C, 0x30), width: 166, radius: 0);
             _zabbixAgentTab.Dock = DockStyle.Top;
             _zabbixAgentTab.Height = 36;
             _zabbixAgentTab.Margin = Padding.Empty;
@@ -399,7 +415,7 @@ namespace ShadowRDP.Forms
             // Added BEFORE Пароли/Книга so with DockStyle.Top it ends up at
             // the bottom of the three (under Пароли).
             _toolsTab = Helpers.UiButtons.MakeFilled("Инструменты", "gear",
-                isBlue ? Color.FromArgb(0x2E, 0x6D, 0xA4) : Color.FromArgb(0x56, 0x5C, 0x30), width: 166, radius: 0);
+                isBlue ? Color.FromArgb(0x24, 0x46, 0x6B) : Color.FromArgb(0x48, 0x30, 0x2F), width: 166, radius: 0);
             _toolsTab.Dock = DockStyle.Top;
             _toolsTab.Height = 36;
             _toolsTab.Margin = Padding.Empty;
@@ -1025,6 +1041,16 @@ namespace ShadowRDP.Forms
                 toolsMenu.Close();
                 BeginInvoke(new Action(() => exportMenu.Show(this, _toolsTab.PointToScreen(new Point(_toolsTab.Width, 0)))));
             });
+            // v3.9.5 — полный бэкап по галочкам + расписание.
+            toolsMenu.AddItem("Backup…", "exchange", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.BackupForm.Show(this); }
+                    catch (Exception ex) { Logger.Warn($"Backup: {ex.Message}"); }
+                }));
+            });
             toolsMenu.AddItem("Сессия", "add", () => addSession());
             toolsMenu.AddItem("В книгу", "book", () => addToBook());
             // v3.9.4 — TCP-порт-сканер.
@@ -1037,8 +1063,9 @@ namespace ShadowRDP.Forms
                     catch (Exception ex) { Logger.Warn($"Проверка портов: {ex.Message}"); }
                 }));
             });
-            // v3.9.4 — менеджер сниппетов SSH-команд.
-            toolsMenu.AddItem("Сниппеты SSH…", "terminal", () =>
+            // v3.9.4 — менеджер сниппетов SSH-команд; v3.9.5 — переименован,
+            // чтобы не путать с окном-пикером «Сниппеты SSH».
+            toolsMenu.AddItem("Управление сниппетами…", "terminal", () =>
             {
                 toolsMenu.Close();
                 BeginInvoke(new Action(() =>
@@ -1078,8 +1105,12 @@ namespace ShadowRDP.Forms
             });
 
             // === v3.9.4 — Ctrl+K: командная палитра ===
-            void OpenPalette()
+            // v3.9.5 — OpenPalette вынесен в делегат (_openPalette), чтобы
+            // глобальный хоткей (Helpers.PaletteHotkeyFilter) открывал палитру
+            // из любого окна с владельцем активного окна.
+            void OpenPalette(IWin32Window? owner)
             {
+                var own = owner ?? (IWin32Window)this;
                 try
                 {
                     var items = new List<Forms.PaletteItem>();
@@ -1126,41 +1157,106 @@ namespace ShadowRDP.Forms
                             Category = "Открытые сессии", Action = () => ActivateConsoleSession(cons) });
                     }
 
-                    items.AddRange(new Forms.PaletteItem[]
+                    // v3.9.5 — недавние консоли «Встроить ММС» (динамика,
+                    // как открытые сессии): поверх статичного каталога.
+                    foreach (var entry in Services.EmbeddedAppsStore.Load())
                     {
-                        new() { Title = "Добавить сессию…", Category = "Сессии", Action = addSession },
-                        new() { Title = "Добавить в книгу…", Category = "Сессии", Action = addToBook },
-                        new() { Title = "Проверка портов…", Category = "Инструменты",
-                            Action = () => Forms.PortScanForm.Show(this) },
-                        new() { Title = "Сниппеты SSH…", Category = "Инструменты",
-                            Action = () => Forms.SnippetManagerForm.Show(this) },
-                        new() { Title = "Журнал действий…", Category = "Инструменты",
-                            Action = () => Forms.AuditViewerForm.Show(this) },
-                        new() { Title = "Удалённая консоль…", Category = "Инструменты",
-                            Action = () =>
+                        var captured = entry;
+                        var mName = string.IsNullOrWhiteSpace(entry.Name) ? entry.Path : entry.Name;
+                        items.Add(new Forms.PaletteItem { Title = $"ММС: {mName}",
+                            Category = "ММС", Action = () => OpenEmbedProgram(captured) });
+                    }
+
+                    // v3.9.5 — статичные строки из единого каталога
+                    // (Services.PaletteCatalog): ключ → действие. Скрытие
+                    // строк — в окне «Настройка» самой палитры (palette.json);
+                    // фильтр скрытых применяет CommandPaletteForm при показе.
+                    var staticActions = new Dictionary<string, Action>(StringComparer.Ordinal)
+                    {
+                        ["add-session"] = addSession,
+                        ["add-book"] = addToBook,
+                        ["portscan"] = () => Forms.PortScanForm.Show(own),
+                        ["snippets"] = () => Forms.SnippetManagerForm.Show(own),
+                        ["audit"] = () => Forms.AuditViewerForm.Show(own),
+                        ["remote-console"] = () =>
+                        {
+                            var hosts = Services.AddressBookStore.Load()
+                                .Select(en => en.Computer)
+                                .Where(c => !string.IsNullOrWhiteSpace(c))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+                            Forms.RemoteConsoleForm.Show(own, null, hosts);
+                        },
+                        ["tunnels"] = () => Forms.PortForwardForm.Show(own),
+                        ["dash-events"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events),
+                        ["dash-monitor"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor),
+                        ["dash-web"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Web),
+                        ["book"] = () => SwitchTab(SidebarTab.Book),
+                        ["openfiles"] = () =>
+                        {
+                            using var dlg = new Forms.OpenFilesForm();
+                            Helpers.UiModal.ShowDimmed(own, dlg);
+                        },
+                        ["inv-soft"] = () =>
+                        {
+                            using var dlg = new Forms.SoftwareInventoryForm();
+                            Helpers.UiModal.ShowDimmed(own, dlg);
+                        },
+                        ["inv-hard"] = () =>
+                        {
+                            using var dlg = new Forms.HardwareInventoryForm();
+                            Helpers.UiModal.ShowDimmed(own, dlg);
+                        },
+                        ["msgall"] = () =>
+                        {
+                            SwitchTab(SidebarTab.Book);
+                            try { Forms.AddressBookForm.Instance.SendMessageToAll(); } catch { }
+                        },
+                        ["passwords"] = () => OpenPasswordVault(),
+                        ["todo"] = () =>
+                        {
+                            try
                             {
-                                var hosts = Services.AddressBookStore.Load()
-                                    .Select(en => en.Computer)
-                                    .Where(c => !string.IsNullOrWhiteSpace(c))
-                                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                                    .ToList();
-                                Forms.RemoteConsoleForm.Show(this, null, hosts);
-                            } },
-                        new() { Title = "Туннели SSH…", Category = "Инструменты",
-                            Action = () => Forms.PortForwardForm.Show(this) },
-                        new() { Title = "Настройки цвета…", Category = "Настройки",
-                            Action = () => Forms.ColorSettingsForm.Show(this) },
-                        new() { Title = "Модули…", Category = "Настройки",
-                            Action = () => { try { new Forms.ModuleManagerForm().Show(); } catch { } } },
-                        new() { Title = "Сменить пароль", Category = "Настройки", Action = changePwd },
-                        new() { Title = "Сменить тему", Category = "Настройки", Action = switchTheme },
-                    });
-                    var chosen = Forms.CommandPaletteForm.Run(this, items);
+                                if (!Services.ModuleManager.IsEnabled("todo"))
+                                    Services.ModuleManager.SetEnabled("todo", true);
+                                ShowModule("todo");
+                            }
+                            catch { }
+                        },
+                        ["mmc-open"] = () => OpenEmbedPicker(),
+                        ["mmc-add"] = () => OpenMmcConsole(),
+                        ["cmd"] = () => { launchCmd(); },
+                        ["cmd-window"] = () =>
+                        {
+                            try
+                            {
+                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+                                    { UseShellExecute = true });
+                            }
+                            catch (Exception ex) { Logger.Warn($"CMD окно: {ex.Message}"); }
+                        },
+                        ["color-settings"] = () => Forms.ColorSettingsForm.Show(own),
+                        ["modules"] = () => { try { new Forms.ModuleManagerForm().Show(); } catch { } },
+                        ["change-pwd"] = changePwd,
+                        ["switch-theme"] = switchTheme,
+                    };
+                    foreach (var def in Services.PaletteCatalog.All)
+                    {
+                        if (!staticActions.TryGetValue(def.Key, out var act)) continue;
+                        items.Add(new Forms.PaletteItem { Key = def.Key,
+                            Title = def.Title, Category = def.Category, Action = act });
+                    }
+                    var chosen = Forms.CommandPaletteForm.Run(own, items);
                     // Выполнение — после закрытия модальной палитры.
-                    if (chosen?.Action != null) BeginInvoke(new Action(chosen.Action));
+                    if (chosen?.Action != null)
+                    {
+                        if (IsHandleCreated) BeginInvoke(new Action(chosen.Action));
+                        else chosen.Action();
+                    }
                 }
                 catch (Exception ex) { Logger.Warn($"Палитра команд: {ex.Message}"); }
             }
+            _openPalette = OpenPalette;
             KeyPreview = true;
             KeyDown += (s, e) =>
             {
@@ -1169,16 +1265,16 @@ namespace ShadowRDP.Forms
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                     toolsMenu.Close();
-                    OpenPalette();
+                    OpenPalette(null);
                 }
             };
             toolsMenu.AddItem("Палитра команд", "search", () =>
             {
                 toolsMenu.Close();
-                OpenPalette();
+                OpenPalette(null);
             }, "Ctrl+K");
             toolsMenu.AddSeparator();
-            // v4.7 — менеджер встраиваемых модулей (TODO.шная и будущие).
+            // v4.7 — менеджер встраиваемых модулей (TODO/шня и будущие).
             toolsMenu.AddItem("Модули…", "tasks", () =>
             {
                 toolsMenu.Close();
@@ -1366,6 +1462,9 @@ namespace ShadowRDP.Forms
 
         public void AddSession(string computer, string? ip, string? group = null, bool autoOpen = true, int sortOrder = -1, string? displayName = null, string? notes = null, bool transient = false)
         {
+            // Не для transient-вкладок (подключение из книги без следа):
+            // им рестор с перерисовкой сайдбара не нужен и вреден.
+            if (!transient) EnsureRestored();
             var target = !string.IsNullOrEmpty(ip) ? ip : computer;
 
             var sess = new RdpSession
@@ -1496,6 +1595,19 @@ namespace ShadowRDP.Forms
         // No-op if the saved list is empty — the manager still opens so the
         // user can add sessions via the address-book / context-menu entry
         // points.
+        // v3.9.5 — догрузка стора перед добавлением сессии (см. поле
+        // _restored): иначе добавление в свежий менеджер перезаписывало
+        // rdp_sessions.json одними новыми записями. Реентрантность
+        // (RestoreSessions → AddSession → сюда) отсекается флагом _restoring.
+        private void EnsureRestored()
+        {
+            if (_restored || _restoring) return;
+            _restoring = true;
+            try { RestoreSessions(); }
+            catch (Exception ex) { try { Logger.Warn($"RDP Manager: EnsureRestored: {ex.Message}"); } catch { } }
+            finally { _restoring = false; }
+        }
+
         public void RestoreSessions()
         {
             var entries = RdpSessionStore.Load();
@@ -1512,6 +1624,7 @@ namespace ShadowRDP.Forms
                 // Even with no RDP sessions, re-render sidebar to show
                 // custom shortcuts.
                 if (_customSessions.Count > 0) RenderSidebar();
+                _restored = true;
                 return;
             }
             Logger.Info($"RDP Manager: restoring {entries.Count} session(s)");
@@ -1520,6 +1633,10 @@ namespace ShadowRDP.Forms
             {
                 foreach (var e in entries)
                 {
+                    // v3.9.5 — идемпотентность: пропуск уже загруженных
+                    // (повторный рестор после частичного сбоя не дублирует).
+                    if (_sessions.Any(s => string.Equals(s.Computer, e.Computer, StringComparison.OrdinalIgnoreCase)))
+                        continue;
                     // v3.0.7: pass AutoOpen. Sessions with AutoOpen=false are
                     // added as sidebar-only (no mstsc connect) — user activates
                     // them on demand by clicking the tab.
@@ -1538,6 +1655,11 @@ namespace ShadowRDP.Forms
                         }
                     }
                 }
+                // v3.9.5 — стор успешно догружен (см. EnsureRestored).
+                // Только при успехе: при исключении флаг останется false
+                // и следующая попытка повторит рестор (идемпотентен
+                // благодаря пропуску дублей выше).
+                _restored = true;
             }
             finally
             {
@@ -3161,28 +3283,8 @@ namespace ShadowRDP.Forms
             var grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AllowUserToResizeRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
                 ColumnHeadersVisible = false,  // v2.2.13: hide column headers — removes #F6F6F6 gray bar + no clickable headers
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = Helpers.UiTheme.Background,
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None,
-                CellBorderStyle = DataGridViewCellBorderStyle.None,
-                GridColor = Helpers.UiTheme.Background,
-                EnableHeadersVisualStyles = false,
-                RowTemplate = { Height = 28 },
-                DefaultCellStyle = {
-                    BackColor = Helpers.UiTheme.Background,
-                    ForeColor = Helpers.UiTheme.Foreground,
-                    // v3.9.3BI — выбор #E8ECE8.
-                    SelectionBackColor = Helpers.UiTheme.AccentSoft,
-                    SelectionForeColor = Helpers.UiTheme.Accent
-                }
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
             var colParam = new DataGridViewTextBoxColumn
             {
@@ -3200,9 +3302,10 @@ namespace ShadowRDP.Forms
             };
             grid.Columns.Add(colParam);
             grid.Columns.Add(colValue);
+            // v3.9.5 — единый стиль таблицы (как в «Открытых файлах»):
+            // ApplyUnified + #FDFBF7 + скруглённые углы + ShadowScroll.
+            Helpers.UiGridStyle.ApplyCardGrid(grid, 36, 36);
             body.Controls.Add(grid);
-            // v4.4.0 — своя тонкая полоса вместо системной.
-            ShadowScroll.AttachGrid(grid);
 
             // Populate rows.
             grid.Rows.Add("Название", sess.Name);

@@ -29,7 +29,16 @@ namespace ShadowRDP.Helpers
         private readonly List<Spec> _specs = new();
         private bool _built;
 
-        private const int HEADER_H = 54;
+        // v3.9.5 — хедер ужат вдвое: было 54, стало ~27 (паддинги 5,
+        // отступ снизу 6, подзаголовок 8pt со сдвигом +12).
+        private const int HEADER_H = 27;
+
+        // v3.9.5 — колонка иконок #ECF1F7 только в синей теме
+        // (CurrentName != "Olive"); в оливковой — как фон меню.
+        private static bool IsBlue => UiTheme.CurrentName != "Olive";
+        private static Color IconColumnBg => IsBlue
+            ? Color.FromArgb(0xEC, 0xF1, 0xF7)
+            : UiTheme.Current.MenuBackground;
 
         public ThemedContextMenu()
         {
@@ -192,8 +201,8 @@ namespace ShadowRDP.Helpers
                                 Subtitle = spec.Subtitle ?? ""
                             }
                         };
-                        hdr.Padding = new Padding(0, 11, 0, 11);
-                        hdr.Margin = new Padding(0, 0, 0, 10);
+                        hdr.Padding = new Padding(0, 5, 0, 5);
+                        hdr.Margin = new Padding(0, 0, 0, 6);
                         item = hdr;
                         break;
                     }
@@ -315,12 +324,12 @@ namespace ShadowRDP.Helpers
             public override Color MenuItemSelectedGradientEnd => th.AccentSoft;
             public override Color MenuItemBorder => th.AccentSoftBorder;
             public override Color MenuBorder => th.BorderSubtle;
-            public override Color ImageMarginGradientBegin => th.MenuBackground;
-            public override Color ImageMarginGradientEnd => th.MenuBackground;
-            public override Color ImageMarginGradientMiddle => th.MenuBackground;
-            public override Color ImageMarginRevealedGradientBegin => th.MenuBackground;
-            public override Color ImageMarginRevealedGradientEnd => th.MenuBackground;
-            public override Color ImageMarginRevealedGradientMiddle => th.MenuBackground;
+            public override Color ImageMarginGradientBegin => IconColumnBg;
+            public override Color ImageMarginGradientEnd => IconColumnBg;
+            public override Color ImageMarginGradientMiddle => IconColumnBg;
+            public override Color ImageMarginRevealedGradientBegin => IconColumnBg;
+            public override Color ImageMarginRevealedGradientEnd => IconColumnBg;
+            public override Color ImageMarginRevealedGradientMiddle => IconColumnBg;
             public override Color SeparatorDark => th.BorderSubtle;
             public override Color SeparatorLight => th.MenuBackground;
             public override Color CheckSelectedBackground => th.Accent;
@@ -338,14 +347,14 @@ namespace ShadowRDP.Helpers
         private sealed class ThemedRenderer : ToolStripProfessionalRenderer
         {
             private static readonly Font TitleFont = new Font("Segoe UI", 8f, FontStyle.Bold);
-            private static readonly Font SubFont = new Font("Segoe UI", 10.5f);
+            private static readonly Font SubFont = new Font("Segoe UI", 8f);
 
             public ThemedRenderer() : base(new ThemedColorTable()) { }
 
             protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
             {
                 var th = UiTheme.Current;
-                using (var b = new SolidBrush(th.MenuBackground))
+                using (var b = new SolidBrush(IconColumnBg))
                     e.Graphics.FillRectangle(b, e.AffectedBounds);
                 foreach (ToolStripItem it in e.ToolStrip.Items)
                 {
@@ -397,7 +406,7 @@ namespace ShadowRDP.Helpers
                         Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
                     if (hd.Subtitle.Length > 0)
                     {
-                        var sr = new Rectangle(r.X, r.Y + 27, r.Width, r.Height - 27);
+                        var sr = new Rectangle(r.X, r.Y + 12, r.Width, Math.Max(0, r.Height - 12));
                         TextRenderer.DrawText(e.Graphics, hd.Subtitle, SubFont, sr,
                             Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
                     }

@@ -690,7 +690,8 @@ namespace ShadowRDP.Helpers
             Action<string>? onLaunchWeb = null,
             Action<string>? onLaunchSsh = null,
             Action<string>? onLaunchRdp = null,
-            Action<string>? onAddToSessions = null)
+            Action<string>? onAddToSessions = null,
+            Action<string>? onSendFile = null)
         {
             var menu = new ThemedContextMenu();
             menu.AddHeader(computerResolver() ?? "", null);
@@ -833,6 +834,8 @@ namespace ShadowRDP.Helpers
             menu.AddItem("Пинг...", "ping", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { try { PingService.OpenInCmd(c); } catch (Exception ex) { MessageBox.Show(owner, $"Не удалось открыть cmd: {ex.Message}", "Пинг", MessageBoxButtons.OK, MessageBoxIcon.Warning); } } });
             menu.AddItem("Tracert...", "ping", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") { Arguments = $"/k tracert {c}", UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show(owner, $"Не удалось открыть cmd: {ex.Message}", "Tracert", MessageBoxButtons.OK, MessageBoxIcon.Warning); } } });
             menu.AddItem("Открыть диск C$", "computer", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenCShare(c); });
+            if (onSendFile != null)
+                menu.AddItem("Передать файл…", "computer", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) onSendFile(c); });
 
             if (sessionResolver != null)
             {

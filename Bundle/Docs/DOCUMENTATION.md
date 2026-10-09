@@ -1,6 +1,6 @@
-# TODO.шная — документация
+# TODO/шня — документация
 
-Приложение-диктофон на Android + вкладка TODO.шная в PupSeek RDP.
+Приложение-диктофон на Android + вкладка TODO/шня в PupSeek RDP.
 Надиктовал на телефон → текст появился в списке дел на ПК. Всё бесплатно,
 без подписок и облаков, распознавание — офлайн на телефоне.
 
@@ -13,7 +13,7 @@
 ```
 ┌──────────────┐  1. ЗАПИСЬ (AudioRecord   ┌──────────────┐  3. POST /todo   ┌──────────────────┐  4. опрос GET /todo
 │   ТЕЛЕФОН    │ ──► PCM 16kHz WAV, волна,  │  pupseek.ru  │ ───────────────► │  PupSeek RDP (ПК)│ ──► каждые 15с ──►
-│ TODO.шная    │  2. ГОТОВО → Vosk офлайн   │ monitor/todo │  data/todo.json  │ вкладка TODO.шная│     Merge в todo.json
+│ TODO/шня    │  2. ГОТОВО → Vosk офлайн   │ monitor/todo │  data/todo.json  │ вкладка TODO/шня│     Merge в todo.json
 └──────────────┘     распознавание (RU)     └──────────────┘                  └──────────────────┘
 ```
 
@@ -120,7 +120,7 @@ Gradle 8.7 (AGP 8.4 требует минимум Gradle 8.6). Готовое о
 
 ---
 
-## 4. Десктоп (вкладка TODO.шная в PupSeek RDP)
+## 4. Десктоп (вкладка TODO/шня в PupSeek RDP)
 
 Код: `C:\temp\Clo\cpro` (там параллельно работает другой ИИ — править
 аккуратно; снапшот для отката см. `desktop-NOTE.txt`).
@@ -143,7 +143,7 @@ Gradle 8.7 (AGP 8.4 требует минимум Gradle 8.6). Готовое о
   (`ApiUrl/ApiToken/pollIntervalSeconds/useFileWatcher/deletedIds`).
 - `Helpers/TodoPairDialog.cs` + `TodoQrDialog.cs` — диалог «Подключить телефон»
   с живым QR (`todo://pair?...`, QRCoder), кнопки как везде в программе.
-- Кнопка `TODO.шная` в сайдбаре (цвет Книги `#296AA0`), пункт в трей-меню,
+- Кнопка `TODO/шня` в сайдбаре (цвет Книги `#296AA0`), пункт в трей-меню,
   сервис стартует из `ShadowRdpAppContext`.
 
 Данные: `%PROGRAMDATA%\PupSeekRDP\todo.json`,

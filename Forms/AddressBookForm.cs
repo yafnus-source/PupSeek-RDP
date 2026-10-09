@@ -569,7 +569,8 @@ namespace ShadowRDP.Forms
                     onLaunchWeb: null,   // v2.2.19: auto-add cancelled — separate menu item instead
                     onLaunchSsh: null,
                     onLaunchRdp: null,
-                    onAddToSessions: c => Forms.RdpManagerForm.Instance.AddSessionFromBook(c));
+                    onAddToSessions: c => Forms.RdpManagerForm.Instance.AddSessionFromBook(c),
+                    onSendFile: c => Forms.SendFileForm.Show(this, c));
                 menu.Show(this, Control.MousePosition);
             };
 
@@ -2552,6 +2553,11 @@ namespace ShadowRDP.Forms
                 Logger.Error("HardwareInventoryForm failed: " + ex.Message);
             }
         }
+
+        // v3.9.5 — точка входа для палитры команд («Сообщение всем»):
+        // та же рассылка, но вызываемая снаружи (книга уже должна быть
+        // показана — цели берутся из видимых строк вкладки Пользователи).
+        internal void SendMessageToAll() { try { OnMessageAllClicked(); } catch { } }
 
         // "Сообщение всем" — sends a popup message to the computers of the
         // users currently visible in the "Пользователи" tab (respects the

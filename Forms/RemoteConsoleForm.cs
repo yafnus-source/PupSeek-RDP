@@ -85,7 +85,11 @@ namespace ShadowRDP.Forms
             if (hosts != null)
                 foreach (var h in hosts)
                     if (!string.IsNullOrWhiteSpace(h)) _hostBox.Items.Add(h);
-            card.Controls.Add(_hostBox);
+            // v3.9.5 — общий дизайн: хост в белой рамке-поле как в других
+            // окнах (UiModal.Field + стиль списка UiCombo).
+            var hostWrap = Helpers.UiModal.Field(_hostBox, 300);
+            hostWrap.Location = new Point(16, 64);
+            card.Controls.Add(hostWrap);
 
             card.Controls.Add(Helpers.UiModal.FieldLabel("Команда", 16, 104));
             _cmdBox = new TextBox
@@ -116,6 +120,11 @@ namespace ShadowRDP.Forms
             };
             Controls.Add(_statusLabel);
 
+            // v3.9.5 — общий дизайн: вывод в headerless-карточке со
+            // скруглением (как списки в других окнах), без голого
+            // FixedSingle прямо по фону формы.
+            var cardOut = Helpers.UiModal.Card(12, 290, 716, 206, "", "", withHeader: false);
+            Controls.Add(cardOut);
             _outBox = new TextBox
             {
                 Multiline = true,
@@ -123,14 +132,23 @@ namespace ShadowRDP.Forms
                 ScrollBars = ScrollBars.Both,
                 WordWrap = false,
                 Font = new Font("Consolas", 9F),
-                Location = new Point(12, 290),
-                Size = new Size(716, 206),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-                BorderStyle = BorderStyle.FixedSingle,
+                Location = new Point(14, 14),
+                Size = new Size(688, 178),
+                BorderStyle = BorderStyle.None,
                 BackColor = Helpers.UiTheme.DialogCard,
                 ForeColor = Helpers.UiTheme.Foreground
             };
-            Controls.Add(_outBox);
+            cardOut.Controls.Add(_outBox);
+            cardOut.Resize += (_, _) =>
+            {
+                try
+                {
+                    _outBox.Bounds = new Rectangle(14, 14,
+                        Math.Max(50, cardOut.ClientSize.Width - 28),
+                        Math.Max(50, cardOut.ClientSize.Height - 28));
+                }
+                catch { }
+            };
 
             var hiddenClose = new Button
             {
@@ -148,6 +166,27 @@ namespace ShadowRDP.Forms
                 Close();
             };
             Shown += (_, _) => { if (!string.IsNullOrEmpty(_hostBox.Text)) _cmdBox.Focus(); else _hostBox.Focus(); };
+
+            // v3.9.5 — ресайз: карточка/статус/карточка вывода по окну,
+            // вывод тянется по высоте (футер Dock.Bottom).
+            Resize += (_, _) => LayoutContent();
+            LayoutContent();
+            Services.WindowStateStore.Register(this, "remoteConsole");
+
+            void LayoutContent()
+            {
+                try
+                {
+                    int w = ClientSize.Width, h = ClientSize.Height;
+                    int cw = Math.Max(400, w - 24);
+                    card.Width = cw;
+                    _cmdBox.Width = Math.Max(200, card.ClientSize.Width - 32);
+                    _statusLabel.Width = Math.Max(200, w - 28);
+                    cardOut.Width = cw;
+                    cardOut.Height = Math.Max(80, h - 290 - 52 - 12);
+                }
+                catch { }
+            }
         }
 
         private async void Execute()

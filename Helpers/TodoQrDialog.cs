@@ -5,7 +5,7 @@ using QRCoder;
 
 namespace ShadowRDP.Helpers
 {
-    // QR-привязка для TODO.шная — бесплатно, без токена по умолчанию.
+    // QR-привязка для TODO/шня — бесплатно, без токена по умолчанию.
     // Показывает QR с payload: todo://pair?url=<url>&token=<token>  (если token пустой — без него)
     // Телефон сканирует QR и автоматом заполняет ApiUrl+token.
     public static class TodoQrDialog
@@ -31,7 +31,7 @@ namespace ShadowRDP.Helpers
             }
             catch (Exception ex)
             {
-                MessageBox.Show(owner, $"QR не сгенерился: {ex.Message}", "TODO.шная", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(owner, $"QR не сгенерился: {ex.Message}", "TODO/шня", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -49,7 +49,7 @@ namespace ShadowRDP.Helpers
 
             var lblTitle = new Label
             {
-                Text = "Отсканируй QR в приложении TODO.шная",
+                Text = "Отсканируй QR в приложении TODO/шня",
                 Location = new Point(16, 14),
                 Size = new Size(428, 20),
                 Font = new Font("Segoe UI Semibold", 10F),
@@ -59,7 +59,7 @@ namespace ShadowRDP.Helpers
 
             var lblHint = new Label
             {
-                Text = "На телефоне: открой TODO.шная → ⋮ → Сканировать QR. Токен не нужен — оставь $TODO_TOKEN пустым на сервере.",
+                Text = "На телефоне: открой TODO/шня → ⋮ → Сканировать QR. Токен не нужен — оставь $TODO_TOKEN пустым на сервере.",
                 Location = new Point(16, 38),
                 Size = new Size(428, 36),
                 ForeColor = UiTheme.MutedForeground,

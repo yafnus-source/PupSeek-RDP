@@ -1,4 +1,4 @@
-# TODO.шная — отдельная папка
+# TODO/шня — отдельная папка
 # Разрешаем GET/POST, закрываем листинг
 Options -Indexes
 <IfModule mod_headers.c>

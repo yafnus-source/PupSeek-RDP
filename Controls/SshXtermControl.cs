@@ -56,7 +56,7 @@ namespace ShadowRDP.Controls
             };
             _snipBtn = DarkBtn("Сниппеты", 90);
             _snipBtn.Location = new System.Drawing.Point(4, 3);
-            _snipBtn.Click += (_, _) => ShowSnippetsMenu();
+            _snipBtn.Click += (_, _) => OpenSnippetPicker();
             _snipMgrBtn = DarkBtn("Управление…", 100);
             _snipMgrBtn.Location = new System.Drawing.Point(98, 3);
             _snipMgrBtn.Click += (_, _) => OpenSnippetManager();
@@ -398,44 +398,14 @@ namespace ShadowRDP.Controls
             Services.AuditLogger.Write("ssh.snippet", $"{Username}@{Host}:{Port}", "sent", s.Name);
         }
 
-        private void ShowSnippetsMenu()
+        // v3.9.5 — «Сниппеты» открывает окно-пикер (список + запуск),
+        // «Управление…» — редактор; раньше обе кнопки вели к одному окну
+        // (меню называлось так же, как менеджер, и при пустом сторе
+        // содержало единственный пункт «Управление сниппетами…»).
+        private void OpenSnippetPicker()
         {
-            var snippets = Services.SshSnippetStore.All();
-            var menu = new Helpers.ThemedContextMenu();
-            menu.AddHeader("Сниппеты SSH",
-                snippets.Count == 0 ? "пока пусто — добавьте команды" : $"{snippets.Count} команд(ы)");
-
-            if (snippets.Count == 0)
-            {
-                menu.AddItem("Управление сниппетами…", "gear", OpenSnippetManager);
-            }
-            else
-            {
-                foreach (var s in snippets)
-                    if (string.IsNullOrWhiteSpace(s.Group))
-                        menu.AddItem(s.Name, "terminal", () => RunSnippet(s));
-                var hasPlain = snippets.Exists(s => string.IsNullOrWhiteSpace(s.Group));
-                var groups = snippets
-                    .Where(s => !string.IsNullOrWhiteSpace(s.Group))
-                    .GroupBy(s => s.Group!.Trim())
-                    .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (hasPlain && groups.Count > 0) menu.AddSeparator();
-                foreach (var grp in groups)
-                {
-                    var members = grp
-                        .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-                    menu.AddSubmenu(grp.Key, "list", sub =>
-                    {
-                        foreach (var s in members)
-                            sub.AddItem(s.Name, "terminal", () => RunSnippet(s));
-                    });
-                }
-                menu.AddSeparator();
-                menu.AddItem("Управление сниппетами…", "gear", OpenSnippetManager);
-            }
-            menu.Show(_toolbar, new System.Drawing.Point(4, _toolbar.Height - 2));
+            try { Forms.SshSnippetPickerForm.Show(this, RunSnippet); }
+            catch (Exception ex) { Logger.Warn($"Сниппеты: пикер не открылся: {ex.Message}"); }
         }
     }
 }
