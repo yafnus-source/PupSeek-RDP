@@ -984,8 +984,10 @@ namespace ShadowRDP.Forms
                 bool alive = data != null && data.AgentPing && string.IsNullOrEmpty(data.Error);
                 bool isActive = string.Equals(_selectedHost, h, StringComparison.OrdinalIgnoreCase);
                 // v3.9.3DB — плоская синяя пила #296AA0, белый шрифт,
-                // радиус 5; v3.9.3DC — h28, кружок: активен зелёный,
-                // недоступен #F9F8F6, ошибка — тёмно-серый.
+                // радиус 5; v3.9.3DC — h28.
+                // v3.9.5 — точки как в Событиях (просьба пользователя):
+                // жив — янтарь #FFC44D, нерабочий (мёртв/ошибка) —
+                // светло-серый #F9F8F6. Были: зелёный/тёмно-серый.
                 var tab = new WinForms.Label
                 {
                     Text = "",
@@ -1001,13 +1003,8 @@ namespace ShadowRDP.Forms
                 int tabH = 28;
                 tab.Size = new Size(w, tabH);
                 Drw.Color dotMain = alive
-                    ? Drw.Color.FromArgb(0x2E, 0x9E, 0x5B)
+                    ? Drw.Color.FromArgb(0xFF, 0xC4, 0x4D)
                     : Drw.Color.FromArgb(0xF9, 0xF8, 0xF6);
-                bool isErrHost = data != null && data.HasError;
-                if (isErrHost)
-                {
-                    dotMain = Drw.Color.FromArgb(0x5C, 0x60, 0x66);
-                }
                 tab.Tag = false;
                 tab.MouseEnter += (s, e) => { tab.Tag = true; try { tab.Invalidate(); } catch { } };
                 tab.MouseLeave += (s, e) => { tab.Tag = false; try { tab.Invalidate(); } catch { } };

@@ -77,11 +77,16 @@ namespace ShadowRDP.Forms
             };
             Controls.Add(footer);
 
+            // v3.9.5 — явные границы, НЕ Dock=Fill: Fill после hero/footer
+            // при док-раскладке забирал всё окно и сплющивал их в ноль
+            // (грид на всё окно без шапки и кнопок — баг пользователя).
+            // Отступы сверху/снизу увеличены по просьбе (дыхание списка).
             var body = new Panel
             {
-                Dock = DockStyle.Fill,
+                Location = new Point(0, 80),
+                Size = new Size(640, 468),
                 BackColor = Helpers.UiTheme.DialogBackground,
-                Padding = new Padding(14, 8, 14, 8)
+                Padding = new Padding(14, 12, 14, 12)
             };
             _grid = new DoubleBufferedDataGridView
             {
@@ -100,6 +105,10 @@ namespace ShadowRDP.Forms
             { Name = "Title", HeaderText = "Команда", FillWeight = 50, MinimumWidth = 180, ReadOnly = true });
             _grid.Columns.Add(new DataGridViewTextBoxColumn
             { Name = "Category", HeaderText = "Раздел", FillWeight = 25, MinimumWidth = 90, ReadOnly = true });
+            body.Controls.Add(_grid);
+            // СТРОГО после добавления в родителя: AttachGrid внутри
+            // ApplyCardGrid вешает кастомный скролл на Parent и делает
+            // early-return без него (тогда полос нет вообще — баг).
             Helpers.UiGridStyle.ApplyCardGrid(_grid, 32, 32);
             // ApplyCardGrid ставит ReadOnly=true на весь грид (стиль
             // карточек) — для колонки галочек редактирование возвращаем,
@@ -116,8 +125,19 @@ namespace ShadowRDP.Forms
                 }
                 catch { }
             };
-            body.Controls.Add(_grid);
             Controls.Add(body);
+
+            Resize += (_, _) => LayoutBody();
+            LayoutBody();
+            void LayoutBody()
+            {
+                try
+                {
+                    body.Width = ClientSize.Width;
+                    body.Height = Math.Max(200, ClientSize.Height - 80 - 52);
+                }
+                catch { }
+            }
 
             var hiddenClose = new Button
             {
@@ -132,12 +152,25 @@ namespace ShadowRDP.Forms
             Services.WindowStateStore.Register(this, "paletteSettings");
         }
 
-        // Заполняет грид из каталога (дергается и из Shown не надо —
-        // строки добавляются в конструкторе, харнесс проверяет без показа).
+        // Заполняет грид: сначала недавние ММС из истории «Встроить ММС»
+        // (у каждой свой чекбокс — иначе их видно в палитре, а в настройке
+        // нет), затем ВЕСЬ статичный каталог. Строки добавляются в
+        // конструкторе, харнесс проверяет без показа.
         internal void ReloadRows()
         {
             var hidden = PaletteStore.LoadHidden();
             _grid.Rows.Clear();
+            try
+            {
+                foreach (var entry in Services.EmbeddedAppsStore.Load())
+                {
+                    string key = Services.PaletteCatalog.RecentKey(entry.Path);
+                    string name = string.IsNullOrWhiteSpace(entry.Name) ? entry.Path : entry.Name;
+                    int ri = _grid.Rows.Add(!hidden.Contains(key), $"ММС: {name}", "ММС");
+                    _grid.Rows[ri].Tag = key;
+                }
+            }
+            catch { }
             foreach (var def in PaletteCatalog.All)
             {
                 int ri = _grid.Rows.Add(!hidden.Contains(def.Key), def.Title, def.Category);
@@ -162,13 +195,53 @@ namespace ShadowRDP.Forms
             {
                 _grid.EndEdit();
                 var off = new List<string>();
+                var shown = new HashSet<string>(StringComparer.Ordinal);
                 foreach (DataGridViewRow r in _grid.Rows)
                 {
-                    bool on = r.Cells["Show"].Value is true;
-                    if (!on && r.Tag is string key && !string.IsNullOrEmpty(key))
-                        off.Add(key);
+                    if (r.Tag is string key && !string.IsNullOrEmpty(key))
+                    {
+                        shown.Add(key);
+                        if (!(r.Cells["Show"].Value is true))
+                            off.Add(key);
+                    }
                 }
-                PaletteStore.SaveHidden(off);
+                // Протухшие ключи недавних ММС (пути уже нет в истории)
+                // подчищаем, остальное прошлое hidden переносим ТОЛЬКО если
+                // его нет ни в каталоге, ни на экране: иначе снятая когда-то
+                // галочка воскресала бы при каждом сохранении (баг: вернуть
+                // пункт было невозможно, особенно после «Снять все»).
+                var live = new HashSet<string>(StringComparer.Ordinal);
+                bool historyOk = false;
+                try
+                {
+                    foreach (var e in Services.EmbeddedAppsStore.Load())
+                        live.Add(Services.PaletteCatalog.RecentKey(e.Path));
+                    historyOk = true;
+                }
+                catch { }
+                HashSet<string> catalogKeys;
+                try { catalogKeys = new HashSet<string>(PaletteCatalog.All.Select(d => d.Key), StringComparer.Ordinal); }
+                catch { catalogKeys = new HashSet<string>(StringComparer.Ordinal); }
+                var final = new HashSet<string>(off, StringComparer.Ordinal);
+                try
+                {
+                    foreach (var k in PaletteStore.LoadHidden())
+                    {
+                        if (catalogKeys.Contains(k)) continue; // решает чекбокс
+                        if (shown.Contains(k)) continue; // решает чекбокс
+                        if (k.StartsWith(Services.PaletteCatalog.RecentPrefix, StringComparison.Ordinal))
+                        {
+                            // Недавняя не на экране: оставляем скрытой только
+                            // если путь ещё в истории (гонка) или историю
+                            // прочитать не вышло (нечем доказать протухлость).
+                            if ((historyOk && live.Contains(k)) || !historyOk)
+                                final.Add(k);
+                        }
+                        else final.Add(k); // чужой ключ (будущие версии) — не трогаем
+                    }
+                }
+                catch { }
+                PaletteStore.SaveHidden(final);
             }
             catch (Exception ex)
             {

@@ -23,6 +23,9 @@ namespace ShadowRDP.Forms
         // (Services.PaletteCatalog). Пустой = динамика (открытые
         // сессии/консоли): настройкой не скрывается.
         public string Key { get; set; } = "";
+        // v3.9.5 — иконка строки, та же что у пункта в программе
+        // (ключ Helpers.MenuIcons). Пустая = без иконки.
+        public string IconKey { get; set; } = "";
     }
 
     public class CommandPaletteForm : Form
@@ -91,23 +94,23 @@ namespace ShadowRDP.Forms
             Controls.Add(hero);
 
             // v3.9.5 — «Настройка» переехала в хедер справа (просьба
-            // пользователя): окно со ВСЕМ каталогом. Плоская кнопка
-            // в стиле ✕ hero; TabStop=false — фокус не уводит.
+            // пользователя): окно со ВСЕМ каталогом. Заливка #466D8F,
+            // белый текст; TabStop=false — фокус не уводит.
             _heroSettingsBtn = new Button
             {
                 Text = "Настройка…",
                 Size = new Size(140, 30),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.Transparent,
-                ForeColor = Helpers.UiTheme.DialogHeaderFg,
+                BackColor = Color.FromArgb(0x46, 0x6D, 0x8F),
+                ForeColor = Color.White,
                 Font = new Font("Segoe UI", 9F),
                 TabStop = false,
                 Cursor = Cursors.Hand,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             _heroSettingsBtn.FlatAppearance.BorderSize = 0;
-            _heroSettingsBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(45, 255, 255, 255);
-            _heroSettingsBtn.FlatAppearance.MouseDownBackColor = Color.FromArgb(70, 255, 255, 255);
+            _heroSettingsBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(0x56, 0x7E, 0x9F);
+            _heroSettingsBtn.FlatAppearance.MouseDownBackColor = Color.FromArgb(0x38, 0x5C, 0x7C);
             _heroSettingsBtn.Click += (_, _) => OpenSettings();
             hero.Controls.Add(_heroSettingsBtn);
 
@@ -139,14 +142,17 @@ namespace ShadowRDP.Forms
                 Dock = DockStyle.Fill,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 MultiSelect = false,
-                TabStop = false
+                TabStop = true
             };
             _grid.Columns.Add(new DataGridViewTextBoxColumn
             { Name = "Title", HeaderText = "Команда", FillWeight = 70, MinimumWidth = 200 });
             _grid.Columns.Add(new DataGridViewTextBoxColumn
             { Name = "Category", HeaderText = "Раздел", FillWeight = 30, MinimumWidth = 90 });
-            Helpers.UiGridStyle.ApplyCardGrid(_grid, 36, 36);
             body.Controls.Add(_grid);
+            // СТРОГО после добавления в родителя: AttachGrid внутри
+            // ApplyCardGrid вешает кастомный скролл на Parent и делает
+            // early-return без него (тогда полос нет вообще).
+            Helpers.UiGridStyle.ApplyCardGrid(_grid, 36, 36);
             Controls.Add(body);
 
             // v3.9.5 — активная строка заметнее штатного выбора (#E9EFF6
@@ -158,17 +164,19 @@ namespace ShadowRDP.Forms
                 try
                 {
                     if (e == null || e.RowIndex < 0 || e.ColumnIndex < 0) return;
-                    if (!_grid.Rows[e.RowIndex].Selected) return;
+                    bool sel = _grid.Rows[e.RowIndex].Selected;
+                    // Название рисуем сами всегда: иконка 16px + текст
+                    // (как пункты меню в программе).
+                    if (e.ColumnIndex == _grid.Columns["Title"].Index)
+                    {
+                        PaintTitleCell(e, sel);
+                        return;
+                    }
+                    if (!sel) return;
                     e.Paint(e.ClipBounds,
                         DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
                     using (var bg = new SolidBrush(ActiveRowBg))
                         e.Graphics.FillRectangle(bg, e.CellBounds);
-                    if (e.ColumnIndex == 0)
-                    {
-                        using var bar = new SolidBrush(Helpers.UiTheme.Accent);
-                        e.Graphics.FillRectangle(bar,
-                            e.CellBounds.X, e.CellBounds.Y, 3, e.CellBounds.Height);
-                    }
                     e.Paint(e.ClipBounds, DataGridViewPaintParts.ContentForeground);
                     e.Handled = true;
                 }
@@ -198,11 +206,10 @@ namespace ShadowRDP.Forms
             _searchBox.KeyDown += SearchBox_KeyDown;
             _grid.CellDoubleClick += (_, _) => Accept();
 
-            // v3.9.5 — Enter/стрелки работают из любого места формы, а не
-            // только из поля поиска: фокус в гриде после клика мышью —
-            // превью перехватывает клавишу раньше грида (известный рецепт
-            // KeyPreview + SuppressKeyPress). Двойного срабатывания нет:
-            // превью ест клавишу, ProcessDialogKey её уже не видит.
+            // v3.9.5 — фокус сразу в ТАБЛИЦЕ, а не в поиске (просьба
+            // пользователя): Ctrl+K → стрелки мгновенно ходят по строкам.
+            // Двойного срабатывания нет: превью ест клавишу раньше грида
+            // (KeyPreview + SuppressKeyPress), ProcessDialogKey её не видит.
             KeyPreview = true;
             KeyDown += (_, e) =>
             {
@@ -215,20 +222,52 @@ namespace ShadowRDP.Forms
                 }
                 catch { }
             };
+            // Печать при фокусе в таблице идёт в поиск (иначе умер бы
+            // фильтр по мере ввода): превью перехватывает символ/бэкспейс,
+            // дописывает в поиск и уводит фокус туда.
+            KeyPress += (_, e) =>
+            {
+                try
+                {
+                    if (ActiveControl == _searchBox) return;
+                    char c = e.KeyChar;
+                    if (c == '\b')
+                    {
+                        e.Handled = true;
+                        _searchBox.Focus();
+                        _searchBox.SelectionStart = _searchBox.Text.Length;
+                        _searchBox.SelectionLength = 0;
+                        if (_searchBox.Text.Length > 0)
+                        {
+                            _searchBox.Text = _searchBox.Text.Substring(0, _searchBox.Text.Length - 1);
+                            _searchBox.SelectionStart = _searchBox.Text.Length;
+                        }
+                    }
+                    else if (!char.IsControl(c))
+                    {
+                        e.Handled = true;
+                        _searchBox.Focus();
+                        _searchBox.Text += c;
+                        _searchBox.SelectionStart = _searchBox.Text.Length;
+                        _searchBox.SelectionLength = 0;
+                    }
+                }
+                catch { }
+            };
 
             _hidden = Services.PaletteStore.LoadHidden();
             Shown += (_, _) =>
             {
                 Render();
-                _searchBox.Focus();
+                _grid.Focus();
                 // Дим-подложка UiModal.ShowDimmed может увести активацию:
                 // TopMost-мигание (приём ActivateRdpSession) + Activate +
-                // фокус в поиск. Иначе первый Enter уходит мимо.
+                // фокус в таблицу. Иначе первые клавиши уходят мимо.
                 BeginInvoke(new Action(() =>
                 {
                     try { TopMost = true; TopMost = false; } catch { }
                     try { Activate(); } catch { }
-                    try { _searchBox.Focus(); } catch { }
+                    try { _grid.Focus(); } catch { }
                 }));
             };
 
@@ -269,6 +308,56 @@ namespace ShadowRDP.Forms
         private static Color ActiveRowBg => Helpers.UiTheme.CurrentName != "Olive"
             ? Color.FromArgb(0xD6, 0xE4, 0xF5)
             : Helpers.UiTheme.AccentSoft;
+
+        // Кэш иконок строк (покраска идёт на каждый репейнт).
+        private static readonly Dictionary<string, Image> _iconCache = new(StringComparer.Ordinal);
+
+        // Обычный размер как в программе: 16px глиф перед названием.
+        private static Image? GetRowIcon(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            lock (_iconCache)
+            {
+                if (_iconCache.TryGetValue(key, out var im)) return im;
+            }
+            Image? img = null;
+            try { img = Helpers.MenuIcons.GetScaled(key, 16); } catch { }
+            if (img != null) lock (_iconCache) { _iconCache[key] = img; }
+            return img;
+        }
+
+        // Ячейка названия: фон (+акцентная полоска 3px у выбранной),
+        // затем глиф 16px и текст — как пункты меню в программе.
+        private void PaintTitleCell(DataGridViewCellPaintingEventArgs e, bool sel)
+        {
+            e.Paint(e.ClipBounds,
+                DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+            if (sel)
+            {
+                using var bg = new SolidBrush(ActiveRowBg);
+                e.Graphics.FillRectangle(bg, e.CellBounds);
+                using var bar = new SolidBrush(Helpers.UiTheme.Accent);
+                e.Graphics.FillRectangle(bar,
+                    e.CellBounds.X, e.CellBounds.Y, 3, e.CellBounds.Height);
+            }
+            var item = (e.RowIndex >= 0 && e.RowIndex < _grid.Rows.Count)
+                ? _grid.Rows[e.RowIndex].Tag as PaletteItem : null;
+            int x = e.CellBounds.X + 10;
+            int y = e.CellBounds.Y;
+            int h = e.CellBounds.Height;
+            var icon = GetRowIcon(item?.IconKey ?? "");
+            if (icon != null)
+            {
+                e.Graphics.DrawImage(icon, new Rectangle(x, y + (h - 16) / 2, 16, 16));
+                x += 24;
+            }
+            Color fg = sel ? e.CellStyle.SelectionForeColor : e.CellStyle.ForeColor;
+            Font f = e.CellStyle.Font ?? _grid.Font;
+            TextRenderer.DrawText(e.Graphics, item?.Title ?? "", f,
+                new Rectangle(x, y, Math.Max(0, e.CellBounds.Right - x - 10), h), fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            e.Handled = true;
+        }
 
         private void SearchBox_KeyDown(object? sender, KeyEventArgs e)
         {
@@ -362,7 +451,7 @@ namespace ShadowRDP.Forms
                 _grid.ResumeLayout();
                 _hint.Text = _grid.Rows.Count == 0
                     ? "Ничего не найдено · Esc — закрыть"
-                    : $"{_view.Count} команд · Enter — выполнить · Esc — закрыть";
+                    : $"{_view.Count} команд · ↑↓ — выбор · Enter — выполнить · Esc — закрыть";
             }
             catch (Exception ex)
             {
