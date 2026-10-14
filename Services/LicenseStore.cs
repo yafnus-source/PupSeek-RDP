@@ -2,27 +2,40 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+
+[assembly: InternalsVisibleTo("Harness")]
 
 namespace ShadowRDP.Services
 {
     // v4.0 — лицензии платных модулей (гибрид: ключ всегда на список
     // модулей, пакеты — предзаполненные списки).
     //
-    // Формат ключа: PSR1-<payload>.<signature>, где payload = base64url
-    // от {"m":["events","zabbix"],"exp":1799459200,"trial":false},
-    // signature = base64url(HMAC-SHA256(payload, Secret)). Без exp —
-    // бессрочно. Подпись сверяется FixedTimeEquals при каждом старте,
-    // файл license.json можно править руками — не поможет.
+    // ПЛАТНЫЕ ключи: PSR1-<payload>.<signature>, подпись ECDSA P-256.
+    // В коде только ПУБЛИЧНЫЙ ключ — сминтить платный без приватного
+    // (он лишь в tools/KeyGen вызовах и файле Lic\license-private.pem,
+    // которого нет в git) нельзя. Приватный в репозиторий не класть!
+    //
+    // ПРОБНЫЕ ключи: PSR1T-<payload>.<signature>, HMAC на TrialSecret.
+    // Честно слабый: секрет в бинаре извлекается, триал правится
+    // реверсом. Платные от этого не страдают. Пробный обязан иметь
+    // флаг trial (PSR1T без trial не принимается).
     public static class LicenseStore
     {
         private const string Prefix = "PSR1";
+        private const string TrialPrefix = "PSR1T";
 
-        // Секрет подписи. Скомпилирован в бинарь: от школьника защищает,
-        // от реверса — нет (осознанно: честность + удобство).
-        private const string Secret = "V9x4Q7mZ2pL8sT5wK3nR6yU0aB1cD4eF7gH2jJ5kK8";
+        // Публичный ключ ECDSA P-256 (SPKI DER, base64). Проверка тут,
+        // подпись — только приватным у вендора.
+        private const string PublicSpkiB64 =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/r8q6Hc002AMQkQkX+Jo56Cs2rlZ4g026uTRq6rhB/qH8mkmX9Rr5Nix1kEJXt5MUIJxijViZg9decXyvc3YIQ==";
+
+        // Секрет пробных ключей (см. шапку: слабый by design).
+        // Дублируется в tools/KeyGen/Program.cs — менять в обоих местах.
+        private const string TrialSecret = "T3r1aL9s8eC7r4eT5k6E1y0fOrHeLp4U2sErX8wQ0pL";
 
         public const int TrialDays = 10;
         // Напоминание из трея, когда до конца триала осталось дней.
@@ -31,9 +44,8 @@ namespace ShadowRDP.Services
         // Переопределяется в харнессе, чтобы не трогать живой стор.
         public static string Path { get; set; } = AppPaths.LicensePath;
 
-        // Тест-режим харнесса: все модули разрешены (реальные проверки
-        // ключей идут отдельными тестами до его включения).
-        public static bool UnlockAllForTests { get; set; }
+        // Тест-режим харнесса (internal: в публичном API его нет).
+        internal static bool UnlockAllForTests { get; set; }
 
         public sealed class LicenseData
         {
@@ -45,6 +57,20 @@ namespace ShadowRDP.Services
         }
 
         private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };
+
+        private static ECDsa? _pub;
+        private static ECDsa? PubKey()
+        {
+            try
+            {
+                if (_pub != null) return _pub;
+                var ec = ECDsa.Create();
+                ec.ImportSubjectPublicKeyInfo(Convert.FromBase64String(PublicSpkiB64), out _);
+                _pub = ec;
+                return _pub;
+            }
+            catch { return null; }
+        }
 
         private static string B64UrlEncode(byte[] b) =>
             Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -60,9 +86,9 @@ namespace ShadowRDP.Services
             catch { return null; }
         }
 
-        private static byte[] SignBytes(byte[] payload)
+        private static byte[] TrialSign(byte[] payload)
         {
-            using var h = new HMACSHA256(Encoding.UTF8.GetBytes(Secret));
+            using var h = new HMACSHA256(Encoding.UTF8.GetBytes(TrialSecret));
             return h.ComputeHash(payload);
         }
 
@@ -80,21 +106,48 @@ namespace ShadowRDP.Services
             try
             {
                 key = (key ?? "").Trim();
-                var parts = key.Split('.');
-                if (parts.Length != 2 || parts[0].Length <= Prefix.Length + 1)
-                    return (null, "Не тот формат ключа (нужен PSR1-… . …).");
-                if (!parts[0].StartsWith(Prefix + "-", StringComparison.Ordinal))
-                    return (null, "Не тот формат ключа (нужен PSR1-…).");
-                byte[]? payload = B64UrlDecode(parts[0].Substring(Prefix.Length + 1));
+                bool trialOnly;
+                string b64;
+                if (key.StartsWith(TrialPrefix + "-", StringComparison.Ordinal))
+                {
+                    trialOnly = true;
+                    b64 = key.Substring(TrialPrefix.Length + 1);
+                }
+                else if (key.StartsWith(Prefix + "-", StringComparison.Ordinal))
+                {
+                    trialOnly = false;
+                    b64 = key.Substring(Prefix.Length + 1);
+                }
+                else return (null, "Не тот формат ключа (нужен PSR1-…).");
+                var parts = b64.Split('.');
+                if (parts.Length != 2)
+                    return (null, "Ключ повреждён (не читается).");
+                byte[]? payload = B64UrlDecode(parts[0]);
                 byte[]? sig = B64UrlDecode(parts[1]);
                 if (payload == null || sig == null)
                     return (null, "Ключ повреждён (не читается).");
-                byte[] expect = SignBytes(payload);
-                if (!CryptographicOperations.FixedTimeEquals(expect, sig))
-                    return (null, "Подпись не сошлась — ключ чужой или опечатка.");
+                if (trialOnly)
+                {
+                    byte[] expect = TrialSign(payload);
+                    if (!CryptographicOperations.FixedTimeEquals(expect, sig))
+                        return (null, "Подпись не сошлась — ключ чужой или опечатка.");
+                }
+                else
+                {
+                    var pub = PubKey();
+                    if (pub == null)
+                        return (null, "Проверка недоступна.");
+                    bool ok;
+                    try { ok = pub.VerifyData(payload, sig, HashAlgorithmName.SHA256); }
+                    catch { ok = false; }
+                    if (!ok)
+                        return (null, "Подпись не сошлась — ключ чужой или опечатка.");
+                }
                 Payload? p;
                 try { p = JsonSerializer.Deserialize<Payload>(Encoding.UTF8.GetString(payload)); }
                 catch { return (null, "Ключ повреждён (не читается)."); }
+                if (trialOnly && (p == null || !p.trial))
+                    return (null, "Не тот ключ.");
                 if (p?.m == null || p.m.Count == 0)
                     return (null, "В ключе нет модулей.");
                 var mods = p.m
@@ -102,8 +155,7 @@ namespace ShadowRDP.Services
                     .Select(s => s.Trim().ToLowerInvariant())
                     .Distinct()
                     .ToList();
-                // Чужие id отбрасываем (вперёд-совместимость и защита от
-                // опечаток вроде "zabbix,events" одной строкой).
+                // Чужие id отбрасываем (вперёд-совместимость).
                 var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var m in ModuleCatalog.All) known.Add(m.Id);
                 mods = mods.Where(m => known.Contains(m)).ToList();
@@ -145,8 +197,8 @@ namespace ShadowRDP.Services
             catch { return new LicenseData(); }
         }
 
-        // Внутренний минт (триал): тот же подписанный формат, флаг trial.
-        // Правка файла руками подпись не переживёт.
+        // Внутренний минт пробного (триал создаётся на машине
+        // пользователя — приватного ключа там нет, поэтому HMAC).
         private static string MintTrialKey()
         {
             var mods = new List<string>();
@@ -159,7 +211,7 @@ namespace ShadowRDP.Services
                 trial = true
             });
             byte[] pb = Encoding.UTF8.GetBytes(payload);
-            return Prefix + "-" + B64UrlEncode(pb) + "." + B64UrlEncode(SignBytes(pb));
+            return TrialPrefix + "-" + B64UrlEncode(pb) + "." + B64UrlEncode(TrialSign(pb));
         }
 
         // Первый старт 4.x: всем модулям триал 10 дней.
