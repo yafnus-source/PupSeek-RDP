@@ -162,6 +162,9 @@ namespace ShadowRDP.Services
                     {
                         db.New(ioInfo, key);
                         EnsureGroup(db.RootGroup, RootGroupName);
+                        // v3.9.5 — файл новой базы пишем сразу (иначе он
+                        // появлялся только при первой записи).
+                        db.Save(new NullStatusLogger());
                     }
 
                     _db = db;

@@ -334,9 +334,11 @@ namespace ShadowRDP
         // Shown handler runs the unlock dialog if the vault isn't open yet.
         private void ShowVaultForm()
         {
-            var form = Forms.KeePassVaultForm.Instance;
-            form.Show();
-            form.Activate();
+            // v3.9.5 — с затемнением остальной области (дим-подложка
+            // умирает с закрытием окна, модальности нет).
+            Helpers.UiModal.ShowModelessDimmed(
+                Forms.RdpManagerForm.IsOpen ? Forms.RdpManagerForm.Instance : null,
+                Forms.KeePassVaultForm.Instance);
         }
 
         // v4.7 — пункт трея модуля (бывший ShowTodoForm): открывает вкладку

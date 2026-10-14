@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace ShadowRDP.Forms
 {
-    // v3.9.4 — удалённая консоль команд: одна команда на удалённый хост,
+    // v3.9.4 — удалённый терминал: одна команда на удалённый хост,
     // канал WinRM с фолбэком на WMI. Вывод stdout/stderr в моноширинное
     // поле, статус — канал/exit code/время. Аудит: remote.command.
     public class RemoteConsoleForm : Form
@@ -31,7 +31,7 @@ namespace ShadowRDP.Forms
 
         public RemoteConsoleForm(string? host, IEnumerable<string>? hosts)
         {
-            Text = "Удалённая консоль команд";
+            Text = "Удалённый терминал";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
@@ -40,7 +40,7 @@ namespace ShadowRDP.Forms
             BackColor = Helpers.UiTheme.DialogBackground;
             ClientSize = new Size(740, 560);
 
-            var hero = Helpers.UiModal.Hero("Удалённая консоль команд",
+            var hero = Helpers.UiModal.Hero("Удалённый терминал",
                 "WinRM с фолбэком на WMI · аудит remote.command", "terminal");
             hero.Dock = DockStyle.Top;
             Controls.Add(hero);
@@ -239,7 +239,7 @@ namespace ShadowRDP.Forms
                 sw.Stop();
                 if (!IsDisposed && IsHandleCreated)
                     _statusLabel.Text = $"Ошибка: {ex.Message}";
-                Logger.Warn($"Консоль команд: {ex.Message}");
+                Logger.Warn($"Терминал: {ex.Message}");
                 Services.AuditLogger.Write("remote.command", host, "fail", ex.Message);
             }
             finally

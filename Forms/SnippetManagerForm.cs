@@ -28,10 +28,19 @@ namespace ShadowRDP.Forms
         private readonly Label _closeBtn;
         private string? _selected;
 
-        public static void Show(IWin32Window owner)
+        public static void Show(IWin32Window owner, string? initialSearch = null)
         {
             using var f = new SnippetManagerForm();
+            // v3.9.5 — вход из глобального поиска палитры: сразу отбор.
+            if (!string.IsNullOrEmpty(initialSearch))
+                try { f.SetSearch(initialSearch); } catch { }
             Helpers.UiModal.ShowDimmed(owner, f);
+        }
+
+        // v3.9.5 — точка входа для глобального поиска палитры.
+        internal void SetSearch(string t)
+        {
+            try { _searchBox.Text = t ?? ""; } catch { }
         }
 
         public SnippetManagerForm()

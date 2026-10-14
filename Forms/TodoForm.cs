@@ -292,6 +292,13 @@ namespace ShadowRDP.Forms
             ApplyFilters();
         }
 
+        // v3.9.5 — точка входа для глобального поиска палитры: подставляет
+        // текст в поле поиска (фильтр применяется сам).
+        internal void SetSearch(string t)
+        {
+            try { if (_search != null) _search.Text = t ?? ""; } catch { }
+        }
+
         private void ApplyFilters()
         {
             var filtered = _all.AsEnumerable();

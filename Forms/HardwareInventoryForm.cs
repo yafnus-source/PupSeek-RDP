@@ -23,6 +23,7 @@ namespace ShadowRDP.Forms
         private readonly TextBox _filterBox;
         private readonly Panel _filterWrapper;
         private readonly Label _lblHint;
+        private readonly Button _helpBtn;
         private readonly Label _scanBtn;
         private readonly Label _cancelBtn;
         private readonly Label _exportBtn;
@@ -73,6 +74,12 @@ namespace ShadowRDP.Forms
             _lblHint = new Label { Text = "(по имени компьютера)", Location = new Point(70, 48), Size = new Size(364, 18), Font = new Font("Segoe UI", 8F), ForeColor = Color.FromArgb(210, 228, 238), TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent };
             hero.Controls.Add(_filterWrapper);
             hero.Controls.Add(_lblHint);
+
+            // v3.9.5 — «Помощь в настройке» справа от названия хедера:
+            // та же Flat-кнопка, что «Настройка…» в палитре команд.
+            _helpBtn = UiButtons.MakeHeroButton("Помощь в настройке");
+            _helpBtn.Click += (s, e) => InventoryHelpDialog.Show(this, InventoryHelpMode.Hard);
+            hero.Controls.Add(_helpBtn);
 
             // ——— 2. Content: карточка с таблицей ———
             var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };
@@ -220,9 +227,22 @@ namespace ShadowRDP.Forms
 
             void PositionSearch()
             {
-                int x = Math.Max(16, hero.Width - 380);
+                // Кнопка помощи — слева от поиска, по центру его высоты.
+                // Поиск держит правый край; на узком окне сужается,
+                // кнопка — следом, название не трогает.
+                int titleW;
+                using (var tf = new Font("Segoe UI Semibold", 12.5f))
+                    titleW = TextRenderer.MeasureText("Сводная таблица HARD", tf).Width;
+                int titleEnd = 72 + titleW;
+                int searchW = Math.Max(200, Math.Min(364, hero.Width - titleEnd - _helpBtn.Width - 44));
+                int x = hero.Width - 16 - searchW;
+                _filterWrapper.Size = new Size(searchW, 27);
                 _filterWrapper.Location = new Point(x, 18);
                 _lblHint.Location = new Point(x, 48);
+                _lblHint.Size = new Size(searchW, 18);
+                int bx = x - 16 - _helpBtn.Width;
+                if (bx < titleEnd + 12) bx = titleEnd + 12;
+                _helpBtn.Location = new Point(bx, 17);
             }
             PositionSearch();
         }

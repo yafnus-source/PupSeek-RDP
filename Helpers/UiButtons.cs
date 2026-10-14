@@ -68,6 +68,29 @@ namespace ShadowRDP.Helpers
             return lbl;
         }
 
+        // v3.9.5 — кнопка хедера «Помощь в настройке»: один в один как
+        // «Настройка…» в палитре команд (Flat, #466D8F, белый текст 9pt,
+        // без рамки, фокус не уводит). Ширина — по тексту (+34), высота 30.
+        public static Button MakeHeroButton(string text)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0x46, 0x6D, 0x8F),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9F),
+                TabStop = false,
+                Cursor = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(0x56, 0x7E, 0x9F);
+            btn.FlatAppearance.MouseDownBackColor = Color.FromArgb(0x38, 0x5C, 0x7C);
+            using (var f = new Font("Segoe UI", 9F))
+                btn.Size = new Size(TextRenderer.MeasureText(text, f).Width + 34, 30);
+            return btn;
+        }
+
         // Compact 22px filled button — byte-for-byte the same look as the
         // "+ Сессия" / "+ В книгу" buttons in RdpManagerForm's header:
         //   - Solid #296AA0 teal fill, 5px rounding, white Segoe UI Semibold

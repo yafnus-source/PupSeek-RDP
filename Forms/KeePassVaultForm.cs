@@ -131,7 +131,10 @@ namespace ShadowRDP.Forms
                 BackgroundColor = UiTheme.Card
             };
             _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Имя", Width = 400, MinimumWidth = 90 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Login", HeaderText = "Логин", Width = 200, MinimumWidth = 90 });
+            // v3.9.5 — «Логин» тянется на остаток ширины: суммарная ширина
+            // колонок всегда равна клиенту → нижняя (горизонтальная) полоса
+            // не появляется. Ширина «Имени» по-прежнему persists (None-режим).
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Login", HeaderText = "Логин", MinimumWidth = 90, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
             ShadowRDP.Helpers.UiGridStyle.ApplyUnified(_grid, 36, 36);
             cardGrid.Controls.Add(_grid);
             // v4.4.0 — своя тонкая полоса вместо системной.
@@ -221,7 +224,9 @@ namespace ShadowRDP.Forms
                 _btnDelete.Enabled = has;
                 _btnCopy.Enabled = has;
             };
-            _grid.CellMouseDoubleClick += (_, _) => CopyPassword();
+            // v3.9.5 — даблклик = редактирование записи (было копирование
+            // пароля; оно осталось на кнопке и в ПКМ).
+            _grid.CellMouseDoubleClick += (_, _) => EditEntry();
 
             // v3.9.0 — right-click menu shown as a themed popup.
             _grid.CellMouseDown += (s, args) =>
@@ -422,8 +427,10 @@ namespace ShadowRDP.Forms
             _btnCopy.Enabled = has;
         }
 
+        // v3.9.5 — брать именно ВЫБРАННУЮ строку: Rows[0] всегда
+        // отдавал первую запись (в таблице 172.168.218.54, в редакторе vtb).
         private KeePassVault.VaultEntry? SelectedEntry =>
-            _grid.SelectedRows.Count > 0 ? _grid.Rows[0].Tag as KeePassVault.VaultEntry : null;
+            _grid.SelectedRows.Count > 0 ? _grid.SelectedRows[0].Tag as KeePassVault.VaultEntry : null;
 
         private void AddEntry()
         {

@@ -2947,6 +2947,13 @@ namespace ShadowRDP.Forms
             // ——— 1. Hero ———
             const int ClientW = 668;
             var hero = UiModal.Hero("Настройки", "Дашборд — опрос, пороги, агент, SNMP", "gear");
+            // v3.9.5 — «Помощь в настройке» у правого края хедера: та же
+            // кнопка, что «Настройка…» в палитре. Окно фиксированное —
+            // позиция статична (как у палитры: край − 16, центр полосы).
+            var helpBtn = UiButtons.MakeHeroButton("Помощь в настройке");
+            helpBtn.Location = new Point(ClientW - 16 - helpBtn.Width, 25);
+            helpBtn.Click += (s2, e2) => InventoryHelpDialog.Show(dlg, InventoryHelpMode.Monitor);
+            hero.Controls.Add(helpBtn);
 
             // ——— 2. Footer (Сохранить / Отмена) ———
             var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = UiTheme.Card };

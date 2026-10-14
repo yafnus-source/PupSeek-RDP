@@ -195,11 +195,20 @@ namespace ShadowRDP.Helpers
         public static ThemePalette Current => _current;
         public static string CurrentName { get; private set; } = "Light";
 
-        // v3.8.2 — user-customised active filter-pill colours (persisted
-        // separately from the theme; null = use the current palette value).
-        private static Color? _pillBg;
-        private static Color? _pillFg;
-        private static Color? _pillBorder;
+        // v3.9.5 — цвета поте́мно: у синей (Light) и оливковой (Olive)
+        // свои настройки. Слои: секция темы в colors.json → гамма темы
+        // (theme_gamma.json, кнопка «Сохранить гамму») → встроенная палитра.
+        // Старый плоский colors.json мигрирует в ОБЕ секции без потерь.
+        private sealed class ThemeColors
+        {
+            public Color? PillBg, PillFg, PillBorder, HeroBg, RdpBg, DialogBg;
+        }
+        private static readonly Dictionary<string, ThemeColors> _overrides = new(StringComparer.OrdinalIgnoreCase)
+        { ["Light"] = new ThemeColors(), ["Olive"] = new ThemeColors() };
+        private static readonly Dictionary<string, ThemeColors> _gamma = new(StringComparer.OrdinalIgnoreCase)
+        { ["Light"] = new ThemeColors(), ["Olive"] = new ThemeColors() };
+        private static ThemeColors Ov => _overrides.TryGetValue(CurrentName, out var c) ? c : _overrides["Light"];
+        private static ThemeColors Gm => _gamma.TryGetValue(CurrentName, out var c) ? c : _gamma["Light"];
 
         private static string ThemeFilePath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -224,66 +233,174 @@ namespace ShadowRDP.Helpers
             catch {             }
             _current = (CurrentName == "Olive") ? Olive : Light;
             LoadPillColors();
+            LoadGamma();
         }
+
+        private static void ReadSection(Dictionary<string, string> dict, ThemeColors dst)
+        {
+            Color? Get(string k)
+            {
+                try
+                {
+                    if (!dict.TryGetValue(k, out var v) || string.IsNullOrWhiteSpace(v)) return null;
+                    var c = HexToColor(v);
+                    return c.IsEmpty ? null : (Color?)c;
+                }
+                catch { return null; }
+            }
+            dst.PillBg = Get("PillActiveBg");
+            dst.PillFg = Get("PillActiveFg");
+            dst.PillBorder = Get("PillActiveBorder");
+            dst.HeroBg = Get("HeroBg");
+            dst.RdpBg = Get("RdpHeaderBg");
+            dst.DialogBg = Get("DialogHeaderBg");
+        }
+
+        private static Dictionary<string, string> DumpSection(ThemeColors s)
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (s.PillBg.HasValue) dict["PillActiveBg"] = ColorToHex(s.PillBg.Value);
+            if (s.PillFg.HasValue) dict["PillActiveFg"] = ColorToHex(s.PillFg.Value);
+            if (s.PillBorder.HasValue) dict["PillActiveBorder"] = ColorToHex(s.PillBorder.Value);
+            if (s.HeroBg.HasValue) dict["HeroBg"] = ColorToHex(s.HeroBg.Value);
+            if (s.RdpBg.HasValue) dict["RdpHeaderBg"] = ColorToHex(s.RdpBg.Value);
+            if (s.DialogBg.HasValue) dict["DialogHeaderBg"] = ColorToHex(s.DialogBg.Value);
+            return dict;
+        }
+
+        private static readonly string[] _themeNames = new[] { "Light", "Olive" };
 
         private static void LoadPillColors()
         {
             try
             {
+                foreach (var s in _overrides.Values)
+                    s.PillBg = s.PillFg = s.PillBorder = s.HeroBg = s.RdpBg = s.DialogBg = null;
                 var cpath = AppPaths.ColorsPath;
-                if (File.Exists(cpath))
+                if (!File.Exists(cpath)) return;
+                var txt = File.ReadAllText(cpath).Trim();
+                if (string.IsNullOrWhiteSpace(txt)) return;
+                var root = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(txt);
+                if (root == null) return;
+                bool perTheme = false;
+                foreach (var tn in _themeNames)
+                    if (root.TryGetValue(tn, out var el) && el.ValueKind == JsonValueKind.Object) perTheme = true;
+                if (perTheme)
                 {
-                    var txt = File.ReadAllText(cpath).Trim();
-                    if (!string.IsNullOrWhiteSpace(txt))
+                    foreach (var tn in _themeNames)
+                        if (root.TryGetValue(tn, out var el) && el.ValueKind == JsonValueKind.Object)
+                            try { ReadSection(el.Deserialize<Dictionary<string, string>>()!, _overrides[tn]); } catch { }
+                }
+                else
+                {
+                    // Legacy плоский формат — в обе секции без потерь.
+                    try
                     {
-                        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(txt);
-                        if (dict != null)
+                        var flat = JsonSerializer.Deserialize<Dictionary<string, string>>(txt);
+                        if (flat != null)
                         {
-                            if (dict.TryGetValue("PillActiveBg", out var b) && !string.IsNullOrWhiteSpace(b)) _pillBg = HexToColor(b);
-                            if (dict.TryGetValue("PillActiveFg", out var f) && !string.IsNullOrWhiteSpace(f)) _pillFg = HexToColor(f);
-                            if (dict.TryGetValue("PillActiveBorder", out var bo) && !string.IsNullOrWhiteSpace(bo)) _pillBorder = HexToColor(bo);
-                            if (dict.TryGetValue("HeroBg", out var hb) && !string.IsNullOrWhiteSpace(hb)) _heroBg = HexToColor(hb);
-                            if (dict.TryGetValue("RdpHeaderBg", out var rh) && !string.IsNullOrWhiteSpace(rh)) _rdpHeaderBg = HexToColor(rh);
-                            if (dict.TryGetValue("DialogHeaderBg", out var dh) && !string.IsNullOrWhiteSpace(dh)) _dialogHeaderBg = HexToColor(dh);
+                            ReadSection(flat, _overrides["Light"]);
+                            ReadSection(flat, _overrides["Olive"]);
                         }
                     }
+                    catch { }
                 }
             }
             catch { }
         }
 
-        // Persist here only custom colours (pills + hero, no other surface).
+        // Persist per-theme custom colours (null = use gamma/built-in).
         private static void SaveCustomColors()
         {
             try
             {
-                var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                if (_pillBg.HasValue) dict["PillActiveBg"] = ColorToHex(_pillBg.Value);
-                if (_pillFg.HasValue) dict["PillActiveFg"] = ColorToHex(_pillFg.Value);
-                if (_pillBorder.HasValue) dict["PillActiveBorder"] = ColorToHex(_pillBorder.Value);
-                if (_heroBg.HasValue) dict["HeroBg"] = ColorToHex(_heroBg.Value);
-                if (_rdpHeaderBg.HasValue) dict["RdpHeaderBg"] = ColorToHex(_rdpHeaderBg.Value);
-                if (_dialogHeaderBg.HasValue) dict["DialogHeaderBg"] = ColorToHex(_dialogHeaderBg.Value);
+                var root = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var tn in _themeNames)
+                    root[tn] = DumpSection(_overrides[tn]);
                 File.WriteAllText(AppPaths.ColorsPath,
-                    JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+                    JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
+        // v3.9.5 — гамма: снимок всех текущих цветов ТЕКУЩЕЙ темы как её
+        // умолчаний (theme_gamma.json, секции Light/Olive). Новый слой
+        // между секцией colors.json и встроенной палитрой.
+        private static void LoadGamma()
+        {
+            try
+            {
+                foreach (var s in _gamma.Values)
+                    s.PillBg = s.PillFg = s.PillBorder = s.HeroBg = s.RdpBg = s.DialogBg = null;
+                var path = AppPaths.ThemeGammaPath;
+                if (!File.Exists(path)) return;
+                var txt = File.ReadAllText(path).Trim();
+                if (string.IsNullOrWhiteSpace(txt)) return;
+                var root = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(txt);
+                if (root == null) return;
+                bool perTheme = false;
+                foreach (var tn in _themeNames)
+                    if (root.TryGetValue(tn, out var el) && el.ValueKind == JsonValueKind.Object) perTheme = true;
+                if (perTheme)
+                {
+                    foreach (var tn in _themeNames)
+                        if (root.TryGetValue(tn, out var el) && el.ValueKind == JsonValueKind.Object)
+                            try { ReadSection(el.Deserialize<Dictionary<string, string>>()!, _gamma[tn]); } catch { }
+                }
+                else
+                {
+                    try
+                    {
+                        var flat = JsonSerializer.Deserialize<Dictionary<string, string>>(txt);
+                        if (flat != null)
+                        {
+                            ReadSection(flat, _gamma["Light"]);
+                            ReadSection(flat, _gamma["Olive"]);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        // v3.9.5 — кнопка «Сохранить гамму» («Настройки цвета»): текущие
+        // эффективные цвета становятся умолчаниями ТЕКУЩЕЙ темы.
+        public static void SaveGamma()
+        {
+            try
+            {
+                AppPaths.EnsureDataDir();
+                var g = _gamma[CurrentName];
+                g.HeroBg = HeroBg;
+                g.RdpBg = RdpHeaderBg;
+                g.DialogBg = DialogHeaderBg;
+                g.PillBg = PillActiveBg;
+                g.PillFg = PillActiveFg;
+                g.PillBorder = PillActiveBorder;
+                var root = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var tn in _themeNames)
+                    root[tn] = DumpSection(_gamma[tn]);
+                File.WriteAllText(AppPaths.ThemeGammaPath,
+                    JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
 
         public static void SetPillColors(Color bg, Color fg, Color border)
         {
-            _pillBg = bg;
-            _pillFg = fg;
-            _pillBorder = border;
+            Ov.PillBg = bg;
+            Ov.PillFg = fg;
+            Ov.PillBorder = border;
             SaveCustomColors();
             try { PillColorsChanged?.Invoke(); } catch { }
         }
-        // v3.9.3CY — сброс кастомных цветов пил (null = палитра темы).
+        // v3.9.3CY — сброс кастомных цветов пил (null = гамма/палитра темы).
         public static void ResetPillColors()
         {
-            _pillBg = null;
-            _pillFg = null;
-            _pillBorder = null;
+            Ov.PillBg = null;
+            Ov.PillFg = null;
+            Ov.PillBorder = null;
             SaveCustomColors();
             try { PillColorsChanged?.Invoke(); } catch { }
         }
@@ -320,8 +437,7 @@ namespace ShadowRDP.Helpers
         // v3.9.3BH — HeroBg: пользовательский цвет hero (как пилы через
         // colors.json); по умолчанию HeaderBar текущей темы. HeroFg —
         // авоконтраст текста (тёмный на светлом фоне).
-        private static Color? _heroBg;
-        public static Color HeroBg => _heroBg ?? Current.HeaderBar;
+        public static Color HeroBg => Ov.HeroBg ?? Gm.HeroBg ?? Current.HeaderBar;
         public static Color HeroFg
         {
             get
@@ -334,20 +450,19 @@ namespace ShadowRDP.Helpers
         public static event Action? HeroColorChanged;
         public static void SetHeroColor(Color bg)
         {
-            _heroBg = bg;
+            Ov.HeroBg = bg;
             SaveCustomColors();
             try { HeroColorChanged?.Invoke(); } catch { }
         }
         public static void ResetHeroColor()
         {
-            _heroBg = null;
+            Ov.HeroBg = null;
             SaveCustomColors();
             try { HeroColorChanged?.Invoke(); } catch { }
         }
         // v3.9.3CM — эксперимент: цвет области шапки RDP (как hero в Даше).
         // По умолчанию Card (как было); текст — авоконтраст; персист в colors.json.
-        private static Color? _rdpHeaderBg;
-        public static Color RdpHeaderBg => _rdpHeaderBg ?? Card;
+        public static Color RdpHeaderBg => Ov.RdpBg ?? Gm.RdpBg ?? Card;
         public static Color RdpHeaderFg
         {
             get
@@ -360,20 +475,19 @@ namespace ShadowRDP.Helpers
         public static event Action? RdpHeaderColorChanged;
         public static void SetRdpHeaderColor(Color bg)
         {
-            _rdpHeaderBg = bg;
+            Ov.RdpBg = bg;
             SaveCustomColors();
             try { RdpHeaderColorChanged?.Invoke(); } catch { }
         }
         public static void ResetRdpHeaderColor()
         {
-            _rdpHeaderBg = null;
+            Ov.RdpBg = null;
             SaveCustomColors();
             try { RdpHeaderColorChanged?.Invoke(); } catch { }
         }
         // v3.9.3CY — хедер всплывающих окон: НЕ зависит от hero. По умолчанию
         // синий HeaderBar темы (решение пользователя). Авоконтраст текста.
-        private static Color? _dialogHeaderBg;
-        public static Color DialogHeaderBg => _dialogHeaderBg ?? Current.HeaderBar;
+        public static Color DialogHeaderBg => Ov.DialogBg ?? Gm.DialogBg ?? Current.HeaderBar;
         public static Color DialogHeaderFg
         {
             get
@@ -386,13 +500,13 @@ namespace ShadowRDP.Helpers
         public static event Action? DialogHeaderColorChanged;
         public static void SetDialogHeaderColor(Color bg)
         {
-            _dialogHeaderBg = bg;
+            Ov.DialogBg = bg;
             SaveCustomColors();
             try { DialogHeaderColorChanged?.Invoke(); } catch { }
         }
         public static void ResetDialogHeaderColor()
         {
-            _dialogHeaderBg = null;
+            Ov.DialogBg = null;
             SaveCustomColors();
             try { DialogHeaderColorChanged?.Invoke(); } catch { }
         }
@@ -435,12 +549,13 @@ namespace ShadowRDP.Helpers
         public static Color MenuBackground   => Current.MenuBackground;
         public static Color MenuIcon         => Current.MenuIcon;
         public static Color MenuIconNeutral  => Current.MenuIconNeutral;
-        public static Color PillActiveBg     => _pillBg ?? Current.PillActiveBg;
-        public static Color PillActiveFg     => _pillFg ?? Current.PillActiveFg;
-        public static Color PillActiveBorder => _pillBorder ?? Current.PillActiveBorder;
+        public static Color PillActiveBg     => Ov.PillBg ?? Gm.PillBg ?? Current.PillActiveBg;
+        public static Color PillActiveFg     => Ov.PillFg ?? Gm.PillFg ?? Current.PillActiveFg;
+        public static Color PillActiveBorder => Ov.PillBorder ?? Gm.PillBorder ?? Current.PillActiveBorder;
         // v3.9.3 — пользователь задал свои цвета пил (через «Настройки цвета»):
         // пилы видов Даша тогда следуют за настройкой, иначе остаются рыжими.
-        public static bool PillColorsCustomized => _pillBg.HasValue || _pillFg.HasValue || _pillBorder.HasValue;
+        public static bool PillColorsCustomized => Ov.PillBg.HasValue || Ov.PillFg.HasValue || Ov.PillBorder.HasValue
+            || Gm.PillBg.HasValue;
         public static Color GridHeaderBg     => Current.GridHeaderBg;
         public static Color GridHeaderFg     => Current.GridHeaderFg;
         public static Color OutlineBorder    => Current.OutlineBorder;

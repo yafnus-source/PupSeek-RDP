@@ -53,6 +53,36 @@ namespace ShadowRDP.Forms
                 () => Helpers.UiTheme.PillActiveBg,
                 PickPillColor,
                 () => Helpers.UiTheme.ResetPillColors());
+
+            // v3.9.5 — «Сохранить гамму»: снимок ВСЕХ текущих цветов как
+            // умолчаний ТЕКУЩЕЙ темы (синяя/оливковая — свои). Сбросы строк
+            // после этого откатывают к гамме, а не к заводским цветам.
+            var gammaBtn = Helpers.UiButtons.MakeCompactFilled("Сохранить гамму", 170);
+            gammaBtn.Location = new Point(16, 296);
+            gammaBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    Helpers.UiTheme.SaveGamma();
+                    System.Windows.Forms.MessageBox.Show(this,
+                        "Гамма сохранена: текущие цвета стали темой по умолчанию.",
+                        "Настройки цвета",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                }
+                catch { }
+            };
+            card.Controls.Add(gammaBtn);
+            var gammaNote = new Label
+            {
+                Text = "своя гамма для синей и оливковой темы",
+                Location = new Point(196, 301),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Helpers.UiTheme.MutedForeground,
+                BackColor = Color.Transparent
+            };
+            card.Controls.Add(gammaNote);
         }
 
         // Одна строка: название, образец цвета, «Изменить…», «Сбросить».

@@ -46,6 +46,11 @@ namespace ShadowRDP
             try { Application.AddMessageFilter(new Helpers.PaletteHotkeyFilter()); }
             catch (Exception ex) { Logger.Warn($"Ctrl+K filter: {ex.Message}"); }
 
+            // v3.9.5 — ядерный Esc: любое всплывающее окно закрывается по
+            // Esc (кроме главного менеджера); меню и комбо-списки — нет.
+            try { Application.AddMessageFilter(new Helpers.EscGlobalFilter()); }
+            catch (Exception ex) { Logger.Warn($"Esc filter: {ex.Message}"); }
+
             // v2.1.88: opt this process into IE11 Edge mode for the WebBrowser
             // control. Without this, embedded WebBrowser defaults to IE7 mode
             // and modern sites (Grafana, webmin, etc.) render with errors.
