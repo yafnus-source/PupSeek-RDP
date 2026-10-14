@@ -11,7 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-string? keyPath = null, modulesArg = null, verifyKey = null;
+string? keyPath = null, modulesArg = null, verifyKey = null, hwidArg = null;
 int days = 0;
 bool trial = false, genkey = false;
 string? outPath = null;
@@ -24,6 +24,7 @@ for (int i = 0; i < args.Length; i++)
     else if (a == "--trial") trial = true;
     else if (a == "--genkey") genkey = true;
     else if (a == "--out" && i + 1 < args.Length) outPath = args[++i];
+    else if (a == "--hwid" && i + 1 < args.Length) hwidArg = args[++i];
     else if (a == "--verify" && i + 1 < args.Length) verifyKey = args[++i];
     else if (a is "--help" or "-h" or "/?")
     {
@@ -72,7 +73,7 @@ if (!string.IsNullOrEmpty(verifyKey))
     catch (Exception ex) { Console.WriteLine("VERIFY: ERROR " + ex.Message); return 1; }
 }
 
-if (string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath))
+if (!trial && (string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath)))
 {
     Console.Error.WriteLine("Нужен --key <pem> с приватным ключом.");
     return 2;
@@ -94,7 +95,19 @@ var sl = ids.Select(s => s.Trim().ToLowerInvariant()).Where(s => s.Length > 0)
 long exp = trial ? DateTimeOffset.UtcNow.AddDays(10).ToUnixTimeSeconds()
     : days != 0 ? DateTimeOffset.UtcNow.AddDays(days).ToUnixTimeSeconds() : 0;
 
-string payload = JsonSerializer.Serialize(new { m = sl, exp = exp, trial = trial });
+string hwid = "";
+if (trial)
+{
+    hwid = string.IsNullOrEmpty(hwidArg) ? LocalHwid() : hwidArg.Trim().ToLowerInvariant();
+}
+var pdict = new System.Collections.Generic.Dictionary<string, object>
+{
+    ["m"] = sl,
+    ["exp"] = exp,
+    ["trial"] = trial
+};
+if (trial) pdict["hwid"] = hwid;
+string payload = JsonSerializer.Serialize(pdict);
 byte[] pb = Encoding.UTF8.GetBytes(payload);
 byte[] sig;
 if (trial)
@@ -114,9 +127,24 @@ Console.WriteLine("M Modules : " + string.Join(", ", sl));
 Console.WriteLine("Exp     : " + (exp > 0
     ? DateTimeOffset.FromUnixTimeSeconds(exp).ToLocalTime().ToString("dd.MM.yyyy") + (trial ? " (пробный)" : $" ({days} дн.)")
     : "бессрочно"));
+if (trial) Console.WriteLine("HWID    : " + hwid);
 Console.WriteLine();
 Console.WriteLine(prefix + "-" + B64(pb) + "." + B64(sig));
 return 0;
+
+static string LocalHwid()
+{
+    // Дублирует LicenseStore.MachineHwid(): только хэш, необратимо.
+    try
+    {
+        string? raw = null;
+        try { raw = Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography", "MachineGuid", null) as string; } catch { }
+        if (string.IsNullOrWhiteSpace(raw)) raw = "host:" + Environment.MachineName;
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes("PupSeekRDP-hwid-v1:" + raw.Trim()))).ToLowerInvariant();
+    }
+    catch { return ""; }
+}
 
 static class KeyGenTrial
 {
