@@ -1954,6 +1954,111 @@ namespace ShadowRDP.Forms
             // даш W, иначе один и тот же текст виден дважды.
             try { _statusPanel.Visible = !isEvents; } catch { }
             if (isEvents) { try { _eventsHost.BringToFront(); } catch { } }
+            // v4.0 — неоплаченный вид закрыт заглушкой (мягкий апсейл).
+            try { UpdatePaywall(); } catch { }
+        }
+
+        // v4.0 — заглушка платного вида: одна панель, пересаживается на
+        // видимый хост (таблицы либо события), поверх контента.
+        private Panel? _payStub;
+        private WinForms.Label? _payTitle;
+        private WinForms.Label? _payBody;
+
+        private void UpdatePaywall()
+        {
+            try
+            {
+                string? need = _view == DashView.Events ? "events"
+                    : _view == DashView.Monitor ? "zabbix"
+                    : _view == DashView.Web ? "webmon" : null;
+                if (need == null) return;
+                bool locked = !ModuleGate.CanUse(need);
+                if (_payStub == null || _payStub.IsDisposed)
+                {
+                    _payStub = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.DialogBackground, Visible = false };
+                    var box = new Panel { Size = new Size(460, 230), BackColor = Drw.Color.Transparent, Tag = "paybox" };
+                    _payTitle = new WinForms.Label
+                    {
+                        Text = "",
+                        Location = new Point(0, 10),
+                        Size = new Size(460, 30),
+                        Font = new Drw.Font("Segoe UI Semibold", 12F),
+                        ForeColor = UiTheme.Foreground,
+                        BackColor = Drw.Color.Transparent,
+                        TextAlign = Drw.ContentAlignment.MiddleCenter
+                    };
+                    _payBody = new WinForms.Label
+                    {
+                        Text = "",
+                        Location = new Point(20, 48),
+                        Size = new Size(420, 110),
+                        Font = new Drw.Font("Segoe UI", 9F),
+                        ForeColor = UiTheme.Foreground,
+                        BackColor = Drw.Color.Transparent,
+                        TextAlign = Drw.ContentAlignment.MiddleCenter
+                    };
+                    var licBtn = UiButtons.MakeHeroButton("Открыть лицензию…");
+                    licBtn.Location = new Point((460 - licBtn.Width) / 2, 168);
+                    licBtn.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            LicenseForm.Show(this);
+                            UpdatePaywall();
+                            RefreshCurrentViewData();
+                        }
+                        catch { }
+                    };
+                    box.Controls.Add(_payTitle);
+                    box.Controls.Add(_payBody);
+                    box.Controls.Add(licBtn);
+                    _payStub.Controls.Add(box);
+                    _payStub.Resize += (s, e) =>
+                    {
+                        try
+                        {
+                            foreach (Control c in _payStub.Controls)
+                                if ((c.Tag as string) == "paybox")
+                                    c.Location = new Point(
+                                        Math.Max(0, (_payStub.ClientSize.Width - c.Width) / 2),
+                                        Math.Max(0, (_payStub.ClientSize.Height - c.Height) / 2));
+                        }
+                        catch { }
+                    };
+                }
+                Control host = (_view == DashView.Events && _eventsHost != null)
+                    ? (Control)_eventsHost : _tablesHost;
+                if (locked)
+                {
+                    if (host != null && _payStub.Parent != host)
+                    {
+                        host.Controls.Add(_payStub);
+                        _payStub.Dock = DockStyle.Fill;
+                    }
+                    if (_payTitle != null && _payBody != null)
+                    {
+                        string title = ModuleCatalog.TitleOf(need);
+                        _payTitle.Text = $"Модуль «{title}»";
+                        var price = "";
+                        foreach (var m in ModuleCatalog.All)
+                            if (m.Id == need && !string.IsNullOrEmpty(m.Price)) price = $" ({m.Price})";
+                        _payBody.Text = $"«{title}» — платный модуль версии 4.x{price}.\n" +
+                            "Первые 10 дней всё было бесплатно (пробный период).\n" +
+                            "Откройте лицензию и введите ключ — данные за это время\n" +
+                            "продолжали собираться и появятся сразу.";
+                    }
+                    _payStub.Visible = true;
+                    _payStub.BringToFront();
+                }
+                else
+                {
+                    _payStub.Visible = false;
+                    // Невидимую заглушку вынимаем из хоста, чтобы не ломать
+                    // подсчёт детей и layout открытых видов.
+                    try { if (_payStub.Parent != null) _payStub.Parent.Controls.Remove(_payStub); } catch { }
+                }
+            }
+            catch { }
         }
 
         private void EnsureEventsEmbedded()

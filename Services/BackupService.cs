@@ -51,6 +51,8 @@ namespace ShadowRDP.Services
                 new[] { "keepass.json", "keepass_offer_done.json" }),
             ("mmc", "Консоль MMC",
                 new string[0]),
+            ("license", "Лицензия",
+                new[] { "license.json" }),
         };
 
         public static IReadOnlyList<Item> Catalog =>

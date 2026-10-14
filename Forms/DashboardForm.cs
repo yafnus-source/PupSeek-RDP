@@ -131,7 +131,8 @@ namespace ShadowRDP.Forms
             _btnAi.MouseEnter += (s, e) => { _aiBg = ControlPaint.Dark(_aiBg, 0.08f); _btnAi.Invalidate(); };
             _btnAi.MouseLeave += (s, e) => { _aiBg = _btnAi.BackColor != Color.Transparent ? _btnAi.BackColor : Helpers.UiTheme.HeroBg; _btnAi.Invalidate(); };
             _btnAi.Location = new Point(btnRefresh.Right + 8, 13);
-            _btnAi.Click += (s, e) => OllamaInstaller.ShowInstallGuide(this);
+            // v4.0 — ИИ-расшифровка платная.
+            _btnAi.Click += (s, e) => { if (!Helpers.ModuleGate.Require(this, "ai")) return; OllamaInstaller.ShowInstallGuide(this); };
             header.Controls.Add(_btnAi);
 
             // Fire-and-forget availability check
@@ -149,7 +150,7 @@ namespace ShadowRDP.Forms
                             _btnAi.BackColor = UiTheme.StatusOnline;
                             _btnAi.Invalidate();
                             _btnAi.Click -= (s2, e2) => OllamaInstaller.ShowInstallGuide(this);
-                            _btnAi.Click += (s2, e2) => MessageBox.Show(this, "Ollama доступен. Модель llama3.2 готова к расшифровке событий.", "ИИ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            _btnAi.Click += (s2, e2) => { if (!Helpers.ModuleGate.Require(this, "ai")) return; MessageBox.Show(this, "Ollama доступен. Модель llama3.2 готова к расшифровке событий.", "ИИ", MessageBoxButtons.OK, MessageBoxIcon.Information); };
                         }
                         else
                         {
@@ -787,6 +788,8 @@ namespace ShadowRDP.Forms
 
         private async Task AskAiAsync(DashboardEvent ev)
         {
+            // v4.0 — ИИ-расшифровка платная.
+            if (!Helpers.ModuleGate.Require(this, "ai")) return;
             bool useNyan = EventDashboardStore.LoadSettings().ShowNyanCat;
             if (useNyan) _nyanBar.Start(); else ShowMarqueeBar();
             _status.Text = "ИИ думает...";

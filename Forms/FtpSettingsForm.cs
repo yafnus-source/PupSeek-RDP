@@ -25,6 +25,8 @@ namespace ShadowRDP.Forms
     {
         public static bool Show(IWin32Window owner)
         {
+            // v4.0 — FTP-выгрузка платная.
+            if (!Helpers.ModuleGate.Require(owner, "ftp-upload")) return false;
             var s = FtpUploadStore.Load();
             using var dlg = new Form
             {

@@ -2517,6 +2517,8 @@ namespace ShadowRDP.Forms
 
         private void OnOpenFilesClicked()
         {
+            // v4.0 — доменный модуль.
+            if (!Helpers.ModuleGate.Require(this, "domain")) return;
             try
             {
                 using var dlg = new OpenFilesForm();
@@ -2530,6 +2532,8 @@ namespace ShadowRDP.Forms
 
         private void OnInventoryClicked()
         {
+            // v4.0 — модуль инвентаризаций.
+            if (!Helpers.ModuleGate.Require(this, "inventory")) return;
             try
             {
                 using var dlg = new SoftwareInventoryForm();
@@ -2544,6 +2548,8 @@ namespace ShadowRDP.Forms
         // v3.9.3BD — "Сводная таблица HARD": железо компьютеров книги.
         private void OnHardInventoryClicked()
         {
+            // v4.0 — модуль инвентаризаций.
+            if (!Helpers.ModuleGate.Require(this, "inventory")) return;
             try
             {
                 using var dlg = new HardwareInventoryForm();
