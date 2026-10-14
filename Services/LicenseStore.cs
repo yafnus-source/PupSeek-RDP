@@ -102,8 +102,13 @@ namespace ShadowRDP.Services
                     .Select(s => s.Trim().ToLowerInvariant())
                     .Distinct()
                     .ToList();
+                // Чужие id отбрасываем (вперёд-совместимость и защита от
+                // опечаток вроде "zabbix,events" одной строкой).
+                var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var m in ModuleCatalog.All) known.Add(m.Id);
+                mods = mods.Where(m => known.Contains(m)).ToList();
                 if (mods.Count == 0)
-                    return (null, "В ключе нет модулей.");
+                    return (null, "В ключе нет известных модулей.");
                 if (p.exp > 0 && DateTimeOffset.UtcNow.ToUnixTimeSeconds() > p.exp)
                     return (null, "Срок ключа вышел.");
                 return (new LicenseData { Key = key, Modules = mods, Exp = p.exp, Trial = p.trial }, null);
