@@ -14,12 +14,11 @@ namespace ShadowRDP.Services
     //
     // Canonical path: %PROGRAMDATA%\ShadowRDP\addressbook.json (via AppPaths)
     //   Shared between non-elevated and elevated instances. Per-user
-    //   %LOCALAPPDATA% doesn't work because UAC switches the user (ivanov
-    //   → IvanovAD), and each profile has its own %LOCALAPPDATA%.
+    //   %LOCALAPPDATA% doesn't work because UAC switches the user between
+    //   the launching profile and the elevated one.
     //
     // Migration: on first run, if the canonical file is missing, we look in
-    // legacy locations (per-user profiles from before the path change, the
-    // .ps1's $PSScriptRoot, etc.) and copy the first one we find.
+    // legacy locations and copy the first one we find.
     //
     // Schema: array of AddressBookEntry.
     // Filter rule: skip entries where BOTH Computer AND User are empty (junk).
@@ -35,13 +34,11 @@ namespace ShadowRDP.Services
         private static readonly string[] _legacyPaths = new[]
         {
             // Per-user LOCALAPPDATA from the user who launched the .exe
-            // (might be ivanov's or IvanovAD's profile, depending on
+            // (might be the launching profile or the elevated one, depending on
             // which one first opened the app):
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 @"ShadowRDP\addressbook.json"),
-            // .ps1 dev location (next to the script):
-            @"C:\temp\Clo\addressbook.json",
             // Old Inno Setup install location:
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

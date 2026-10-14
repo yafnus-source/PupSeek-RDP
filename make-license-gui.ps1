@@ -13,9 +13,7 @@ $Mods = @(
 
 function Find-KeyGen() {
     $cands = @(
-        (Join-Path $PSScriptRoot 'KeyGen.exe'),
-        'C:\temp\Clo\prod\Lic\KeyGen.exe',
-        'C:\temp\Clo\cpro\tools\KeyGen\bin\Release\net8.0\win-x64\publish\KeyGen.exe'
+        (Join-Path $PSScriptRoot 'KeyGen.exe')
     )
     foreach ($c in $cands) { if (Test-Path $c) { return $c } }
     return $null
@@ -25,7 +23,6 @@ $script:kgPath = Find-KeyGen
 $script:keyPath = ''
 if ($script:kgPath -ne $null) {
     $script:keyPath = Join-Path (Split-Path -Parent $script:kgPath) 'license-private.pem'
-    if (-not (Test-Path $script:keyPath)) { $script:keyPath = 'C:\temp\Clo\prod\Lic\license-private.pem' }
 }
 
 function Mint-Key([string[]]$ids, [int]$days, [bool]$trial) {

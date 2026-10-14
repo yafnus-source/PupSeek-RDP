@@ -21,9 +21,7 @@ if ($ListModules) { $Known; return }
 function Find-KeyGen([string]$hint) {
     if ($hint -ne '' -and (Test-Path $hint)) { return $hint }
     $cands = @(
-        (Join-Path $PSScriptRoot 'KeyGen.exe'),
-        'C:\temp\Clo\prod\Lic\KeyGen.exe',
-        'C:\temp\Clo\cpro\tools\KeyGen\bin\Release\net8.0\win-x64\publish\KeyGen.exe'
+        (Join-Path $PSScriptRoot 'KeyGen.exe')
     )
     foreach ($c in $cands) { if (Test-Path $c) { return $c } }
     return $null
@@ -31,14 +29,13 @@ function Find-KeyGen([string]$hint) {
 
 $kg = Find-KeyGen $KeyGen
 if ($kg -eq $null) {
-    Write-Error 'Не найден KeyGen.exe (рядом со скриптом, в C:\temp\Clo\prod\Lic или в publish сборки).'
+    Write-Error 'Не найден KeyGen.exe рядом со скриптом (укажите -KeyGen).'
     return
 }
 
 $kf = $Key
 if ($kf -eq '') {
     $kf = Join-Path (Split-Path -Parent $kg) 'license-private.pem'
-    if (-not (Test-Path $kf)) { $kf = 'C:\temp\Clo\prod\Lic\license-private.pem' }
 }
 if (-not (Test-Path $kf)) {
     Write-Error "Нет приватного ключа: $kf"
