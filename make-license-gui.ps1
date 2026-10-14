@@ -1,28 +1,42 @@
 ﻿# GUI-генератор ключей PupSeekRDP v4. НЕ поставляется клиентам.
 # Запуск: powershell -NoProfile -ExecutionPolicy Bypass -File KeyGen-GUI.ps1
+# Минтит через KeyGen.exe рядом со скриптом (см. Find-KeyGen).
+# Файл в UTF-8 с BOM (иначе PowerShell 5.1 давится на кириллице).
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$Secret = 'V9x4Q7mZ2pL8sT5wK3nR6yU0aB1cD4eF7gH2jJ5kK8'
 $Mods = @(
     @('events','События'), @('zabbix','Монитор'), @('webmon','Web-мониторинг'),
     @('inventory','HARD + SOFT'), @('todo','TODO и календарь'),
     @('ftp-upload','FTP-выгрузка'), @('ai','ИИ-расшифровка'), @('domain','Доменные')
 )
 
-function B64Url([byte[]]$b) {
-    [Convert]::ToBase64String($b).TrimEnd('=').Replace('+','-').Replace('/','_')
+function Find-KeyGen() {
+    $cands = @(
+        (Join-Path $PSScriptRoot 'KeyGen.exe'),
+        'C:\temp\Clo\prod\Lic\KeyGen.exe',
+        'C:\temp\Clo\cpro\tools\KeyGen\bin\Release\net8.0\win-x64\publish\KeyGen.exe'
+    )
+    foreach ($c in $cands) { if (Test-Path $c) { return $c } }
+    return $null
 }
 
-function Mint-Key([string[]]$ids, [long]$exp, [bool]$trial) {
-    $sl = @($ids | Sort-Object -Unique)
-    $pj = [ordered]@{ m = $sl; exp = $exp; trial = $trial } | ConvertTo-Json -Compress
-    $pb = [Text.Encoding]::UTF8.GetBytes($pj)
-    $h = New-Object Security.Cryptography.HMACSHA256
-    $h.Key = [Text.Encoding]::UTF8.GetBytes($Secret)
-    $sg = $h.ComputeHash($pb)
-    $h.Dispose()
-    'PSR1-' + (B64Url $pb) + '.' + (B64Url $sg)
+$script:kgPath = Find-KeyGen
+$script:keyPath = ''
+if ($script:kgPath -ne $null) {
+    $script:keyPath = Join-Path (Split-Path -Parent $script:kgPath) 'license-private.pem'
+    if (-not (Test-Path $script:keyPath)) { $script:keyPath = 'C:\temp\Clo\prod\Lic\license-private.pem' }
+}
+
+function Mint-Key([string[]]$ids, [int]$days, [bool]$trial) {
+    if ($script:kgPath -eq $null) { throw 'Не найден KeyGen.exe' }
+    $a = @('--key', $script:keyPath)
+    if ($trial) { $a += '--trial' }
+    else { $a += @('--modules', ($ids -join ','), '--days', "$days") }
+    $out = & $script:kgPath @a 2>&1
+    $lines = @($out | ForEach-Object { "$_".Trim() } | Where-Object { $_ -ne '' })
+    if ($lines.Count -eq 0) { throw 'KeyGen ничего не вернул' }
+    return @{ Key = $lines[-1]; Log = ($lines -join "`r`n") }
 }
 
 $f = New-Object Windows.Forms.Form
@@ -124,17 +138,16 @@ $btnGo.Add_Click({
     }
     $trial = $rbTrial.Checked
     if ($trial) { $ids = @($Mods | ForEach-Object { $_[0] }) }
-    $exp = 0
-    $expTxt = 'бессрочно'
-    if ($trial) {
-        $exp = [DateTimeOffset]::UtcNow.AddDays(10).ToUnixTimeSeconds()
-        $expTxt = [DateTimeOffset]::FromUnixTimeSeconds($exp).ToLocalTime().ToString('dd.MM.yyyy') + ' (пробный)'
-    } elseif ($rbDays.Checked) {
-        $exp = [DateTimeOffset]::UtcNow.AddDays([int]$numDays.Value).ToUnixTimeSeconds()
-        $expTxt = [DateTimeOffset]::FromUnixTimeSeconds($exp).ToLocalTime().ToString('dd.MM.yyyy')
+    $days = 0
+    if ($trial) { $days = 10 }
+    elseif ($rbDays.Checked) { $days = [int]$numDays.Value }
+    try {
+        $r = Mint-Key $ids $days $trial
+        $script:lastKey = $r.Key
+        $out.Text = $r.Log + "`r`n`r`n" + $r.Key
+    } catch {
+        $out.Text = 'Ошибка: ' + $_.Exception.Message
     }
-    $script:lastKey = Mint-Key $ids $exp $trial
-    $out.Text = 'Модули: ' + ($ids -join ', ') + "`r`n" + 'Срок: ' + $expTxt + "`r`n`r`n" + $script:lastKey
 })
 
 [void]$f.ShowDialog()

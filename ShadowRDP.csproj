@@ -83,5 +83,13 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- tools\ (KeyGen и пр.) — отдельные проекты, не часть продукта.
+         Без этого SDK-глоб **/*.cs тянет их (включая их obj) в сборку. -->
+    <Compile Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
+
 </Project>
 

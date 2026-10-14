@@ -1,58 +1,59 @@
-﻿# Генератор ключей PupSeekRDP v4. НЕ поставляется клиентам, только для выдачи.
+﻿# Генератор ключей PupSeekRDP v4 — обёртка над KeyGen.exe. НЕ поставляется клиентам.
 # Использование:
 #   .\make-license.ps1 -Modules zabbix,events -Days 30      # срочный на 30 дней
 #   .\make-license.ps1 -Modules zabbix -Days 0               # бессрочный (Days 0)
 #   .\make-license.ps1 -Trial                                # пробный (все модули, 10 дней)
 #   .\make-license.ps1 -ListModules                          # список id модулей
 # Проверка: вставить строку в «Инструменты → Лицензия…» — окно покажет точную ошибку, если что не так.
+# Файл в UTF-8 с BOM (иначе PowerShell 5.1 давится на кириллице).
 param(
     [string[]]$Modules = @(),
     [int]$Days = 0,
     [switch]$Trial,
-    [switch]$ListModules
+    [switch]$ListModules,
+    [string]$KeyGen = '',
+    [string]$Key = ''
 )
 
-$Secret = 'V9x4Q7mZ2pL8sT5wK3nR6yU0aB1cD4eF7gH2jJ5kK8'
 $Known = @('events','zabbix','webmon','inventory','todo','ftp-upload','ai','domain')
-
 if ($ListModules) { $Known; return }
 
-if ($Trial) { $Modules = $Known; $Days = 10 }
-
-if ($Modules.Count -eq 0) { $Modules = $Known }
-# Терпим любой ввод: хоть массивом, хоть одной строкой через запятую.
-$Modules = @($Modules | ForEach-Object { $_ -split '[,;\s]+' } | ForEach-Object { "$_".Trim().ToLowerInvariant() } | Where-Object { $_ -ne '' } | Sort-Object -Unique)
-foreach ($m in $Modules) {
-    if ($Known -notcontains $m) { Write-Warning "Неизвестный модуль: $m (известные: $($Known -join ', '))" }
+function Find-KeyGen([string]$hint) {
+    if ($hint -ne '' -and (Test-Path $hint)) { return $hint }
+    $cands = @(
+        (Join-Path $PSScriptRoot 'KeyGen.exe'),
+        'C:\temp\Clo\prod\Lic\KeyGen.exe',
+        'C:\temp\Clo\cpro\tools\KeyGen\bin\Release\net8.0\win-x64\publish\KeyGen.exe'
+    )
+    foreach ($c in $cands) { if (Test-Path $c) { return $c } }
+    return $null
 }
 
-$exp = 0
-if ($Days -gt 0) { $exp = [DateTimeOffset]::UtcNow.AddDays($Days).ToUnixTimeSeconds() }
-
-function B64Url([byte[]]$b) {
-    [Convert]::ToBase64String($b).TrimEnd('=').Replace('+','-').Replace('/','_')
+$kg = Find-KeyGen $KeyGen
+if ($kg -eq $null) {
+    Write-Error 'Не найден KeyGen.exe (рядом со скриптом, в C:\temp\Clo\prod\Lic или в publish сборки).'
+    return
 }
 
-$payloadObj = [ordered]@{ m = $Modules; exp = $exp; trial = [bool]$Trial }
-$payloadJson = $payloadObj | ConvertTo-Json -Compress
-$pb = [Text.Encoding]::UTF8.GetBytes($payloadJson)
-$hm = New-Object Security.Cryptography.HMACSHA256
-$hm.Key = [Text.Encoding]::UTF8.GetBytes($Secret)
-$sig = $hm.ComputeHash($pb)
-$hm.Dispose()
+$kf = $Key
+if ($kf -eq '') {
+    $kf = Join-Path (Split-Path -Parent $kg) 'license-private.pem'
+    if (-not (Test-Path $kf)) { $kf = 'C:\temp\Clo\prod\Lic\license-private.pem' }
+}
+if (-not (Test-Path $kf)) {
+    Write-Error "Нет приватного ключа: $kf"
+    return
+}
 
-$key = 'PSR1-' + (B64Url $pb) + '.' + (B64Url $sig)
+$args2 = @('--key', $kf)
+if ($Trial) { $args2 += '--trial' }
+else {
+    $ids = @($Modules | ForEach-Object { $_ -split '[,;\s]+' } | ForEach-Object { "$_".Trim().ToLowerInvariant() } | Where-Object { $_ -ne '' } | Sort-Object -Unique)
+    if ($ids.Count -eq 0) { $ids = $Known }
+    foreach ($m in $ids) {
+        if ($Known -notcontains $m) { Write-Warning "Неизвестный модуль: $m (известные: $($Known -join ', '))" }
+    }
+    $args2 += @('--modules', ($ids -join ','), '--days', "$Days")
+}
 
-# Самопроверка: подпись сошлась сама с собой (ловит опечатки в коде выше).
-$hm2 = New-Object Security.Cryptography.HMACSHA256
-$hm2.Key = [Text.Encoding]::UTF8.GetBytes($Secret)
-$re = $hm2.ComputeHash($pb)
-$hm2.Dispose()
-$ok = [Convert]::ToBase64String($sig) -eq [Convert]::ToBase64String($re)
-
-'M Modules : ' + ($Modules -join ', ')
-'Exp     : ' + $(if ($exp -gt 0) { [DateTimeOffset]::FromUnixTimeSeconds($exp).ToLocalTime().ToString('dd.MM.yyyy') + " ($Days дн.)" } else { 'бессрочно' })
-'Trial   : ' + [bool]$Trial
-'SelfChk : ' + $(if ($ok) { 'OK' } else { 'FAIL — не выдавать!' })
-''
-$key
+& $kg @args2
