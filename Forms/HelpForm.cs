@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using ShadowRDP.Controls;
 using ShadowRDP.Helpers;
 using ShadowRDP.Services;
 
@@ -364,6 +365,11 @@ namespace ShadowRDP.Forms
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
+        [DllImport("user32.dll")]
+        private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+        private const int EM_LINESCROLL = 0x00B6;
+
         private static void SetCue(TextBox box, string cue)
         {
             try { if (box.IsHandleCreated) SendMessage(box.Handle, EM_SETCUEBANNER, (IntPtr)1, cue); }
@@ -553,6 +559,12 @@ namespace ShadowRDP.Forms
             body.Controls.Add(_leftCard);
             Controls.Add(body);
 
+            // Колесо над текстом/списком крутит именно их: WinForms шлёт
+            // WM_MOUSEWHEEL сфокусированному контролу, а не тому, что под
+            // курсором (фокус тут обычно в поиске — текст стоял мёртво).
+            ShadowWheel.Register(_text, TextCanScroll, TextScrollLines);
+            ShadowWheel.Register(_contents, ListCanScroll, ListScrollLines);
+
             BuildText();
             ApplyFilter();
             Resize += (s, e) => LayoutBody();
@@ -623,6 +635,53 @@ namespace ShadowRDP.Forms
                     _contents.SelectedIndex = 0;
             }
             catch { }
+        }
+
+        // Колесо мыши: текст и список содержания.
+        private bool TextCanScroll()
+        {
+            try
+            {
+                if (!_text.IsHandleCreated || _text.TextLength == 0) return false;
+                var p = _text.GetPositionFromCharIndex(_text.TextLength - 1);
+                return p.Y > _text.ClientSize.Height;
+            }
+            catch { return false; }
+        }
+
+        private bool TextScrollLines(int lines)
+        {
+            try
+            {
+                if (!_text.IsHandleCreated) return false;
+                SendMessage(_text.Handle, EM_LINESCROLL, 0, lines);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private bool ListCanScroll()
+        {
+            try
+            {
+                return _contents.Items.Count > 0
+                    && _contents.Items.Count * _contents.ItemHeight > _contents.ClientSize.Height;
+            }
+            catch { return false; }
+        }
+
+        private bool ListScrollLines(int lines)
+        {
+            try
+            {
+                int n = _contents.Items.Count;
+                if (n == 0) return false;
+                int page = Math.Max(1, _contents.ClientSize.Height / Math.Max(1, _contents.ItemHeight));
+                int max = Math.Max(0, n - page);
+                _contents.TopIndex = Math.Max(0, Math.Min(max, _contents.TopIndex + lines));
+                return true;
+            }
+            catch { return false; }
         }
 
         // Переход к выбранному разделу; при активном поиске первое
