@@ -7,6 +7,10 @@ publish/
 # живые данные (регенерируются программой, в git им не место)
 monitor/data/*.json
 monitor/todo/data/*.json
+# снапшоты мониторинга с живыми данными (имена, телефоны, IP, SID)
+dashboard.html
+dashboard-copy.html
+monitor/monitor-wow*.html*
 license.json
 *.kdbx
 debug.log
