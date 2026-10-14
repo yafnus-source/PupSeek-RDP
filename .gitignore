@@ -1,8 +1,16 @@
+# build
 bin/
 obj/
-.vs/
+publish/
 *.user
-*.suo
-*.userprefs
-AppPackages/
-Publish/
+.vs/
+# живые данные (регенерируются программой, в git им не место)
+monitor/data/*.json
+monitor/todo/data/*.json
+license.json
+*.kdbx
+debug.log
+audit_*.jsonl
+audit_*.jsonl.gz
+keepass.json
+theme.json
