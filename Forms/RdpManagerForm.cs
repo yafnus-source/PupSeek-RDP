@@ -4507,7 +4507,7 @@ namespace ShadowRDP.Forms
 
         // v3.6.8 — strips the MMC " [ target ]" suffix some snap-ins append
         // to their display name (e.g. "Active Directory Users and Computers
-        // [ srv-dc03.Contoso.local ]" → "Active Directory Users and
+        // [ srv-dc03.contoso.local ]" → "Active Directory Users and
         // Computers") so tabs/recent entries stay short and readable.
         private static string TrimConsoleSuffix(string name)
         {
