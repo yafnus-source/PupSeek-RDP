@@ -98,7 +98,7 @@ namespace ShadowRDP.Forms
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = UiTheme.MutedForeground,
                 BackColor = Color.Transparent,
-                Text = "Ключи и пакеты («Мониторинг», «Про» — все модули): напишите нам, вышлем строку."
+                Text = "Ключи: модуль — 500 ₽, пакеты «Мониторинг» и «Учёт» — по 990 ₽, «Про» (все модули) — 2490 ₽. Напишите нам, вышлем строку."
             };
             keyCard.Controls.Add(contact);
             body.Controls.Add(keyCard);
@@ -131,6 +131,8 @@ namespace ShadowRDP.Forms
                     actBtn.Location = new Point(16 + keyWrap.Width + 8, 79);
                     contact.Location = new Point(16, 112);
                     contact.Size = new Size(innerW, 30);
+                    contact.MaximumSize = new Size(innerW, 0);
+                    contact.AutoSize = true;
                     foreach (Control c in _planCard.Controls)
                     {
                         if (c is Label l && l.Tag as string == "planrow")
