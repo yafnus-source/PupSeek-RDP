@@ -9,8 +9,12 @@ namespace ShadowRDP.Controls
     // v4.3.3 — modern on/off switch built on a plain Panel (no native CheckBox).
     // Looks the same as before (rounded track + knob, accent when checked),
     // but there is no ButtonBase machinery involved at all: no native window
-    // painting, no themed background, no transparency tricks, no focus cues —
-    // so whole classes of paint artifacts are impossible by construction.
+    // painting, no themed background, no focus cues.
+    // v3.9.5 — фон НЕ заливаем вообще (настоящая прозрачность): текст лежит
+    // на том, что реально нарисовано под тогглом (белая карточка, фон окна,
+    // градиент). Сплошная заливка UiTheme.Card давала голубую «плашку»,
+    // а подъём по BackColor родителей врал на прозрачных карточках
+    // UiModal.Card (BackColor=Transparent, белое рисуется в Paint).
     //
     // Minimal CheckBox-like API used by callers: Text / Checked / Enabled /
     // AutoCheck / CheckedChanged, plus click/space toggling.
@@ -23,7 +27,7 @@ namespace ShadowRDP.Controls
 
         public UiToggle()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.SupportsTransparentBackColor, true);
             Cursor = Cursors.Hand;
             AutoSize = false;
             Height = 22;
@@ -31,7 +35,7 @@ namespace ShadowRDP.Controls
             AutoCheck = true;
             Font = new Font("Segoe UI", 9F);
             ForeColor = UiTheme.Foreground;
-            BackColor = UiTheme.Card;
+            BackColor = Color.Transparent;
         }
 
         public bool AutoCheck { get; set; }
@@ -78,7 +82,8 @@ namespace ShadowRDP.Controls
             var g = pevent.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            using (var bgBrush = new SolidBrush(BackColor)) g.FillRectangle(bgBrush, ClientRectangle);
+            // Фон не заливаем: прозрачность рисует родителя позади
+            // (см. конструктор). Дальше только трек/кружок/текст.
 
             float d = pevent.Graphics.DpiX / 96f;
             int trackW = (int)Math.Round(40f * d), trackH = (int)Math.Round(22f * d), knob = (int)Math.Round(18f * d);

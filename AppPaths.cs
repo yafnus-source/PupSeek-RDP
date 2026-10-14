@@ -67,6 +67,10 @@ namespace ShadowRDP
         public static string GroupsPath => Path.Combine(DataDir, "groups.json");
         // v3.8.2 — user-customised active filter-pill colours (role → hex).
         public static string ColorsPath => Path.Combine(DataDir, "colors.json");
+        // v3.9.5 — «Сохранить гамму» («Настройки цвета»): снимок ВСЕХ текущих
+        // цветов как темы по умолчанию (theme_gamma.json). Слой между
+        // встроенной палитрой и colors.json.
+        public static string ThemeGammaPath => Path.Combine(DataDir, "theme_gamma.json");
         // v4.0 — Event Dashboard (Zabbix-like): monitored hosts, cached events, settings.
         public static string DashboardEventsPath => Path.Combine(DataDir, "dashboard_events.json");
         public static string DashboardSettingsPath => Path.Combine(DataDir, "dashboard_settings.json");
@@ -97,6 +101,8 @@ namespace ShadowRDP
         public static string ModulesSettingsPath => Path.Combine(DataDir, "modules.json");
         // v3.9.3BD — кэш сводки железа (Сводная таблица HARD).
         public static string HardwareInventoryPath => Path.Combine(DataDir, "hardware_inventory.json");
+        // v3.9.5 — закладки справки (окно «?»): [{ Section, Offset, Text, CreatedAt }].
+        public static string HelpBookmarksPath => Path.Combine(DataDir, "help_bookmarks.json");
 
         // Путь к data/ директории сайта монитора (для синхронизации JSON)
         private static string? _monitorDataDir;

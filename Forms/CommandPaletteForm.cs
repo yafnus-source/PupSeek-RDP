@@ -26,6 +26,11 @@ namespace ShadowRDP.Forms
         // v3.9.5 — иконка строки, та же что у пункта в программе
         // (ключ Helpers.MenuIcons). Пустая = без иконки.
         public string IconKey { get; set; } = "";
+        // v3.9.5 — записи глобального поиска (сессии RDP, книга, TODO,
+        // сниппеты, события, мониторинг): при ПУСТОМ запросе прячутся,
+        // видны только когда пользователь печатает. Иначе сотни строк
+        // захламляют пустую палитру.
+        public bool HideWhenEmpty { get; set; }
     }
 
     public class CommandPaletteForm : Form
@@ -432,10 +437,14 @@ namespace ShadowRDP.Forms
             {
                 // Скрытые настройкой строки каталога (Key из PaletteCatalog)
                 // не показываем; динамика (пустой Key) видна всегда.
+                // Пустой запрос: записи глобального поиска прячем.
+                string q = _searchBox.Text;
                 var pool = _hidden.Count == 0
                     ? _items
                     : _items.Where(it => string.IsNullOrEmpty(it.Key) || !_hidden.Contains(it.Key)).ToList();
-                _view = Filter(pool, _searchBox.Text);
+                if (string.IsNullOrWhiteSpace(q))
+                    pool = pool.Where(it => !it.HideWhenEmpty).ToList();
+                _view = Filter(pool, q);
                 _grid.SuspendLayout();
                 _grid.Rows.Clear();
                 foreach (var it in _view)

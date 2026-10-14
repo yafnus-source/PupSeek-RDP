@@ -27,7 +27,7 @@ namespace ShadowRDP.Services
                 new("portscan", "Проверка портов…", "Инструменты", "ping"),
                 new("snippets", "Управление сниппетами…", "Инструменты", "terminal"),
                 new("audit", "Журнал действий…", "Инструменты", "list"),
-                new("remote-console", "Удалённая консоль…", "Инструменты", "terminal"),
+                new("remote-console", "Удалённый терминал…", "Инструменты", "terminal"),
                 new("tunnels", "Туннели SSH…", "Инструменты", "exchange"),
                 new("backup", "Backup…", "Инструменты", "exchange"),
                 new("dash-events", "Дашборд: События", "Дашборд", "bell"),
@@ -48,6 +48,7 @@ namespace ShadowRDP.Services
                 new("modules", "Модули…", "Настройки", "tasks"),
                 new("change-pwd", "Сменить пароль", "Настройки", "key"),
                 new("switch-theme", "Сменить тему", "Настройки", "sun"),
+                new("help", "Справка по программе…", "Справка", "book"),
             }.AsReadOnly();
     }
 }

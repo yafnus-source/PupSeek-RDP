@@ -510,5 +510,60 @@ namespace ShadowRDP.Helpers
                 try { dim?.Close(); dim?.Dispose(); } catch { }
             }
         }
+
+        // v3.9.5 — немодальное окно с дим-подложкой (как ShowDimmed, но
+        // форма живёт своей жизнью, подложка умирает с её закрытием).
+        // Уже видимую форму не трогаем — только активируем.
+        public static void ShowModelessDimmed(IWin32Window? owner, Form dlg)
+        {
+            try
+            {
+                if (dlg == null || dlg.IsDisposed) return;
+                try { DisableTransitions(dlg); } catch { }
+                if (dlg.Visible)
+                {
+                    try
+                    {
+                        if (dlg.WindowState == FormWindowState.Minimized)
+                            dlg.WindowState = FormWindowState.Normal;
+                        dlg.Activate();
+                    }
+                    catch { }
+                    return;
+                }
+                Form? top = null;
+                try
+                {
+                    if (owner is Form of && !of.IsDisposed && of.Visible) top = of;
+                    else { var a = Form.ActiveForm; if (a != null && !a.IsDisposed && a.Visible) top = a; }
+                }
+                catch { }
+                Form? dim = null;
+                if (top != null)
+                {
+                    try
+                    {
+                        if (_dimDepth == 0) dim = OpenDim(top);
+                        _dimDepth++;
+                    }
+                    catch { dim = null; }
+                }
+                void CloseDim(object? s, EventArgs e)
+                {
+                    try { dlg.FormClosed -= CloseDim; } catch { }
+                    try { if (dim != null && !dim.IsDisposed) { dim.Close(); dim.Dispose(); } } catch { }
+                    if (dim != null) _dimDepth = Math.Max(0, _dimDepth - 1);
+                }
+                try { dlg.FormClosed += CloseDim; } catch { }
+                try
+                {
+                    if (top != null) dlg.Show(top);
+                    else dlg.Show();
+                }
+                catch { try { dlg.Show(); } catch { } }
+                try { dlg.Activate(); } catch { }
+            }
+            catch { try { dlg.Show(); } catch { } }
+        }
     }
 }

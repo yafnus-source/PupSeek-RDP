@@ -23,6 +23,14 @@ namespace ShadowRDP.Helpers
     //   footer:                          [Открыть] [Отмена]
     public static class KeePassUnlockDialog
     {
+        // v3.9.5 — путь новой базы по умолчанию (первый запуск): рядом
+        // с остальными данными программы.
+        public static string DefaultDbPath()
+        {
+            try { return Path.Combine(ShadowRDP.AppPaths.DataDir, "passwords.kdbx"); }
+            catch { return "passwords.kdbx"; }
+        }
+
         public sealed class Result
         {
             public string DbPath { get; set; } = "";
@@ -75,6 +83,9 @@ namespace ShadowRDP.Helpers
             var txtDb = (TextBox)wDb.Controls[0];
             var txtKey = (TextBox)wKey.Controls[0];
             if (!string.IsNullOrEmpty(current.DbPath)) txtDb.Text = current.DbPath;
+            // v3.9.5 — первого запуска: предлагаем путь новой базы сразу,
+            // остаётся вбить мастер-пароль и нажать «Открыть» — файл создастся.
+            else txtDb.Text = DefaultDbPath();
             if (!string.IsNullOrEmpty(current.KeyFilePath)) txtKey.Text = current.KeyFilePath;
 
             // Card #2: Мастер-пароль
@@ -85,7 +96,7 @@ namespace ShadowRDP.Helpers
             wPass.Location = new Point(16, 62);
             var hint = new Label
             {
-                Text = "Мастер-пароль не сохраняется на диск.\nЕсли файл базы не существует — он будет создан.",
+                Text = "Мастер-пароль не сохраняется на диск.\nНет файла по пути — создастся новая база.",
                 Location = new Point(16, 100),
                 AutoSize = false,
                 Size = new Size(524, 30),
@@ -152,18 +163,36 @@ namespace ShadowRDP.Helpers
 
             void BrowseDb()
             {
-                using var ofd = new OpenFileDialog
+                // v3.9.5 — SaveFileDialog вместо OpenFileDialog: можно и
+                // выбрать существующую базу, и вбить имя новой (создастся
+                // при открытии). OverwritePrompt выключен: существующую
+                // только открываем, не перезаписываем.
+                using var sfd = new SaveFileDialog
                 {
-                    Title = "Выберите базу KeePass (.kdbx)",
-                    Filter = "База KeePass (*.kdbx)|*.kdbx|Все файлы (*.*)|*.*"
+                    Title = "Выберите или создайте базу KeePass (.kdbx)",
+                    Filter = "База KeePass (*.kdbx)|*.kdbx|Все файлы (*.*)|*.*",
+                    DefaultExt = "kdbx",
+                    CheckFileExists = false,
+                    OverwritePrompt = false
                 };
-                if (!string.IsNullOrEmpty(txtDb.Text))
+                try
                 {
-                    var dir = Path.GetDirectoryName(Path.GetFullPath(txtDb.Text));
-                    if (Directory.Exists(dir)) ofd.InitialDirectory = dir;
+                    if (!string.IsNullOrEmpty(txtDb.Text))
+                    {
+                        var dir = Path.GetDirectoryName(Path.GetFullPath(txtDb.Text));
+                        if (Directory.Exists(dir)) sfd.InitialDirectory = dir;
+                        sfd.FileName = Path.GetFileName(txtDb.Text);
+                    }
+                    else
+                    {
+                        if (Directory.Exists(ShadowRDP.AppPaths.DataDir))
+                            sfd.InitialDirectory = ShadowRDP.AppPaths.DataDir;
+                        sfd.FileName = "passwords.kdbx";
+                    }
                 }
-                if (ofd.ShowDialog(dlg) == DialogResult.OK)
-                    txtDb.Text = ofd.FileName;
+                catch { }
+                if (sfd.ShowDialog(dlg) == DialogResult.OK)
+                    txtDb.Text = sfd.FileName;
             }
 
             void BrowseKey()

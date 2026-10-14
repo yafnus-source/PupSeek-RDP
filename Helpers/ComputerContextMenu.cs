@@ -592,8 +592,8 @@ namespace ShadowRDP.Helpers
                 }
             };
 
-            // v3.9.4 — удалённая консоль команд (WinRM/WMI) для этого хоста.
-            var miConsole = menu.Items.Add("Консоль команд...", MenuIcons.Get("terminal"));
+            // v3.9.4 — удалённый терминал (WinRM/WMI) для этого хоста.
+            var miConsole = menu.Items.Add("Терминал...", MenuIcons.Get("terminal"));
             miConsole.Click += (s, e) =>
             {
                 var computer = computerResolver() ?? "";
@@ -603,7 +603,7 @@ namespace ShadowRDP.Helpers
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(owner, $"Не удалось открыть консоль: {ex.Message}", "Консоль команд",
+                    MessageBox.Show(owner, $"Не удалось открыть терминал: {ex.Message}", "Терминал",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             };

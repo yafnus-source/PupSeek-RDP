@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace ShadowRDP.Services
 {
-    // v3.9.4 — удалённое выполнение одной команды для «Консоли команд».
+    // v3.9.4 — удалённое выполнение одной команды для «Терминала».
     // Канал 1 — WinRM (Invoke-Command, полный stdout/stderr/exit code);
     // канала 2 — WMI Win32_Process.Create с перенаправлением вывода во
     // временный файл на удалённой машине и чтением через admin$.
@@ -67,12 +67,74 @@ namespace ShadowRDP.Services
         // Экранирование для одинарных кавычек PowerShell.
         public static string PsQuote(string s) => (s ?? "").Replace("'", "''");
 
+        // B64S:<base64 UTF-8 текста> и B64B:<base64 сырых байт под
+        // DecodeOutput> из WinRM-скрипта. Всё остальное (ошибки, legacy)
+        // возвращается как есть: null = не наше.
+        public static string? TryDecodeWinrmOutput(string? raw)
+        {
+            try
+            {
+                var t = (raw ?? "").Trim();
+                string? b64 = null;
+                bool isBytes = false;
+                if (t.StartsWith("B64S:", StringComparison.Ordinal)) b64 = t.Substring(5).Trim();
+                else if (t.StartsWith("B64B:", StringComparison.Ordinal))
+                {
+                    b64 = t.Substring(5).Trim();
+                    isBytes = true;
+                }
+                else return null;
+                if (b64.Length == 0) return "";
+                if (b64.Length % 4 != 0) return null;
+                foreach (var ch in b64)
+                    if (!(ch >= 'A' && ch <= 'Z') && !(ch >= 'a' && ch <= 'z') &&
+                        !(ch >= '0' && ch <= '9') && ch != '+' && ch != '/' && ch != '=')
+                        return null;
+                var bytes = Convert.FromBase64String(b64);
+                return isBytes ? DecodeOutput(bytes) : new UTF8Encoding(false, true).GetString(bytes);
+            }
+            catch { return null; }
+        }
+
         // Собирает скрипт Invoke-Command; пары хост/команда закодированы
         // так, чтобы спецсимволы не сломали разбор.
+        // v3.9.5 — кириллица native-команд: бесконсольный wsmprovhost на
+        // удалённой стороне декодирует их вывод через ANSI (1251) — диагноз
+        // подтверждён замером ([Console]::OutputEncoding.WebName), сеттер
+        // OEM там не срабатывает. Поэтому диспетчер на удалённой стороне:
+        // cmdlet/функции/алиасы/.ps1/скриптовый синтаксис — PS-тракт
+        // (объекты .NET, консоль не участвует); всё остальное (native exe,
+        // пайпы, .bat) — побайтовый cmd-тракт: cmd пишет файл в OEM (как
+        // проверенный WMI-канал), байты едут base64. Оба тракта ASCII-броня
+        // (местный stdout-тракт мимо кодировок): B64S: = UTF-8 текст,
+        // B64B: = сырые байты под DecodeOutput. $ProgressPreference давит
+        // CLIXML-мусор в stderr с обеих сторон.
         public static string BuildWinrmScript(string host, string command)
         {
-            return $"Invoke-Command -ComputerName '{PsQuote(host)}' " +
-                   "-ScriptBlock { param($c) & ([scriptblock]::Create($c)) } " +
+            return "$ProgressPreference = 'SilentlyContinue'; " +
+                   $"Invoke-Command -ComputerName '{PsQuote(host)}' " +
+                   "-ScriptBlock { param($c) " +
+                   "$ProgressPreference = 'SilentlyContinue'; " +
+                   "$t = $c.Trim(); " +
+                   "$usePs = $false; " +
+                   "try { " +
+                   "if ($t -match '^(?i)(\\$|@|\\()') { $usePs = $true } " +
+                   "elseif ($t -match '^(?i)(if|foreach|for|while|do|switch|function|filter|workflow|try|trap|using|param|class|enum)\\b') { $usePs = $true } " +
+                   "else { " +
+                   "$first = ($t -split '\\s+')[0]; " +
+                   "if (Get-Command $first -CommandType Cmdlet,Function,Alias -EA SilentlyContinue) { $usePs = $true } " +
+                   "else { $ext = Get-Command $first -CommandType ExternalScript -EA SilentlyContinue | Select-Object -First 1; " +
+                   "if ($ext -and ([IO.Path]::GetExtension($ext.Definition) -eq '.ps1')) { $usePs = $true } } } " +
+                   "} catch { $usePs = $false } " +
+                   "if ($usePs) { " +
+                   "try { [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage) } catch { } " +
+                   "$o = & ([scriptblock]::Create($c)) | Out-String; " +
+                   "'B64S:' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$o)) } " +
+                   "else { " +
+                   "$tmp = [IO.Path]::Combine($env:TEMP, 'psrun_' + [Guid]::NewGuid().ToString('N') + '.bin'); " +
+                   "try { & cmd.exe /c ($c + ' > \"' + $tmp + '\" 2>&1'); " +
+                   "'B64B:' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($tmp)) } " +
+                   "finally { Remove-Item $tmp -EA SilentlyContinue } } } " +
                    $"-ArgumentList '{PsQuote(command)}'";
         }
 
@@ -132,12 +194,12 @@ namespace ShadowRDP.Services
                     {
                         try { proc.Kill(); } catch { }
                         r.Error = ct.IsCancellationRequested ? "отменено" : "таймаут";
-                        try { r.Output = (await outTask).Trim(); } catch { }
+                        try { var t = await outTask; r.Output = (TryDecodeWinrmOutput(t) ?? t).Trim(); } catch { }
                         try { r.Error = Combine(r.Error, (await errTask).Trim()); } catch { }
                         return r;
                     }
                 }
-                r.Output = (await outTask).Trim();
+                try { var t = await outTask; r.Output = (TryDecodeWinrmOutput(t) ?? t).Trim(); } catch { }
                 var err = (await errTask).Trim();
                 r.ExitCode = proc.ExitCode;
                 r.Ok = proc.ExitCode == 0;

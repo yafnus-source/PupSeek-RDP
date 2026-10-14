@@ -89,6 +89,9 @@ namespace ShadowRDP.Controls
                 Dock = DockStyle.Fill
             };
             Controls.Add(_webView);
+            // Тулбар — поверх терминала: без этого Fill, добавленный позже,
+            // ложится поверх и кнопки загораживают верх текста (z-order).
+            try { _toolbar.BringToFront(); } catch { }
 
             try
             {

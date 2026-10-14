@@ -94,7 +94,8 @@ namespace ShadowRDP.Forms
             var hintKp = new Label
             {
                 Text = "Доступы берутся из базы KeePass,\nгруппа PupSeekRDP/FTP.",
-                Location = new Point(16, 232),
+                // v3.9.5 — в нижнем левом углу карточки (было 232).
+                Location = new Point(16, 274),
                 AutoSize = false,
                 Size = new Size(276, 30),
                 Font = new Font("Segoe UI", 7.5f),

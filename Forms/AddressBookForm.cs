@@ -651,12 +651,12 @@ namespace ShadowRDP.Forms
             // the sibling approach hid buttons behind itself because of
             // z-order. Buttons keep their transparent BackColor and
             // inherit the footer colour through the form's bg.
-            const int FooterH = 72;  // was 90 — −10% top + −10% bottom
+            const int FooterH = 50;  // was 72 — −30% (v3.9.5); цвет #D6DFEA
             Paint += (s, e) =>
             {
                 if (IsDisposed) return;
                 var rect = new Rectangle(0, ClientSize.Height - FooterH, ClientSize.Width, FooterH);
-                using var b = new SolidBrush(Color.FromArgb(0xFA, 0xF7, 0xF4));
+                using var b = new SolidBrush(Color.FromArgb(0xD6, 0xDF, 0xEA));
                 e.Graphics.FillRectangle(b, rect);
             };
 
@@ -844,11 +844,11 @@ namespace ShadowRDP.Forms
             //   Header   Y=0..56    (logo + title + count + search)
             //   Tabs     Y=56..100  (pill filters)
             //   Grid     Y=100..H-56
-            //   Footer   Y=H-56..H  (3 left buttons, counter, 2 right buttons)
+            //   Footer   Y=H-50..H  (3 left buttons, counter, 2 right buttons)
             int headerH = Helpers.UiTheme.HeaderHeight;
             int tabsH = Helpers.UiTheme.TabsHeight;
-            // v2.1.50 — footer height 72 (was 90): −10% top + −10% bottom.
-            int footerH = 72;
+            // v3.9.5 — footer height 50 (was 72): −30%, цвет #D6DFEA.
+            int footerH = 50;
             int gridTop = headerH + tabsH;  // v3.8.2: flush under the tabs, no gap
             int gridBottom = h - footerH;
             int gridH = gridBottom - gridTop;
@@ -923,13 +923,14 @@ namespace ShadowRDP.Forms
             int rightClusterLeft = rx - _refreshAllBtn.Width;
 
             // Centre counter — between the two clusters.
+            // v3.9.5 — область пинга на 5px выше, фон #ECF1F7 (был Muted #EDE8E2).
             int centreX = (leftClusterRight + rightClusterLeft) / 2;
-            _statusLabel.Location = new Point(centreX - 100, absBtnY + 6);
+            _statusLabel.Location = new Point(centreX - 100, absBtnY + 1);
             _statusLabel.Size = new Size(200, 20);
             _statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             _statusLabel.Font = new Font("Consolas", 9F);
             _statusLabel.ForeColor = Helpers.UiTheme.MutedForeground;
-            _statusLabel.BackColor = Helpers.UiTheme.Muted;
+            _statusLabel.BackColor = Color.FromArgb(0xEC, 0xF1, 0xF7);
         }
 
         // === Load + render ===
@@ -2351,7 +2352,7 @@ namespace ShadowRDP.Forms
         private int BuildFilterPills()
         {
             const int pillGap = 28;   // v4.9.32: +10px между пилами
-            const int pillStart = 24;
+            const int pillStart = 19;   // v3.9.5: весь ряд пил на 5px левее
             int fx = pillStart;
             AddFilterButton("", "Все", fx, 10, true);
             fx += MeasureButtonTextWidth("Все", 28) + pillGap;
@@ -2558,6 +2559,10 @@ namespace ShadowRDP.Forms
         // та же рассылка, но вызываемая снаружи (книга уже должна быть
         // показана — цели берутся из видимых строк вкладки Пользователи).
         internal void SendMessageToAll() { try { OnMessageAllClicked(); } catch { } }
+
+        // v3.9.5 — точка входа для глобального поиска палитры: подставляет
+        // текст в поле поиска книги (фильтр применяется сам).
+        internal void SetSearch(string t) { try { _searchBox.Text = t ?? ""; } catch { } }
 
         // "Сообщение всем" — sends a popup message to the computers of the
         // users currently visible in the "Пользователи" tab (respects the

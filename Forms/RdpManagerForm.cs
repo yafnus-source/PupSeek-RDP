@@ -1025,6 +1025,55 @@ namespace ShadowRDP.Forms
             foreach (var b in new Control[] { changePwdBtn, themeBtn, addSessionBtn, addToBookBtn, exportBtn, psBtn, cmdBtn })
                 b.Visible = false;
 
+            // v3.9.5 — «?» (справка по программе): кружок в правом краю
+            // шапки, якорь Top|Right. Легаси-кнопки выше скрыты, место
+            // свободно. Клик — встроенный гайд по всем функциям.
+            var helpBtn = new Label
+            {
+                Text = "?",
+                Tag = "help",
+                AutoSize = false,
+                Size = new Size(26, 26),
+                Location = new Point(Math.Max(0, header.Width - 38), 5),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Font = new Font("Segoe UI Semibold", 12F),
+                ForeColor = Helpers.UiTheme.RdpHeaderFg,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty
+            };
+            var helpTip = new ToolTip();
+            helpTip.SetToolTip(helpBtn, "Справка по программе (все функции)");
+            Color helpFg = ControlPaint.Dark(Helpers.UiTheme.Accent, 0.3f);
+            Color helpHover = Helpers.UiTheme.Accent;
+            helpBtn.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var circle = new Rectangle(2, 2, helpBtn.Width - 5, helpBtn.Height - 5);
+                // Плоский фон #DDDEE0 + тёмное кольцо по контуру.
+                using var br = new SolidBrush(Color.FromArgb(0xDD, 0xDE, 0xE0));
+                g.FillEllipse(br, circle);
+                var hdrBg = Helpers.UiTheme.RdpHeaderBg;
+                using var pen = new Pen(ControlPaint.Dark(hdrBg, 0.35f), 1.2f);
+                g.DrawEllipse(pen, circle);
+                // Глиф «?» без нижней выноски: рисуем в bounds круга,
+                // оптический центр — на 1px выше математического.
+                TextRenderer.DrawText(g, "?", helpBtn.Font,
+                    new Rectangle(circle.X, circle.Y - 1, circle.Width, circle.Height), helpFg,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            };
+            helpBtn.MouseEnter += (s, e) => { helpFg = helpHover; helpBtn.Invalidate(); };
+            helpBtn.MouseLeave += (s, e) => { helpFg = ControlPaint.Dark(Helpers.UiTheme.Accent, 0.3f); helpBtn.Invalidate(); };
+            helpBtn.Click += (s, e) =>
+            {
+                try { Forms.HelpForm.Show(this); }
+                catch (Exception ex) { Logger.Warn($"Справка: {ex.Message}"); }
+            };
+            header.Controls.Add(helpBtn);
+
             // v3.9 — the "Инструменты" dropdown now lives in the sidebar
             // (below "Пароли"), styled like the other sidebar nav buttons.
             // The menu opens to the right of the sidebar button.
@@ -1074,8 +1123,8 @@ namespace ShadowRDP.Forms
                     catch (Exception ex) { Logger.Warn($"Сниппеты: {ex.Message}"); }
                 }));
             });
-            // v3.9.4 — удалённая консоль команд (WinRM/WMI), хосты из книги.
-            toolsMenu.AddItem("Удалённая консоль…", "terminal", () =>
+            // v3.9.4 — удалённый терминал (WinRM/WMI), хосты из книги.
+            toolsMenu.AddItem("Удалённый терминал…", "terminal", () =>
             {
                 toolsMenu.Close();
                 BeginInvoke(new Action(() =>
@@ -1089,7 +1138,7 @@ namespace ShadowRDP.Forms
                             .ToList();
                         Forms.RemoteConsoleForm.Show(this, null, hosts);
                     }
-                    catch (Exception ex) { Logger.Warn($"Консоль команд: {ex.Message}"); }
+                    catch (Exception ex) { Logger.Warn($"Терминал: {ex.Message}"); }
                 }));
             });
 
@@ -1243,6 +1292,7 @@ namespace ShadowRDP.Forms
                         ["modules"] = () => { try { new Forms.ModuleManagerForm().Show(); } catch { } },
                         ["change-pwd"] = changePwd,
                         ["switch-theme"] = switchTheme,
+                        ["help"] = () => Forms.HelpForm.Show(own),
                     };
                     foreach (var def in Services.PaletteCatalog.All)
                     {
@@ -1250,6 +1300,112 @@ namespace ShadowRDP.Forms
                         items.Add(new Forms.PaletteItem { Key = def.Key,
                             Title = def.Title, Category = def.Category, IconKey = def.IconKey, Action = act });
                     }
+
+                    // v3.9.5 — ГЛОБАЛЬНЫЙ ПОИСК: вообще все записи программы
+                    // ниже каталога. Каждый источник в своём try — битый стор
+                    // не роняет палитру. Ключи пустые (динамика): настройкой
+                    // не скрываются, как открытые сессии.
+                    void OpenTodoWithSearch(string q)
+                    {
+                        try
+                        {
+                            if (!Services.ModuleManager.IsEnabled("todo"))
+                                Services.ModuleManager.SetEnabled("todo", true);
+                            ShowModule("todo");
+                            if (_moduleForms.TryGetValue("todo", out var c) && c is Forms.TodoForm tf)
+                                tf.SetSearch(q);
+                        }
+                        catch { }
+                    }
+                    // Все сохранённые RDP-сессии (кроме уже открытых выше).
+                    try
+                    {
+                        var openComputers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var s in _sessions)
+                            if (!string.IsNullOrWhiteSpace(s.Computer)) openComputers.Add(s.Computer);
+                        foreach (var en in Services.RdpSessionStore.Load())
+                        {
+                            if (string.IsNullOrWhiteSpace(en.Computer) || openComputers.Contains(en.Computer)) continue;
+                            var comp = en.Computer;
+                            var name = string.IsNullOrWhiteSpace(en.DisplayName) ? comp : en.DisplayName;
+                            items.Add(new Forms.PaletteItem { Title = $"RDP: {name}",
+                                Category = "Сессии RDP", IconKey = "computer", HideWhenEmpty = true,
+                                Action = () => ActivateSessionByComputer(comp) });
+                        }
+                    }
+                    catch { }
+                    // Книга: все записи → вкладка книги с подставленным поиском.
+                    try
+                    {
+                        foreach (var b in Services.AddressBookStore.Load())
+                        {
+                            if (string.IsNullOrWhiteSpace(b.Computer)) continue;
+                            var comp = b.Computer;
+                            bool isUser = string.Equals(b.Group, Helpers.ComputerGroup.Users, StringComparison.OrdinalIgnoreCase);
+                            items.Add(new Forms.PaletteItem { Title = $"Книга: {comp}",
+                                Category = "Книга", IconKey = isUser ? "person" : "computer", HideWhenEmpty = true,
+                                Action = () =>
+                                {
+                                    SwitchTab(SidebarTab.Book);
+                                    try { Forms.AddressBookForm.Instance.SetSearch(comp); } catch { }
+                                } });
+                        }
+                    }
+                    catch { }
+                    // Задачи TODO → вкладка тудушни с подставленным поиском.
+                    try
+                    {
+                        foreach (var t in Services.TodoStore.Load())
+                        {
+                            if (string.IsNullOrWhiteSpace(t.Text)) continue;
+                            var text = t.Text;
+                            items.Add(new Forms.PaletteItem { Title = (t.Done ? "TODO ✓: " : "TODO: ") + text,
+                                Category = "TODO/шня", IconKey = "tasks", HideWhenEmpty = true,
+                                Action = () => OpenTodoWithSearch(text) });
+                        }
+                    }
+                    catch { }
+                    // Сниппеты SSH → менеджер с подставленным поиском.
+                    try
+                    {
+                        foreach (var sn in Services.SshSnippetStore.All())
+                        {
+                            if (string.IsNullOrWhiteSpace(sn.Name)) continue;
+                            var nm = sn.Name;
+                            items.Add(new Forms.PaletteItem { Title = $"Сниппет: {nm}",
+                                Category = "Сниппеты", IconKey = "terminal", HideWhenEmpty = true,
+                                Action = () => Forms.SnippetManagerForm.Show(own, nm) });
+                        }
+                    }
+                    catch { }
+                    // Последние 50 событий → дашборд Событий.
+                    try
+                    {
+                        foreach (var ev in Services.EventDashboardStore.LoadEvents()
+                            .OrderByDescending(e => e.Time).Take(50))
+                        {
+                            string msg = (ev.Decoded ?? ev.Message ?? "").Trim()
+                                .Replace("\r", " ").Replace("\n", " ");
+                            if (msg.Length > 60) msg = msg.Substring(0, 60) + "…";
+                            if (string.IsNullOrWhiteSpace(ev.Computer) && string.IsNullOrWhiteSpace(msg)) continue;
+                            items.Add(new Forms.PaletteItem { Title = $"Событие: {ev.Computer} {ev.Level}: {msg}",
+                                Category = "События", IconKey = "bell", HideWhenEmpty = true,
+                                Action = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events) });
+                        }
+                    }
+                    catch { }
+                    // Мониторинг → дашборд Монитор.
+                    try
+                    {
+                        foreach (var m in Services.EventDashboardStore.GetMonitoredComputers())
+                        {
+                            if (string.IsNullOrWhiteSpace(m)) continue;
+                            items.Add(new Forms.PaletteItem { Title = $"Монитор: {m}",
+                                Category = "Монитор", IconKey = "computer", HideWhenEmpty = true,
+                                Action = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor) });
+                        }
+                    }
+                    catch { }
                     var chosen = Forms.CommandPaletteForm.Run(own, items);
                     // Выполнение — после закрытия модальной палитры.
                     if (chosen?.Action != null)
@@ -1543,6 +1699,9 @@ namespace ShadowRDP.Forms
             var kp = KeePassVault.IsOpen
                 ? KeePassVault.FindLogin(KeePassVault.RdpGroupPath, sess.Computer)
                 : null;
+            // v3.9.5 — диагностика «почему требует пароль»: что искали и что
+            // нашли (без секретов). Смотреть debug.log после подключения.
+            try { Logger.Info($"RDP creds for '{sess.Computer}': vaultOpen={KeePassVault.IsOpen}, override={sess.LoginOverride != null}, kpHit={kp != null}"); } catch { }
             if (sess.LoginOverride != null)
             {
                 login = sess.LoginOverride;
@@ -1963,11 +2122,11 @@ namespace ShadowRDP.Forms
         // v3.7.1 — sidebar "Пароли" button opens the KeePass vault manager
         // (same singleton as the tray menu). Form is non-modal so the user
         // can keep it open while interacting with RDP Manager.
+        // v3.9.5 — с затемнением остальной области (дим-подложка умирает
+        // с закрытием окна, модальности нет).
         private void OpenPasswordVault()
         {
-            var form = Forms.KeePassVaultForm.Instance;
-            form.Show();
-            form.Activate();
+            Helpers.UiModal.ShowModelessDimmed(this, Forms.KeePassVaultForm.Instance);
         }
 
         // Lets the address-book grid check whether a session is currently
@@ -3147,7 +3306,7 @@ namespace ShadowRDP.Forms
                     sub.AddItem("Нет", "off_red", () => SetSessionAutoOpen(sess, false), null, !sess.AutoOpen);
                 });
                 // v4.9.29 — редактирование данных сессии (имя, IP, группа).
-                menu.AddItem("Редактировать запись…", "info", () => EditRdpSession(sess));
+                // Живёт под «Перезапустить сеанс» (ниже).
                 menu.AddSeparator();
                 menu.AddSubmenu("Группа", "list", sub =>
                 {
@@ -3174,6 +3333,8 @@ namespace ShadowRDP.Forms
                 });
                 menu.AddSeparator();
                 menu.AddItem("Перезапустить сеанс", "restart", () => RestartSession(sess));
+                // v3.9.5 — «Редактировать запись» сразу под «Перезапустить».
+                menu.AddItem("Редактировать запись…", "info", () => EditRdpSession(sess));
                 menu.AddItem("Закрыть", "delete", () => CloseSession(sess));
                 menu.AddSeparator();
                 // v4.9.34 — "+ Сессия" пунктом меню (меню пустой области убрано).
