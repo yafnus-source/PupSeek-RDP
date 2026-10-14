@@ -120,8 +120,10 @@ namespace ShadowRDP
                 // 2) %PROGRAMDATA%\PupSeekRDP\monitor_data
                 var c2 = Path.Combine(DataDir, "monitor_data");
                 if (Directory.Exists(c2)) { _monitorDataDir = c2; return _monitorDataDir; }
-                // 3) Dev: относительно исходников — C:\temp\Clo\cpro\monitor\data
-                var c3 = @"C:\temp\Clo\cpro\monitor\data";
+                // 3) Dev: monitor\data относительно исходников (подъём от
+                // каталога сборки: bin\...\win-x64 → корень репозитория).
+                var c3 = Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory, @"..\..\..\..\monitor\data"));
                 if (Directory.Exists(c3)) { _monitorDataDir = c3; return _monitorDataDir; }
                 // 4) Создаём рядом с exe
                 Directory.CreateDirectory(c1);
@@ -135,7 +137,8 @@ namespace ShadowRDP
             // Пишем во все возможные папки — чтобы сайт точно увидел
             string[] targets = {
                 MonitorDataDir,                                     // определённый путь
-                @"C:\temp\Clo\cpro\monitor\data",                  // dev-сайт
+                Path.GetFullPath(Path.Combine(                     // dev-сайт
+                    AppContext.BaseDirectory, @"..\..\..\..\monitor\data")),
                 Path.Combine(DataDir, "monitor_data")              // %PROGRAMDATA%
             };
             var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

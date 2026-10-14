@@ -9,8 +9,8 @@ namespace ShadowRDP
     // Append-only file logger. Mirror of Write-Log from the PowerShell version.
     // Path: %PROGRAMDATA%\ShadowRDP\debug.log (via AppPaths) — shared between
     // the non-elevated and elevated instances of the app. Per-user
-    // %LOCALAPPDATA% wouldn't work because UAC switches the user (ivanov →
-    // IvanovAD), and each profile has its own %LOCALAPPDATA%.
+    // %LOCALAPPDATA% wouldn't work because UAC switches the user between
+    // the launching profile and the elevated one, each with its own folder.
     //
     // Severity levels: INFO (default), WARN, ERROR. Each line is prefixed with
     // [timestamp] [LEVEL] for grep-ability.
