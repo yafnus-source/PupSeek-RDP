@@ -153,6 +153,9 @@ namespace ShadowRDP.Forms
                 {
                     bool cur;
                     try { cur = ModuleManager.IsEnabled(captured.Id); } catch { cur = false; }
+                    // v4.0 — включение TODO платное (выключение свободно).
+                    if (!cur && captured.Id == "todo"
+                        && !Helpers.ModuleGate.Require(this, "todo")) return;
                     ModuleManager.SetEnabled(captured.Id, !cur);
                 }
                 catch { }

@@ -6,7 +6,7 @@
 
 [Setup]
 AppName=Pup Seek RDP
-AppVersion=3.9.5
+AppVersion=4.0.0
 AppPublisher=M.A.D.
 AppPublisherURL=https://claude.ai/claude-code
 DefaultDirName={localappdata}\Programs\Pup Seek RDP
@@ -14,8 +14,8 @@ DefaultGroupName=Pup Seek RDP
 PrivilegesRequired=lowest
 Compression=lzma2
 SolidCompression=yes
-OutputDir=C:\temp\Clo\prod\3.9.5.0\install
-OutputBaseFilename=PupSeekRDP-3.9.5-Setup
+OutputDir=C:\temp\Clo\prod\4.0.0.1\install
+OutputBaseFilename=PupSeekRDP-4.0.0-Setup
 DisableProgramGroupPage=yes
 DisableDirPage=no
 Uninstallable=yes

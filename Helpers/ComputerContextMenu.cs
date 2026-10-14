@@ -941,9 +941,9 @@ namespace ShadowRDP.Helpers
                 sub.AddSeparator();
                 AddDomainLauncherThemed(sub, "Управление службами (grid)...", "gear", owner, computerResolver, c => RemoteActions.OpenMsc(c, "services.msc"));
                 AddDomainLauncherThemed(sub, "Локальные администраторы...", "shield", owner, computerResolver, c => { using var dlg = new LocalAdminsForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
-                AddDomainLauncherThemed(sub, "Group Policy Results...", "list", owner, computerResolver, c => { using var dlg = new GpResultsForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
-                AddDomainLauncherThemed(sub, "Поиск где залогинен пользователь...", "search", owner, computerResolver, c => { var user = userResolver?.Invoke(); using var dlg = new FindUserDialog(c, user, autoStart: true);                 UiModal.ShowDimmed(owner, dlg); return true; });
-                AddDomainLauncherThemed(sub, "Открытые файлы (все серверы)...", "list", owner, computerResolver, c => { using var dlg = new OpenFilesForm();                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Group Policy Results...", "list", owner, computerResolver, c => { if (!ModuleGate.Require(owner, "domain")) return true; using var dlg = new GpResultsForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Поиск где залогинен пользователь...", "search", owner, computerResolver, c => { if (!ModuleGate.Require(owner, "domain")) return true; var user = userResolver?.Invoke(); using var dlg = new FindUserDialog(c, user, autoStart: true);                 UiModal.ShowDimmed(owner, dlg); return true; });
+                AddDomainLauncherThemed(sub, "Открытые файлы (все серверы)...", "list", owner, computerResolver, c => { if (!ModuleGate.Require(owner, "domain")) return true; using var dlg = new OpenFilesForm();                 UiModal.ShowDimmed(owner, dlg); return true; });
                 AddDomainLauncherThemed(sub, "Удаленный реестр...", "key", owner, computerResolver, c => { using var dlg = new Forms.RemoteRegistryForm(c);                 UiModal.ShowDimmed(owner, dlg); return true; });
                 sub.AddSeparator();
                 sub.AddItem("Отправить сообщение...", "msg", () =>

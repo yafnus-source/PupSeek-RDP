@@ -1241,22 +1241,25 @@ namespace ShadowRDP.Forms
                         },
                         ["tunnels"] = () => Forms.PortForwardForm.Show(own),
                         ["backup"] = () => Forms.BackupForm.Show(own),
-                        ["dash-events"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events),
-                        ["dash-monitor"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor),
-                        ["dash-web"] = () => OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Web),
+                        ["dash-events"] = () => { if (!Helpers.ModuleGate.Require(own, "events")) return; OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Events); },
+                        ["dash-monitor"] = () => { if (!Helpers.ModuleGate.Require(own, "zabbix")) return; OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Monitor); },
+                        ["dash-web"] = () => { if (!Helpers.ModuleGate.Require(own, "webmon")) return; OpenDash(Forms.ZabbixAgentDashboardForm.DashView.Web); },
                         ["book"] = () => SwitchTab(SidebarTab.Book),
                         ["openfiles"] = () =>
                         {
+                            if (!Helpers.ModuleGate.Require(own, "domain")) return;
                             using var dlg = new Forms.OpenFilesForm();
                             Helpers.UiModal.ShowDimmed(own, dlg);
                         },
                         ["inv-soft"] = () =>
                         {
+                            if (!Helpers.ModuleGate.Require(own, "inventory")) return;
                             using var dlg = new Forms.SoftwareInventoryForm();
                             Helpers.UiModal.ShowDimmed(own, dlg);
                         },
                         ["inv-hard"] = () =>
                         {
+                            if (!Helpers.ModuleGate.Require(own, "inventory")) return;
                             using var dlg = new Forms.HardwareInventoryForm();
                             Helpers.UiModal.ShowDimmed(own, dlg);
                         },
@@ -1270,6 +1273,7 @@ namespace ShadowRDP.Forms
                         {
                             try
                             {
+                                if (!Helpers.ModuleGate.Require(own, "todo")) return;
                                 if (!Services.ModuleManager.IsEnabled("todo"))
                                     Services.ModuleManager.SetEnabled("todo", true);
                                 ShowModule("todo");
@@ -1309,6 +1313,8 @@ namespace ShadowRDP.Forms
                     {
                         try
                         {
+                            // v4.0 — TODO платный.
+                            if (!Helpers.ModuleGate.Require(own, "todo")) return;
                             if (!Services.ModuleManager.IsEnabled("todo"))
                                 Services.ModuleManager.SetEnabled("todo", true);
                             ShowModule("todo");
@@ -1446,6 +1452,15 @@ namespace ShadowRDP.Forms
             toolsMenu.AddSeparator();
             toolsMenu.AddItem("Сменить пароль", "key", () => changePwd());
             toolsMenu.AddItem("Тема", "sun", () => switchTheme());
+            // v4.0 — лицензия платных модулей (пробный период, ключ).
+            toolsMenu.AddItem("Лицензия…", "key", () =>
+            {
+                toolsMenu.Close();
+                BeginInvoke(new Action(() =>
+                {
+                    try { Forms.LicenseForm.Show(this); } catch { }
+                }));
+            });
             // v3.9.3CY — все настройки цвета программы в одном окне.
             toolsMenu.AddItem("Настройки цвета…", "info", () =>
             {

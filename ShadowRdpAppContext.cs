@@ -190,6 +190,24 @@ namespace ShadowRDP
                 }
             }
 
+            // v4.0 — пробный период платных модулей: первый старт создаёт
+            // триал на 10 дней (все модули). Напоминание — один баллун,
+            // когда осталось 3 дня и меньше.
+            try
+            {
+                var lic = Services.LicenseStore.EnsureTrial();
+                int left = Services.LicenseStore.TrialDaysLeft();
+                if (lic.Trial && left >= 0 && left <= Services.LicenseStore.TrialRemindDaysLeft
+                    && !lic.TrialReminded)
+                {
+                    Services.LicenseStore.MarkTrialReminded();
+                    ShowBalloon("Пробный период заканчивается",
+                        $"Осталось дней: {left}. Откройте «Инструменты → Лицензия…» и введите ключ, чтобы модули не отключились.",
+                        ToolTipIcon.Warning);
+                }
+            }
+            catch { }
+
             // v3.7.1 — shared start-up RDP password prompt removed entirely.
             // Sessions without credentials stay pending in the sidebar; the
             // user clicks a tab and gets a per-computer picker that can save

@@ -101,6 +101,8 @@ namespace ShadowRDP
         public static string ModulesSettingsPath => Path.Combine(DataDir, "modules.json");
         // v3.9.3BD — кэш сводки железа (Сводная таблица HARD).
         public static string HardwareInventoryPath => Path.Combine(DataDir, "hardware_inventory.json");
+        // v4.0 — лицензия платных модулей (ключ + trial).
+        public static string LicensePath => Path.Combine(DataDir, "license.json");
         // v3.9.5 — закладки справки (окно «?»): [{ Section, Offset, Text, CreatedAt }].
         public static string HelpBookmarksPath => Path.Combine(DataDir, "help_bookmarks.json");
 
