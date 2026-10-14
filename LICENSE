@@ -1,0 +1,56 @@
+# PupSeekRDP License, revision 1.0
+# (English translation; the Russian LICENSE.ru prevails in case of discrepancy)
+
+Rightholder: [name / organization]
+Address: [address]
+Contact: [email / telegram]
+
+1. Definitions. "Software" — PupSeekRDP as source code, builds and docs.
+"Modules" — paid features (see the License window and [price URL] for the
+current list and prices). "Key" — a string unlocking Modules. "You" — the user.
+
+2. Acceptance. Installing, building or using the Software means acceptance.
+You confirm you are 18+ and legally capable (or act via a representative).
+If you disagree — do not install, delete everything.
+
+3. Permitted (non-exclusive, non-transferable; core — perpetual):
+3.1. Use for any purpose, including commercial, on any number of your machines.
+3.2. Read, study, modify the source for your own needs; build it for yourself.
+3.3. The core (everything except Modules) is free forever.
+3.4. By submitting a pull request or any code to the Rightholder you assign
+all exclusive rights to it (modify, distribute, sublicense) free of charge
+and warrant you are entitled to do so.
+
+4. Prohibited without written consent:
+4.1. Distributing the Software or modified versions in any form — except a
+personal fork solely to review the code and submit pull requests; builds made
+from a fork may not be distributed.
+4.2. Bypassing, disabling or forging license/trial/module checks; sharing
+bypass methods. 4.3. Using Modules without a Key and outside the trial.
+4.4. Removing authorship notices; using the PupSeekRDP name; passing the code
+off as your own. 4.5. Transferring the Key; one Key — one buyer.
+4.6. Sublicensing or alienating the Software, rights or the Key.
+4.7. Using the Software/code/texts/data for training AI/ML models, datasets,
+or a competing product. 4.8. Reverse engineering beyond statutory exceptions.
+
+5. Modules and payment. One-time payment = perpetual use of purchased Modules
+(payment grants use, not code rights). A Key is reusable after reinstall.
+Trial — 10 days, all Modules, once per user; wiping data or reinstalling does
+not restart it. Refunds by agreement; statutory consumer rights unaffected.
+The Rightholder may request proof of use (screenshot of the License window)
+at most quarterly within 10 business days.
+
+6. Updates/support as available, no deadlines; a new major version may bring a
+new license. License text may be updated at [license URL]; your terms at
+install/purchase time apply unless you accept the new ones.
+
+7. Data. No collection, no telemetry, everything stays on your machine, the
+Key is verified locally. Trial binding stores and compares only an irreversible
+SHA256 hash of the machine id.
+
+8. No warranties ("as is"). 9. Liability capped at amounts paid in the last
+12 months (zero for free use); no lost profits. 10. Termination: breach ends
+your rights; delete everything; clauses 4, 7–9 survive.
+11. Governing law — Russian Federation; 30-day negotiation, then court at the
+Rightholder's address. 12. Force majeure applies.
+13. Severability; entire agreement; English is a translation, Russian prevails.
