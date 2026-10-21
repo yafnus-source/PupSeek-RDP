@@ -11,6 +11,9 @@ monitor/todo/data/*.json
 dashboard.html
 dashboard-copy.html
 monitor/monitor-wow*.html*
+# дистрибутивный комплект «TODO/шня» и кухня лицензий — локально, в git не входят
+/Bundle/
+/tools/
 license.json
 *.kdbx
 debug.log

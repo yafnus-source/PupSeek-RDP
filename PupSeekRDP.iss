@@ -8,7 +8,7 @@
 AppName=Pup Seek RDP
 AppVersion=4.0.0
 AppPublisher=M.A.D.
-AppPublisherURL=https://claude.ai/claude-code
+AppPublisherURL=https://pupseek.ru
 DefaultDirName={localappdata}\Programs\Pup Seek RDP
 DefaultGroupName=Pup Seek RDP
 PrivilegesRequired=lowest
@@ -29,10 +29,11 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
 Source: "bin\Release\net8.0-windows\win-x64\publish\PupSeekRDP.exe"; DestDir: "{app}"; Flags: ignoreversion
-; TODO/шня bundle: APK меняется простой заменой файла тем же именем, .iss трогать не надо
-Source: "Bundle\Android\TODO-shnaya.apk"; DestDir: "{app}\Android"; Flags: ignoreversion
-Source: "Bundle\Server\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "Bundle\Docs\*"; DestDir: "{app}\Docs"; Flags: ignoreversion
+; TODO/шня bundle: в публичный репо НЕ входит (gitignore), файлы лежат локально рядом.
+; skipifsourcedoesntexist — сборка из чистого клона без Bundle даст установщик без APK.
+Source: "Bundle\Android\TODO-shnaya.apk"; DestDir: "{app}\Android"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "Bundle\Server\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "Bundle\Docs\*"; DestDir: "{app}\Docs"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Tasks]
 Name: "desktopicon"; Description: "Создать значок на рабочем столе";
