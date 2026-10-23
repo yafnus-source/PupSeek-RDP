@@ -43,7 +43,16 @@ namespace ShadowRDP.Helpers
             }
 
             int total = aggs.Sum(a => a.Count);
-            string answer = await Services.EventDecoderService.AnalyzeComputerAsync(computer, aggs);
+            string answer;
+            try
+            {
+                answer = await Services.EventDecoderService.AnalyzeComputerAsync(computer, aggs);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, ex.Message, "ИИ-анализ", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             if (string.IsNullOrWhiteSpace(answer))
             {
                 MessageBox.Show(owner, "ИИ не вернул ответ (Ollama занят или модель не готова). Попробуйте ещё раз.",

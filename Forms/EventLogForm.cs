@@ -57,51 +57,46 @@ namespace ShadowRDP.Forms
             KeyPreview = true;
             KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; DialogResult = DialogResult.Cancel; Close(); } };
 
-            // === Filter row ===
-            var lblLog = new Label { Text = "Журнал:", Location = new Point(16, 82), Size = new Size(50, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _logCombo = new ComboBox { Location = new Point(70, 80), Size = new Size(140, 22), DropDownStyle = ComboBoxStyle.DropDownList };
+            // ——— 2. Фильтры: тулбар-карточка (как в «Инвентаризации SOFT») ———
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Helpers.UiTheme.DialogBackground, Padding = new Padding(14) };
+
+            var toolbarCard = Helpers.UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            toolbarCard.Dock = DockStyle.Top;
+            toolbarCard.Height = 48;
+            // v3.9.3Y — UiModal.Card гладкая сама, Region давал лесенку.
+            try { toolbarCard.Region?.Dispose(); toolbarCard.Region = null; } catch { }
+
+            var lblFont = new Font("Segoe UI Semibold", 9F);
+            var lblLog = new Label { Text = "Журнал:", Location = new Point(12, 14), AutoSize = true, Font = lblFont, ForeColor = Helpers.UiTheme.MutedForeground };
+            _logCombo = new ComboBox { Location = new Point(70, 13), Size = new Size(150, 22), DropDownStyle = ComboBoxStyle.DropDownList };
             _logCombo.Items.AddRange(new object[] { "System", "Application", "Security", "Setup", "Windows PowerShell" });
             _logCombo.SelectedIndex = 0;
             Helpers.UiCombo.Apply(_logCombo);
 
-            var lblPeriod = new Label { Text = "Период:", Location = new Point(220, 82), Size = new Size(50, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _periodCombo = new ComboBox { Location = new Point(274, 80), Size = new Size(90, 22), DropDownStyle = ComboBoxStyle.DropDownList };
+            var lblPeriod = new Label { Text = "Период:", Location = new Point(234, 14), AutoSize = true, Font = lblFont, ForeColor = Helpers.UiTheme.MutedForeground };
+            _periodCombo = new ComboBox { Location = new Point(292, 13), Size = new Size(100, 22), DropDownStyle = ComboBoxStyle.DropDownList };
             _periodCombo.Items.AddRange(new object[] { "1 час", "4 часа", "24 часа", "7 дней", "30 дней", "Всё время" });
             _periodCombo.SelectedIndex = 2;
             Helpers.UiCombo.Apply(_periodCombo);
 
-            var lblLevel = new Label { Text = "Уровень:", Location = new Point(374, 82), Size = new Size(60, 22), TextAlign = ContentAlignment.MiddleLeft };
-            _levelCombo = new ComboBox { Location = new Point(434, 80), Size = new Size(120, 22), DropDownStyle = ComboBoxStyle.DropDownList };
+            var lblLevel = new Label { Text = "Уровень:", Location = new Point(404, 14), AutoSize = true, Font = lblFont, ForeColor = Helpers.UiTheme.MutedForeground };
+            _levelCombo = new ComboBox { Location = new Point(466, 13), Size = new Size(116, 22), DropDownStyle = ComboBoxStyle.DropDownList };
             _levelCombo.Items.AddRange(new object[] { "Все", "Critical", "Error", "Warning", "Information" });
             _levelCombo.SelectedIndex = 1;
             Helpers.UiCombo.Apply(_levelCombo);
 
-            _findBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Найти");
-            _findBtn.Location = new Point(564, 78);
-            _findBtn.Click += async (s, e) => await FindAsync();
+            toolbarCard.Controls.AddRange(new Control[] { lblLog, _logCombo, lblPeriod, _periodCombo, lblLevel, _levelCombo });
 
-            _exportBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Экспорт CSV");
-            _exportBtn.Location = new Point(618, 78);
-            _exportBtn.Click += OnExport;
-
-            // v4.0.0.1 — ИИ-помощник по текущей выборке грида.
-            _aiBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Спросить ИИ");
-            _aiBtn.Location = new Point(726, 78);
-            _aiBtn.Click += async (s, e) => await AiAnalyzeAsync();
-
-            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(836, 78);
-            _closeBtn.Click += (s, e) => Close();
-            // CancelButton requires IButtonControl; Label doesn't implement it.
-
-            Controls.AddRange(new Control[] { lblLog, _logCombo, lblPeriod, _periodCombo, lblLevel, _levelCombo, _findBtn, _exportBtn, _aiBtn, _closeBtn });
+            // ——— 3. Грид в белой карточке ———
+            var gridCard = Helpers.UiModal.Card(0, 0, 100, 100, "", "", withHeader: false);
+            gridCard.Dock = DockStyle.Fill;
+            gridCard.Padding = new Padding(8);
+            try { gridCard.Region?.Dispose(); gridCard.Region = null; } catch { }
 
             // === Grid ===
             _grid = new DataGridView
             {
-                Location = new Point(16, 116),
-                Size = new Size(888, 580),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Dock = DockStyle.Fill,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
             };
             AddCol(_grid, "Time", "Время", 130);
@@ -136,20 +131,60 @@ namespace ShadowRDP.Forms
                 menu.Show(this, Control.MousePosition);
             };
 
-            Controls.Add(_grid);
+            gridCard.Controls.Add(_grid);
             // v4.4.0 — своя тонкая полоса вместо системной.
             ShadowScroll.AttachGrid(_grid);
 
+            content.Controls.Add(gridCard);
+            content.Controls.Add(toolbarCard);
+
+            // ——— 4. Статус-полоса (тонкая, над футером) ———
+            var statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 24, BackColor = Helpers.UiTheme.DialogCard };
+            statusPanel.Paint += (s, e) => { using var pen = new Pen(Helpers.UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, statusPanel.Width, 0); };
             _statusLabel = new Label
             {
-                Location = new Point(16, _grid.Bottom + 6),
-                Size = new Size(880, 20),
+                Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Font = new Font("Segoe UI", 8F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(16, 0, 0, 0),
                 Text = "Нажмите «Найти» для запроса событий."
             };
-            Controls.Add(_statusLabel);
+            statusPanel.Controls.Add(_statusLabel);
 
+            // ——— 5. Футер с кнопками действий ———
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Helpers.UiTheme.DialogCard };
+            footer.Paint += (s, e) => { using var pen = new Pen(Helpers.UiTheme.Border, 1); e.Graphics.DrawLine(pen, 0, 0, footer.Width, 0); };
+            var btnFont = new Font("Segoe UI Semibold", 9F);
+            int w(string text) => TextRenderer.MeasureText(text, btnFont).Width + 28;
+            _findBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled("Найти", w("Найти"));
+            _findBtn.Click += async (s, e) => await FindAsync();
+            // v4.0.0.1 — ИИ-помощник по текущей выборке грида.
+            _aiBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled("Спросить ИИ", w("Спросить ИИ"));
+            _aiBtn.Click += async (s, e) => await AiAnalyzeAsync();
+            _exportBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled("Экспорт CSV", w("Экспорт CSV"));
+            _exportBtn.Click += OnExport;
+            _closeBtn = ShadowRDP.Helpers.UiButtons.MakeCompactFilled("Закрыть", w("Закрыть"));
+            _closeBtn.Click += (s, e) => Close();
+            footer.Controls.AddRange(new Control[] { _findBtn, _aiBtn, _exportBtn, _closeBtn });
+            _findBtn.Location = new Point(16, 15);
+            _aiBtn.Location = new Point(_findBtn.Right + 8, 15);
+            _exportBtn.Location = new Point(_aiBtn.Right + 8, 15);
+            footer.Resize += (s, e) => { _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width; _closeBtn.Top = 15; };
+
+            // Dock order: content Fill first, hero Top, then the two Bottom
+            // strips (footer added last docks first → very bottom, status
+            // above it). Same rule as the FTP sample modal.
+            Controls.Add(content);
+            Controls.Add(headerPanel);
+            Controls.Add(statusPanel);
+            Controls.Add(footer);
+
+            Shown += (s, e) =>
+            {
+                _closeBtn.Left = footer.ClientSize.Width - 16 - _closeBtn.Width;
+                _closeBtn.Top = 15;
+            };
             Shown += async (s, e) => await FindAsync();
         }
 
