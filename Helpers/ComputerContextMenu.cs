@@ -775,7 +775,39 @@ namespace ShadowRDP.Helpers
             menu.AddItem("Службы (services.msc)", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "services.msc"); });
             menu.AddItem("Просмотр событий (eventvwr)", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) RemoteActions.OpenMsc(c, "eventvwr.msc"); });
             menu.AddItem("События (WMI)...", "list", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new EventLogForm(c);                 UiModal.ShowDimmed(owner, dlg); } });
+            // v4.0.0.1 — ИИ-помощник: дефолтная выборка (Error, последние 48 часов).
+            menu.AddItem("ИИ-анализ событий", "info", async () =>
+            {
+                var c = computerResolver();
+                if (string.IsNullOrEmpty(c)) return;
+                if (!Helpers.AiEventAnalyzer.Gate(owner)) return;
+                try
+                {
+                    var aggs = await Helpers.AiEventAnalyzer.CollectDefaultAsync(c);
+                    await Helpers.AiEventAnalyzer.RunAsync(owner, c, "Система+Приложение • Error • 48 часов", aggs);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(owner, $"Не удалось собрать события с {c}: {ex.Message}", "ИИ-анализ",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            });
             menu.AddItem("Диспетчер задач...", "tasks", () => { var c = computerResolver(); if (!string.IsNullOrEmpty(c)) { using var dlg = new TaskManagerForm(c);                 UiModal.ShowDimmed(owner, dlg); } });
+            // v4.0.0.1 — удалённый терминал (WinRM/WMI) для этого хоста, как в старом меню.
+            menu.AddItem("Удалённый терминал...", "terminal", () =>
+            {
+                var c = computerResolver();
+                if (string.IsNullOrEmpty(c)) return;
+                try
+                {
+                    Forms.RemoteConsoleForm.Show(owner, c);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(owner, $"Не удалось открыть терминал: {ex.Message}", "Терминал",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            });
             // v4.0 — dashboard monitoring toggle
             {
                 var c = computerResolver() ?? "";

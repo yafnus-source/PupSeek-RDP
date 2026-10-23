@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ShadowRDP.Helpers;
 using ShadowRDP.Models;
 
 namespace ShadowRDP.Services
@@ -71,6 +73,55 @@ namespace ShadowRDP.Services
             ev.Decoded = generic;
             PersistDecoded(ev);
             return generic;
+        }
+
+        // v4.0.0.1 — ИИ-анализ журнала одной машины (см. Helpers.AiEventAnalyzer):
+        // на вход агрегаты «ID | источник | уровень | сколько раз | последнее
+        // время | образец текста», на выход — сводный разбор «что не работает,
+        // почему, что делать». Кэша и персиста нет — анализ всегда свежий.
+        public static async Task<string?> AnalyzeComputerAsync(string computer, IReadOnlyList<AiEventAgg> aggs)
+        {
+            if (!await IsOllamaAvailableAsync()) return null;
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Ты — эксперт по Windows Event Log и системному администрированию. Проанализируй журнал событий компьютера {computer}.");
+            sb.AppendLine($"Ниже {aggs.Count} уникальных событий (агрегировано по EventID и источнику). Формат строки: EventID | Источник | Уровень | сколько раз | последнее время | пример текста.");
+            sb.AppendLine();
+            foreach (var a in aggs)
+                sb.AppendLine($"- {a.Id} | {a.Source} | {a.Level} | {a.Count}x | {a.Last} | {a.Sample}");
+            sb.AppendLine();
+            sb.AppendLine(@"Ответь подробно на русском языке (~400 слов), по пунктам:
+1) Что не работает или работает нестабильно — какие проблемы видно по совокупности этих событий (простым языком, с конкретикой по EventID).
+2) Самые вероятные причины (перечисли 3-4).
+3) Что делать — пошаговые действия по устранению, с примерами команд и настроек.
+4) Критичность для машины: Low / Medium / High и почему.
+5) Что ещё проверить, чтобы подтвердить диагноз.
+
+Не начинай ответ словами «Окончательный ответ», «Ответ:» или «Final answer» — сразу переходи к пункту 1. Отвечай только по делу, без приветствий.");
+
+            try
+            {
+                var payload = new
+                {
+                    model = "llama3.2",
+                    messages = new[] { new { role = "user", content = sb.ToString() } },
+                    stream = false,
+                    options = new { num_predict = 1200, temperature = 0.3 }
+                };
+                var json = JsonSerializer.Serialize(payload);
+                var resp = await _http.PostAsync($"{OllamaBase}/api/chat", new StringContent(json, Encoding.UTF8, "application/json"));
+                if (resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("message", out var msg) && msg.TryGetProperty("content", out var content))
+                    {
+                        return StripLeader(content.GetString()?.Trim());
+                    }
+                }
+            }
+            catch (Exception ex) { try { Logger.Warn($"Ollama analyze failed: {ex.Message}"); } catch { } }
+            return null;
         }
 
         public static async Task<bool> IsOllamaAvailableAsync()

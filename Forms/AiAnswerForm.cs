@@ -16,9 +16,19 @@ namespace ShadowRDP.Forms
         private readonly ScrollHiddenRichTextBox _txtBox;
         private readonly Label _closeBtn;
 
+        // Ответ ИИ на одно событие дашборда.
         public AiAnswerForm(int eventId, string source, string level, string computer, string aiAnswer)
+            : this($"Ответ ИИ — EventID {eventId} — {source}",
+                   $"EventID {eventId} — {source}  •  Уровень: {level}  •  Хост: {computer}",
+                   aiAnswer)
         {
-            Text = $"Ответ ИИ — EventID {eventId} — {source}";
+        }
+
+        // v4.0.0.1 — универсальный вход (ИИ-анализ журнала и др.): произвольные
+        // заголовок/подзаголовок. Старый конструктор (событие дашборда) — обёртка.
+        public AiAnswerForm(string title, string subtitle, string aiAnswer)
+        {
+            Text = title;
             Size = new Size(756, 812);
             MinimumSize = new Size(560, 420);
             StartPosition = FormStartPosition.CenterParent;
@@ -28,8 +38,7 @@ namespace ShadowRDP.Forms
             KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); } };
 
             // ——— 1. Hero (без крестика: у окна есть штатный) ———
-            var hero = UiModal.Hero("Ответ ИИ",
-                $"EventID {eventId} — {source}  •  Уровень: {level}  •  Хост: {computer}", "info");
+            var hero = UiModal.Hero(title, subtitle, "info");
 
             // ——— 2. Content: answer text inside a section card ———
             var content = new Panel { Dock = DockStyle.Fill, AutoScroll = false, BackColor = UiTheme.DialogBackground, Padding = new Padding(14) };

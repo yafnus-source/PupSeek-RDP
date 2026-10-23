@@ -35,6 +35,7 @@ namespace ShadowRDP.Forms
         private readonly Label _statusLabel;
         private readonly Label _findBtn;
         private readonly Label _exportBtn;
+        private readonly Label _aiBtn;
         private readonly Label _closeBtn;
 
         public EventLogForm(string computer)
@@ -80,15 +81,20 @@ namespace ShadowRDP.Forms
             _findBtn.Click += async (s, e) => await FindAsync();
 
             _exportBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Экспорт CSV");
-            _exportBtn.Location = new Point(674, 78);
+            _exportBtn.Location = new Point(618, 78);
             _exportBtn.Click += OnExport;
 
+            // v4.0.0.1 — ИИ-помощник по текущей выборке грида.
+            _aiBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Спросить ИИ");
+            _aiBtn.Location = new Point(726, 78);
+            _aiBtn.Click += async (s, e) => await AiAnalyzeAsync();
+
             _closeBtn = ShadowRDP.Helpers.UiButtons.MakeFlat("Закрыть");
-            _closeBtn.Location = new Point(794, 78);
+            _closeBtn.Location = new Point(836, 78);
             _closeBtn.Click += (s, e) => Close();
             // CancelButton requires IButtonControl; Label doesn't implement it.
 
-            Controls.AddRange(new Control[] { lblLog, _logCombo, lblPeriod, _periodCombo, lblLevel, _levelCombo, _findBtn, _exportBtn, _closeBtn });
+            Controls.AddRange(new Control[] { lblLog, _logCombo, lblPeriod, _periodCombo, lblLevel, _levelCombo, _findBtn, _exportBtn, _aiBtn, _closeBtn });
 
             // === Grid ===
             _grid = new DataGridView
@@ -208,6 +214,48 @@ namespace ShadowRDP.Forms
             finally
             {
                 _findBtn.Enabled = true;
+            }
+        }
+
+        // v4.0.0.1 — ИИ-помощник: анализ того, что сейчас в гриде (с учётом
+        // фильтров пользователя). Гейт на модуль "ai"; проверка Ollama,
+        // пустая выборка и показ ответа — внутри Helpers.AiEventAnalyzer.
+        private async Task AiAnalyzeAsync()
+        {
+            if (!Helpers.AiEventAnalyzer.Gate(this)) return;
+            if (_grid.Rows.Count == 0)
+            {
+                MessageBox.Show(this, "В списке нет событий. Сначала нажмите «Найти».", "Спросить ИИ",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var raw = new List<(int id, string source, string level, DateTime time, string msg)>();
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                if (row.IsNewRow) continue;
+                if (!DateTime.TryParse(row.Cells["Time"].Value?.ToString(), out var time)) time = DateTime.MinValue;
+                if (!int.TryParse(row.Cells["EventID"].Value?.ToString(), out var id)) id = 0;
+                raw.Add((id,
+                    row.Cells["Source"].Value?.ToString() ?? "",
+                    row.Cells["Type"].Value?.ToString() ?? "",
+                    time,
+                    row.Cells["Message"].Value?.ToString() ?? ""));
+            }
+            var aggs = Helpers.AiEventAnalyzer.Aggregate(raw);
+            string scope = $"Лог: {_logCombo.SelectedItem} • Период: {_periodCombo.SelectedItem} • Уровень: {_levelCombo.SelectedItem}";
+
+            var prevStatus = _statusLabel.Text;
+            _statusLabel.Text = "ИИ: анализирую события…";
+            _aiBtn.Enabled = false;
+            try
+            {
+                await Helpers.AiEventAnalyzer.RunAsync(this, _computer, scope, aggs);
+            }
+            finally
+            {
+                _statusLabel.Text = prevStatus;
+                _aiBtn.Enabled = true;
             }
         }
 

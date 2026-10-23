@@ -546,15 +546,20 @@ namespace ShadowRDP.Forms
             // handler below (themed ThemedContextMenu popup) instead of a fixed
             // ContextMenuStrip, so it stays in sync with the row under the cursor.
 
-            // Show the context menu for the row under the mouse WITHOUT selecting/
-            // activating that row (the user's current selection is left untouched).
-            // All callbacks below target the hovered row explicitly via closures.
+            // Show the context menu for the row under the mouse. v4.0.0.1 —
+            // по просьбе: ПКМ сначала выделяет строку (как во всех списках
+            // Windows), меню продолжаем показывать по этой же строке.
             _grid.CellMouseDown += (sender, args) =>
             {
                 if (args.Button != MouseButtons.Right) return;
                 if (args.RowIndex < 0) return;
                 var hovered = _grid.Rows[args.RowIndex];
                 if (hovered.IsNewRow) return;
+                _grid.ClearSelection();
+                hovered.Selected = true;
+                _grid.CurrentCell = args.ColumnIndex >= 0
+                    ? hovered.Cells[args.ColumnIndex]
+                    : hovered.Cells["Computer"];
                 var hoveredComputer = hovered.Cells["Computer"].Value?.ToString() ?? "";
                 var hoveredUser = hovered.Cells["User"].Value?.ToString() ?? "";
                 var hoveredGroup = hovered.Cells["Group"].Value?.ToString() ?? "";
